@@ -1,0 +1,22 @@
+{
+  "name": "centris-sync",
+  "version": "1.0.0",
+  "description": "Desktop app for syncing files between centris and windows/mac",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "centris sync test"
+  },
+  "author": "ViDoc Technologies Private Limited",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jquery": "^3.5.33",
+    "electron": "^38.3.0"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.3",
+    "crypto-js": "^4.2.0",
+    "jquery": "^3.7.1",
+    "popper": "^1.0.1"
+  }
+}

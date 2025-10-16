@@ -1,0 +1,81 @@
+body {
+  font-family: 'poppins', sans-serif;
+  overflow: hidden;
+}
+.btn-centris {
+  color: #fff;
+  background-color: #194d79;
+  border-color: #194d79;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden; 
+}
+.btn-centris:hover {
+  color: #ffc100;
+  background-color: #194d79;
+  border-color: #194d79; 
+}
+.btn-centris:focus, .btn-centris.focus {
+  color: #ffc100;
+  background-color: #194d79;
+  border-color: #163dc8;
+  box-shadow: 0 0 0 0.2rem rgba(73, 109, 235, 0.5); 
+}
+.btn-centris.disabled, .btn-centris:disabled {
+  color: #ffc100;
+  background-color: #194d79;
+  border-color: #194d79; 
+}
+.btn-centris:not(:disabled):not(.disabled):active, .btn-centris:not(:disabled):not(.disabled).active, .show > .btn-centris.dropdown-toggle {
+  color: #ffc100;
+  background-color: #194d79;
+  border-color: #194d79; 
+}
+.btn-centris:not(:disabled):not(.disabled):active:focus, .btn-centris:not(:disabled):not(.disabled).active:focus, .show > .btn-centris.dropdown-toggle:focus {
+  box-shadow: 0 0 0 0.2rem rgba(73, 109, 235, 0.5); 
+}
+
+.btn-outline-centris {
+  background: #143b6466;
+  color: #143b64;
+}
+.btn-outline-centris:hover {
+  color: #143b64;
+  border-color: #143b64; 
+}
+.asset-container {
+  height: 100vh;
+}
+.asset-left {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4fafc;
+}
+.asset-left img {
+  height: max-content;
+  width: 100%;
+}
+.login-card {
+  display: flex;
+  justify-content: center;
+  height: 100vh;
+}
+.login-inner-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.login-card img {
+  width: 65%;
+  margin-bottom: 2em;
+}
+.branding-quote {
+  position: absolute;
+  bottom: -5px;
+  right: 6em;
+  font-size: 0.7rem;
+  color: #a5a5a5 !important;
+}

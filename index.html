@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" />
+        <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
+        <link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
+        <title>Centris Sync</title>
+        <script src="assets/js/loadAssets.js" defer></script>
+    </head>
+    <body>
+        <div class="asset-container row">
+            <div class="col-md-6 p-0">
+                <div class="asset-left">
+                    <img src="assets/images/login-bg.png">
+                </div>
+            </div>
+            <div class="col-md-6 p-0">
+                <div class="login-card">
+                    <div class="login-inner-card">
+                        <img src="assets/images/centris-sync.png">
+                        <form>
+                            <div class="mb-3">
+                                <label for="secret_key" class="form-label">Enter Secret Key</label>
+                                <input type="text" class="form-control" id="secret_key" placeholder="Enter Secret Key">
+                            </div>
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Enter Username / Email</label>
+                                <input type="text" class="form-control" id="username" placeholder="Enter Username Or Email">
+                                <div id="emailHelp" class="form-text">We'll never share your credentials with anyone.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Enter Password</label>
+                                <input type="password" class="form-control" id="password" placeholder="Enter Password">
+                            </div>
+                            <button id="sync" type="button" class="btn btn-centris float-end">Sign In</button>
+                        </form>
+                    </div>
+                </div>
+                <p class="branding-quote">Copyright © 2025 ViDoc Technologies Private Limited</p>
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<!-- <html>
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" />
+        <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
+        <link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
+        <title>Centris Sync Start</title>
+        <script src="assets/js/loadAssets.js" defer></script>
+    </head>
+    <body>
+        <h1>This is Dashboard</h1>
+    </body>
+</html> -->
+
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Centris File Sync</title>
+  <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+  <style>
+    body { font-family: "Segoe UI", sans-serif; background-color: #f9f9f9; }
+    h1 { background: #0078d7; color: white; padding: 15px; margin: 0; }
+    .tabs { display: flex; margin-top: 10px; }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      cursor: pointer;
+      background: #ccc;
+      border-top-left-radius: 5px;
+      border-top-right-radius: 5px;
+      transition: background 0.3s;
+    }
+    .tab.active { background: #0078d7; color: white; font-weight: bold; }
+    .tab-content { display: none; padding: 20px; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 5px 5px; }
+    .tab-content.active { display: block; }
+    .file-list { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px; background: #fdfdfd; }
+    ul { list-style: none; padding-left: 10px; }
+    li { margin: 4px 0; word-break: break-word; }
+    button { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Centris File Sync Dashboard</h1>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="local">Local Files</div>
+    <div class="tab" data-tab="remote">Remote Files</div>
+  </div>
+
+  <!-- Local Files Tab -->
+  <div id="local" class="tab-content active">
+    <h5>📁 Local Desktop Folder</h5>
+    <button id="chooseFolder" class="btn btn-primary btn-sm">Choose Folder</button>
+    <p id="folderPath"></p>
+    <div class="file-list">
+      <ul id="localFileList"></ul>
+    </div>
+  </div>
+
+  <!-- Remote Files Tab -->
+  <div id="remote" class="tab-content">
+    <h5>🌐 Remote Files</h5>
+    <button id="loadRemote" class="btn btn-success btn-sm">Load Remote Files</button>
+    <div class="file-list">
+      <ul id="remoteFileList"></ul>
+    </div>
+  </div>
+
+  <script src="node_modules/jquery/dist/jquery.min.js"></script>
+  <script src="assets/js/dashboard.js"></script>
+  
+</body>
+</html>
+

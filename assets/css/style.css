@@ -79,3 +79,47 @@ body {
   font-size: 0.7rem;
   color: #a5a5a5 !important;
 }
+
+
+body { font-family: "Segoe UI", sans-serif; background-color: #f9f9f9; }
+
+h1 { background: #0078d7; color: white; padding: 15px; margin: 0; }
+    
+.tabs { display: flex; margin-top: 10px; }
+
+.tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    cursor: pointer;
+    background: #ccc;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    transition: background 0.3s;
+}
+
+.tab.active { background: #0078d7; color: white; font-weight: bold; }
+.tab-content { display: none; padding: 20px; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 5px 5px; }
+.tab-content.active { display: block; }
+.file-list { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px; background: #fdfdfd; }
+ul { list-style: none; padding-left: 10px; }
+li { margin: 4px 0; word-break: break-word; }
+button { margin-bottom: 10px; }
+
+#remoteFileList ul {
+    list-style: none;
+    padding-left: 20px;
+}
+#remoteFileList li {
+    margin: 2px 0;
+    cursor: pointer;
+}
+.folder::before {
+    content: "📁 ";
+}
+.file::before {
+    content: "📄 ";
+}
+.folder.expanded::before {
+    content: "📂 "; /* open folder icon */
+}

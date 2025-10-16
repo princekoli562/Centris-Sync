@@ -56,17 +56,17 @@ ipcMain.handle('dialog:openFolder', async () => {
 ipcMain.handle('fs:listFiles', async (event, dirPath) => {
 	if (!fs.existsSync(dirPath)) return [];
 	const walk = (dir) => {
-	  const entries = fs.readdirSync(dir, { withFileTypes: true });
-	  let files = [];
-	  for (const entry of entries) {
-		const fullPath = path.join(dir, entry.name);
-		if (entry.isDirectory()) {
-		  files = files.concat(walk(fullPath));
-		} else {
-		  files.push(fullPath);
-		}
-	  }
-	  return files;
+	  	const entries = fs.readdirSync(dir, { withFileTypes: true });
+	  	let files = [];
+	  	for (const entry of entries) {
+			const fullPath = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+			files = files.concat(walk(fullPath));
+			} else {
+			files.push(fullPath);
+			}
+	  	}
+	  	return files;
 	};
 	return walk(dirPath);
 });

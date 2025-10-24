@@ -1,6 +1,16 @@
 document.addEventListener('DOMContentLoaded', () => {
    
      // Tab switching
+    window.secret_key = localStorage.getItem('secret_key');
+    window.secret_gen_key = localStorage.getItem('secret_gen_key');
+    window.apiUrl = localStorage.getItem('apiUrl');
+
+    var apiUrl = window.apiUrl;
+    var secret_gen_key = window.secret_gen_key;
+    var secret_key = window.secret_key;
+
+    console.log("API URL:", apiUrl);
+    console.log("Secret key:", secret_key);
     
      $(document).on("click",".tab",function(e) {
         const tab = $(this).data('tab');
@@ -14,19 +24,50 @@ document.addEventListener('DOMContentLoaded', () => {
     
     $(document).on("click","#chooseFolder",async function(e) {
         const folderPath = await window.electronAPI.chooseFolder();
+        var customer_data = JSON.parse(localStorage.getItem('customer_data'));
+        var domain_data = JSON.parse(localStorage.getItem('domain_data'));
+        console.log(customer_data);
+        console.log(domain_data);
         if (!folderPath) return;
         $('#folderPath').text(folderPath);
         const files = await window.electronAPI.listFiles(folderPath);
-        renderFileList('#localFileList', files);
-      });
+        
+        // Recursively get files/folders
+        const filesTree = await window.electronAPI.listFilesRecursively(folderPath);
+        renderFileList('#localFileList', filesTree);
+        console.log(filesTree);
+        // Send to Laravel API
+        try {
+            const res = await fetch(apiUrl + '/api/sync-files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer_id: customer_data.id,
+                    domain_id: domain_data.id,
+                    root_path: folderPath,
+                    files: filesTree
+                })
+            });
+            const data = await res.json();
+            console.log('Sync Result:', data);
+        } catch(err) {
+            console.error('Sync Error:', err);
+        }
+    });
 
       // --- Remote Files ---
      
     $(document).on("click","#loadRemote",async function(e) {
         const remoteList = $('#remoteFileList');
         remoteList.html('<li>Loading...</li>');
+        console.log(secret_key);
+        console.log(apiUrl);
+        if(apiUrl.length <= 0) {
+            console.log("invalid secret key provided");
+            return false;
+        }
         try {
-          const res = await fetch('http://galentic.localcentris.in:8081/api/getFiles');
+          const res = await fetch(apiUrl +'/api/getFiles');
           if (!res.ok) throw new Error(`HTTP error ${res.status}`);
           const data = await res.json();
           renderTree('#remoteFileList', data);

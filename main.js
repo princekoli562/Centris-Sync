@@ -11,8 +11,8 @@ const createWindow = () => {
 		webPreferences: {
       		preload: path.join(__dirname, 'preload.js'), // Ensure the correct path to preload.js
       		contextIsolation: true, // Required for contextBridge to work
-            enableRemoteModule: false, // Keep secure
-            nodeIntegration: false // Keep secure
+            enableRemoteModule: false, // for Keep secure , it must be false
+            nodeIntegration: false // for Keep secure , it must be false
     	}
 	});
 
@@ -70,6 +70,26 @@ ipcMain.handle('fs:listFiles', async (event, dirPath) => {
 	};
 	return walk(dirPath);
 });
+
+// Recursive file listing handler
+ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
+	async function listFilesRecursively(dir) {
+	  let results = [];
+	  const items = fs.readdirSync(dir, { withFileTypes: true });
+	  for (let item of items) {
+		const fullPath = path.join(dir, item.name);
+		if (item.isDirectory()) {
+		  results.push({ type: 'folder', name: item.name, path: fullPath });
+		  results = results.concat(await listFilesRecursively(fullPath));
+		} else {
+		  results.push({ type: 'file', name: item.name, path: fullPath });
+		}
+	  }
+	  return results;
+	}
+	return await listFilesRecursively(dir);
+});
+
 
 app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {

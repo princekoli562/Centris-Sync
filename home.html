@@ -1,63 +1,63 @@
 <!DOCTYPE html>
 <!-- <html>
-    <head>
-        <meta charset="UTF-8" />
-        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" />
-        <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
-        <link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
-        <title>Centris Sync Start</title>
-        <script src="assets/js/loadAssets.js" defer></script>
-    </head>
-    <body>
-        <h1>This is Dashboard</h1>
-    </body>
+		<head>
+				<meta charset="UTF-8" />
+				<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" />
+				<meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
+				<link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
+				<title>Centris Sync Start</title>
+				<script src="assets/js/loadAssets.js" defer></script>
+		</head>
+		<body>
+				<h1>This is Dashboard</h1>
+		</body>
 </html> -->
 
 <html>
 <head>
-  	<meta charset="UTF-8">
-  	<title>Centris File Sync</title>
-  	<!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" /> -->
+	<meta charset="UTF-8">
+	<title>Centris File Sync</title>
+	<!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" /> -->
 	<meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
 	<link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
-  	<link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
-  	<link rel="stylesheet" href="assets/css/style.css">
-  
-  <style>
-    
-  </style>
+	<link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+	<link rel="stylesheet" href="assets/css/style.css">
+	
+	<style>
+		
+	</style>
 </head>
 <body>
-  <h1>Centris File Sync Dashboard</h1>
+	<h1>Centris File Sync Dashboard</h1>
 
-  <!-- Tabs -->
-  <div class="tabs">
-    <div class="tab active" data-tab="local">Local Files</div>
-    <div class="tab" data-tab="remote">Remote Files</div>
-  </div>
+	<!-- Tabs -->
+	<div class="tabs">
+		<div class="tab active" data-tab="local">Local Files</div>
+		<div class="tab" data-tab="remote">Remote Files</div>
+	</div>
 
-  <!-- Local Files Tab -->
-  <div id="local" class="tab-content active">
-    	<h5>📁 Local Desktop Folder</h5>
-    	<button id="chooseFolder" class="btn btn-primary btn-sm">Choose Folder</button>
-    	<p id="folderPath"></p>
-    	<div class="file-list">
-      		<ul id="localFileList"></ul>
-    	</div>
-  </div>
+	<!-- Local Files Tab -->
+	<div id="local" class="tab-content active">
+			<h5>📁 Local Desktop Folder</h5>
+			<button id="chooseFolder" class="btn btn-primary btn-sm">Choose Folder</button>
+			<p id="folderPath"></p>
+			<div class="file-list">
+					<ul id="localFileList"></ul>
+			</div>
+	</div>
 
-  <!-- Remote Files Tab -->
-  <div id="remote" class="tab-content">
-    	<h5>🌐 Remote Files</h5>
+	<!-- Remote Files Tab -->
+	<div id="remote" class="tab-content">
+			<h5>🌐 Remote Files</h5>
 		<button id="loadRemote" class="btn btn-success btn-sm">Load Remote Files</button>
 		<div class="file-list">
 			<ul id="remoteFileList"></ul>
 		</div>
-  </div>
+	</div>
 
-  <script src="node_modules/jquery/dist/jquery.min.js"></script>
-  <script src="assets/js/dashboard.js"></script>
-  
+	<script src="node_modules/jquery/dist/jquery.min.js"></script>
+	<script src="assets/js/dashboard.js"></script>
+	
 </body>
 </html>
 

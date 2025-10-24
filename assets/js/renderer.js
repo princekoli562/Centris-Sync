@@ -17,10 +17,16 @@ document.getElementById('sync').addEventListener('click', async () => {
     let username = document.getElementById("username").value;
     let password = document.getElementById("password").value;
     // authenticate user
-    login(username, password, apiUrl).then((data) => {
+    login(username, password, apiUrl).then((response) => {
         // Notify the main process to navigate to the dashboard page
         try {
             window.secureAPI.send('navigate', 'home');
+            localStorage.setItem('secret_key', secret_key);
+            localStorage.setItem('secret_gen_key', secret_gen_key);
+            localStorage.setItem('apiUrl', apiUrl);
+            localStorage.setItem('domain_data', JSON.stringify(response.domain_data));
+            localStorage.setItem('customer_data', JSON.stringify(response.customer_data));
+            //alert(JSON.stringify(data, null, 2));
         } catch (err) {
             console.error('Error sending navigation request:', err);
         }

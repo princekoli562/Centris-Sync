@@ -3,20 +3,36 @@
   "version": "1.0.0",
   "description": "Desktop app for syncing files between centris and windows/mac",
   "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "test": "centris sync test"
-  },
   "author": "ViDoc Technologies Private Limited",
   "license": "MIT",
-  "devDependencies": {
-    "@types/jquery": "^3.5.33",
-    "electron": "^38.3.0"
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
   },
-  "dependencies": {
-    "bootstrap": "^5.3.3",
-    "crypto-js": "^4.2.0",
-    "jquery": "^3.7.1",
-    "popper": "^1.0.1"
+  "build": {
+    "appId": "com.vidoc.centrissync",
+    "productName": "Centris Sync",
+    "copyright": "© 2025 ViDoc Technologies Pvt Ltd",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",  
+        "portable"
+      ],
+      "icon": "assets/images/favicon.ico"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/.bin",
+      "!**/*.map",
+      "!**/test($|s).js"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.0.0"
   }
 }

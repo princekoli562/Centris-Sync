@@ -1,63 +1,128 @@
-<!DOCTYPE html>
-<!-- <html>
-		<head>
-				<meta charset="UTF-8" />
-				<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" />
-				<meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
-				<link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
-				<title>Centris Sync Start</title>
-				<script src="assets/js/loadAssets.js" defer></script>
-		</head>
-		<body>
-				<h1>This is Dashboard</h1>
-		</body>
-</html> -->
-
 <html>
 <head>
-	<meta charset="UTF-8">
-	<title>Centris File Sync</title>
-	<!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" /> -->
-	<meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
-	<link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
-	<link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
-	<link rel="stylesheet" href="assets/css/style.css">
-	
-	<style>
-		
-	</style>
+    <meta charset="UTF-8">
+    <title>Drive Browser (F:\)</title>
+    <style>
+        body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    background: #f9f9f9;
+}
+
+/* Sidebar */
+#sidebar {
+    width: 220px;
+    background: #fff;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+    padding-top: 10px;
+}
+
+.sidebar-item {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    color: #333;
+}
+
+.sidebar-item:hover {
+    background: #e8f0fe;
+    color: #1967d2;
+}
+
+.sidebar-item.active {
+    background: #e8f0fe;
+    color: #1967d2;
+    font-weight: 600;
+}
+
+/* Main area */
+#main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#breadcrumb {
+    padding: 12px 20px;
+    background: #f1f3f4;
+    border-bottom: 1px solid #ddd;
+}
+
+.crumb {
+    cursor: pointer;
+    color: #1a73e8;
+}
+.crumb:hover { text-decoration: underline; }
+
+#file-list {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 10px;
+    padding: 20px;
+}
+
+.file-item {
+    width: 160px;
+    height: 140px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.file-item:hover {
+    background: #f1f3f4;
+    transform: translateY(-2px);
+}
+
+.file-icon {
+    font-size: 40px;
+    margin-bottom: 8px;
+}
+
+.file-name {
+    font-size: 13px;
+    text-align: center;
+    color: #333;
+}
+    </style>
 </head>
 <body>
-	<h1>Centris File Sync Dashboard</h1>
-
-	<!-- Tabs -->
-	<div class="tabs">
-		<div class="tab active" data-tab="local">Local Files</div>
-		<div class="tab" data-tab="remote">Remote Files</div>
-	</div>
-
-	<!-- Local Files Tab -->
-	<div id="local" class="tab-content active">
-			<h5>📁 Local Desktop Folder</h5>
-			<button id="chooseFolder" class="btn btn-primary btn-sm">Choose Folder</button>
-			<p id="folderPath"></p>
-			<div class="file-list">
-					<ul id="localFileList"></ul>
+    <div class="sidebar">
+        <h2>My Drive</h2>
+        <button id="openDrive">📁 Open Mapped Drive (F:)</button>
+    </div>
+    <div class="main">
+        <div class="header">
+            <!-- <span class="breadcrumb" id="breadcrumb">Path: F:\</span> -->
+			 <div id="breadcrumb"
+				style="margin-bottom: 10px; font-weight: bold; cursor: pointer;">
 			</div>
-	</div>
+        </div>
+        <div class="content">            
 
-	<!-- Remote Files Tab -->
-	<div id="remote" class="tab-content">
-			<h5>🌐 Remote Files</h5>
-		<button id="loadRemote" class="btn btn-success btn-sm">Load Remote Files</button>
-		<div class="file-list">
-			<ul id="remoteFileList"></ul>
-		</div>
-	</div>
-
+			<div id="file-list"
+				style="border: 1px solid #ddd; padding: 10px;
+						min-height: 400px; max-height: 500px;
+						overflow-y: auto; width: 100%; box-sizing: border-box;">
+			</div>
+        </div>
+    </div>
 	<script src="node_modules/jquery/dist/jquery.min.js"></script>
-	<script src="assets/js/dashboard.js"></script>
-	
+  	<script src="assets/js/dashboard.js"></script>
 </body>
 </html>
-

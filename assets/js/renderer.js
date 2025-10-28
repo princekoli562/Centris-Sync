@@ -5,35 +5,46 @@ window.secureAPI.getSecretKey().then((data) => {
 });
 
  // start authentication
+
+const validationBox = document.getElementById('validationBox');
     
 document.getElementById('sync').addEventListener('click', async () => {
     // get site url from secret key
     let secret_key = document.getElementById("secret_key").value;
     var apiUrl = CryptoAESdecrypt(secret_key,secret_gen_key);
     if(apiUrl.length <= 0) {
-        console.log("invalid secret key provided");
+       // console.log("invalid secret key provided");
+        showValidation("Invalid secret key provided", 'error');
         return false;
     }
     let username = document.getElementById("username").value;
     let password = document.getElementById("password").value;
     // authenticate user
-    login(username, password, apiUrl).then((response) => {
-        // Notify the main process to navigate to the dashboard page
-        try {
-            window.secureAPI.send('navigate', 'home');
-            localStorage.setItem('secret_key', secret_key);
-            localStorage.setItem('secret_gen_key', secret_gen_key);
-            localStorage.setItem('apiUrl', apiUrl);
-            localStorage.setItem('domain_data', JSON.stringify(response.domain_data));
-            localStorage.setItem('customer_data', JSON.stringify(response.customer_data));
-            //alert(JSON.stringify(data, null, 2));
-        } catch (err) {
-            console.error('Error sending navigation request:', err);
+    try {
+        const response = await login(username, password, apiUrl);
+
+        if (response.status === 'error') {
+            showValidation(response.message || "Authentication failed", 'error');
+            return;
         }
-    })
-    .catch((error) => {
-        console.error("Authentication failed:", error.message);
-    });
+        if (response.status === 'warning') {
+            showValidation(response.message || "Please check your input", 'warning');
+            return;
+        }
+
+        // Success
+        showValidation("Login successful!", 'success');
+
+        window.secureAPI.send('navigate', 'home');
+        localStorage.setItem('secret_key', secret_key);
+        localStorage.setItem('secret_gen_key', secret_gen_key);
+        localStorage.setItem('apiUrl', apiUrl);
+        localStorage.setItem('domain_data', JSON.stringify(response.domain_data));
+        localStorage.setItem('customer_data', JSON.stringify(response.customer_data));
+    } catch (error) {
+        showValidation("Error: " + error.message, 'error');
+        console.error("Authentication failed:", error);
+    }
 });
 
 const tabs = document.querySelectorAll(".tab");
@@ -47,6 +58,18 @@ tabs.forEach(tab => {
     document.getElementById(tab.dataset.tab).classList.add("active");
     });
 });
+
+
+
+function showValidation(message, type = 'error') {
+    validationBox.textContent = message;
+    validationBox.className = `validation-box ${type}`;
+}
+
+function hideValidation() {
+    validationBox.className = 'validation-box';
+    validationBox.textContent = '';
+}
 
 
 

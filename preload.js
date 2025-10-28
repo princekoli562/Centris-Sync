@@ -19,11 +19,18 @@ const { contextBridge, ipcRenderer } = require('electron')
 // }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    chooseFolder: async () => await ipcRenderer.invoke('dialog:openFolder'),
+    //chooseFolder: async () => await ipcRenderer.invoke('dialog:openFolder'),
     listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),
-    listFilesRecursively: (dir) => ipcRenderer.invoke('fs:listFilesRecursively', dir)
+    listRecurFiles: (path) => ipcRenderer.invoke('fs:list-recur-files', path),    
+    listRecurFiles: (dir, offset = 0, limit = 100) => ipcRenderer.invoke('fs:list-recur-files', dir, offset, limit),
+    openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    readDir: (folderPath) => ipcRenderer.invoke('fs:readDir', folderPath),
+    readFile: (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
+    openItem: (filePath) => ipcRenderer.invoke('shell:openItem', filePath),
+   // createTestFolder: () => await ipcRenderer.invoke('create-test-folder')
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
+
 
 contextBridge.exposeInMainWorld('versions', {
     node: () => process.versions.node,

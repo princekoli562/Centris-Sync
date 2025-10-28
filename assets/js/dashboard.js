@@ -1,9 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
-   
+    
      // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
     window.apiUrl = localStorage.getItem('apiUrl');
+    
 
     var apiUrl = window.apiUrl;
     var secret_gen_key = window.secret_gen_key;
@@ -74,9 +75,157 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(err) {
           remoteList.html(`<li style="color:red;">Error: ${err.message}</li>`);
         }
-    });    
+    });   
+    
+    // $(document).on("click", "#openDrive", async function (e) {
+    //     //e.preventDefault();
+
+    //     // 👇 Example mapped folder path on Desktop (adjust as needed)
+    //     console.log('kii');
+    //     const desktopPath = "F:\\";
+
+    //     // Call the backend (Electron main process)
+    //     const result = await window.electronAPI.listRecurFiles(desktopPath);
+    //     console.log('prince');
+    //     const fileList = $("#file-list");
+    //     const breadcrumb = $("#breadcrumb");
+
+    //     if (result.error) {
+    //         fileList.html(`<p style='color:red'>${result.error}</p>`);
+    //         return;
+    //     }
+
+    //     breadcrumb.text("Path: " + result.currentPath);
+    //     fileList.empty();
+
+    //     result.items.forEach(item => {
+    //         const icon = item.isDirectory ? "📁" : "📄";
+    //         const div = $(`
+    //             <div class='file-item' style='cursor:pointer;margin:4px 0'>
+    //                 <span>${icon} ${item.name}</span>
+    //             </div>
+    //         `);
+
+    //         div.on("click", () => {
+    //             if (item.isDirectory) {
+    //                 window.electronAPI.listRecurFiles(item.path).then(subResult => {
+    //                     // recursively show next folder content
+    //                     fileList.empty();
+    //                     breadcrumb.text("Path: " + subResult.currentPath);
+    //                     subResult.items.forEach(subItem => {
+    //                         const subIcon = subItem.isDirectory ? "📁" : "📄";
+    //                         fileList.append(`<div>${subIcon} ${subItem.name}</div>`);
+    //                     });
+    //                 });
+    //             }
+    //         });
+
+    //         fileList.append(div);
+    //     });
+    // });
+
+  
+
+    // Load the initial directory (triggered by your “Open Drive” button)
+    $(document).on("click", "#openDrive", async function (e) {
+        e.preventDefault();
+        await loadFiles("F:\\");
+    });
+
+    // 🔹 Scroll listener for lazy loading
+    $("#file-list").on("scroll", function () {
+        const scrollTop = $(this).scrollTop();
+        const scrollHeight = $(this)[0].scrollHeight;
+        const clientHeight = $(this).height();
+
+        // if user scrolled near bottom, load next batch
+        if (scrollTop + clientHeight >= scrollHeight - 50) {
+            if (visibleCount < allItems.length) {
+                renderNextBatch();
+            }
+        }
+    });
+
+    // 🔹 Breadcrumb navigation
+    $(document).on("click", ".crumb", async function () {
+        const path = $(this).data("path");
+        await loadFiles(path, true);
+    });
+
+    // Infinite scroll handler
+$("#file-list").on("scroll", async function () {
+    if (isLoading) return;
+
+    const nearBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 50;
+    if (nearBottom && loadedItems < totalItems) {
+        await loadFiles(currentDir, false);
+    }
+});
+    
 
 });
+
+
+  const BATCH_SIZE = 1000; // how many files to show per scroll
+    let allItems = [];
+    let visibleCount = 0;
+    let currentDir = "F:\\";
+    let totalItems = 0;
+    let loadedItems = 0;
+    let isLoading = false;
+
+
+
+async function loadFiles(dirPath, reset = false) {
+    if (isLoading) return;
+    isLoading = true;
+
+    if (reset) {
+        loadedItems = 0;
+        currentDir = dirPath;
+        $("#file-list").empty();
+    }
+    console.log(loadedItems + ' = ' + BATCH_SIZE);
+    const result = await window.electronAPI.listRecurFiles(dirPath, loadedItems, BATCH_SIZE);
+    if (result.error) {
+        $("#file-list").html(`<p style="color:red">${result.error}</p>`);
+        isLoading = false;
+        return;
+    }
+
+    totalItems = result.total;
+    currentDir = result.currentPath;
+    $("#breadcrumb").html(buildBreadcrumb(result.currentPath));
+
+    // Append batch
+    result.items.forEach(item => {
+        const icon = item.isDirectory ? "📁" : "📄";
+        const div = $(`<div class='file-item' style='cursor:pointer;margin:4px 0;'>
+            <span>${icon} ${item.name}</span>
+        </div>`);
+
+        div.on("click", () => {
+            if (item.isDirectory) loadFiles(item.path, true);
+        });
+
+        $("#file-list").append(div);
+    });
+
+    loadedItems += result.items.length;
+    isLoading = false;
+}
+
+function buildBreadcrumb(fullPath) {
+    const parts = fullPath.split(/[\\/]+/).filter(Boolean);
+    return parts.map((p, i) => {
+        const subPath = parts.slice(0, i + 1).join("\\") + "\\";
+        return `<span class="crumb" data-path="${subPath}">${p}</span>`;
+    }).join(" › ");
+}
+
+
+
+
 
  // --- Render File List ---
  function renderFileList(selector, files) {

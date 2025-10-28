@@ -123,3 +123,37 @@ button { margin-bottom: 10px; }
 .folder.expanded::before {
     content: "📂 "; /* open folder icon */
 }
+
+.validation-box {
+  display: none; /* Hidden by default */
+  margin-bottom: 15px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Error */
+.validation-box.error {
+  display: block;
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+/* Warning */
+.validation-box.warning {
+  display: block;
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeeba;
+}
+
+/* Success (optional) */
+.validation-box.success {
+  display: block;
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}

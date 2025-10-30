@@ -1,20 +1,43 @@
 
 const { app, BrowserWindow, ipcMain,dialog } = require('electron');
-const path = require('node:path');
-
-// ✅ Enable auto reload for all files in your project
-// try {
-//   require("electron-reload")(path.join(__dirname), {
-//     electron: path.join(__dirname, "node_modules", ".bin", "electron"),
-//     hardResetMethod: "exit",
-//   });
-//   console.log("🔁 Electron auto-reload enabled");
-// } catch (err) {
-//   console.warn("⚠️ Electron reload not active:", err.message);
-// }
-
-
+//const path = require('node:path');
+const path = require("path");
 const fs = require('fs');
+
+console.log(process.env.NODE_ENV);
+if (process.env.NODE_ENV === "development") {
+  try {
+    // 👇 Detect electron binary properly (Windows-friendly)
+    let electronBinary = path.join(
+      __dirname,
+      "node_modules",
+      ".bin",
+      "electron.cmd"
+    );
+
+    // Fallback if .cmd doesn't exist (Linux/macOS case)
+    if (!fs.existsSync(electronBinary)) {
+      electronBinary = path.join(
+        __dirname,
+        "node_modules",
+        ".bin",
+        "electron"
+      );
+    }
+
+    // Load electron-reload
+    require("electron-reload")(__dirname, {
+      electron: electronBinary,
+      //hardResetMethod: "exit",
+      hardResetMethod: "reload",
+    });
+
+    console.log("🔁 Electron auto-reload enabled (Windows Dev Mode)");
+  } catch (err) {
+    console.warn("⚠️ Electron reload not active:", err.message);
+  }
+}
+
 const os = require('os');
 const { execSync, exec,spawn } = require('child_process');
 const SECRET_KEY = "25fHeqIXYAfa";
@@ -24,35 +47,106 @@ const VHDX_SIZE_MB = 10240; // 10 GB
 const VOLUME_LABEL = "CentrisSync";
 const homeDir = os.homedir();
 const VHDX_PATH = path.join(homeDir, VHDX_NAME);
+let sessionData = null;
 
+const createWindow = async () => {
+    win = new BrowserWindow({
+        width: 800,
+        height: 600,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            enableRemoteModule: false,
+            nodeIntegration: true // ❗ keep false for security
+        },
+        icon: path.join(__dirname, 'assets/images/favicon.ico')
+    });
 
-const createWindow = () => {
-	win = new BrowserWindow({
-		width: 800,
-		height: 600,
-		webPreferences: {
-      		preload: path.join(__dirname, 'preload.js'), // Ensure the correct path to preload.js
-      		contextIsolation: true, // Required for contextBridge to work
-            enableRemoteModule: false, // for Keep secure , it must be false
-            nodeIntegration: true // for Keep secure , it must be false
-    	},
-		icon: path.join(__dirname, 'assets/images/favicon.ico')
-	});
+    // ✅ Use local session checker instead of win.electronAPI
+    const sessionActive = isSessionActive(); // function defined below
+    console.log(sessionActive);
+    if (sessionActive) {
+        console.log("✅ Session active, redirecting to home...");
+        await win.loadFile('home.html');
+    } else {
+        console.log("🔒 Session expired or not logged in");
+        await win.loadFile('index.html');
+    }
 
-	win.loadFile('index.html');
-    //win.loadFile(path.join(__dirname, 'index.html'));
+    // 🧩 Handle navigation from renderer
+    ipcMain.on('navigate', (event, page) => {
+        if (page === 'home') {
+            win.loadFile('home.html')
+                .then(() => console.log('🏠 Home page loaded'))
+                .catch(err => console.error('Error loading home page:', err));
+        } else if (page === 'login') {
+            win.loadFile('index.html')
+                .then(() => console.log('🔑 Login page loaded'))
+                .catch(err => console.error('Error loading login page:', err));
+        } else {
+            console.error('Unknown page:', page);
+        }
+    });
 
-	// Listen for navigation events from the renderer process
-	ipcMain.on('navigate', (event, page) => {
-	    if (page === 'home') {
-	        win.loadFile('home.html') // Adjust file path as needed
-	            .then(() => console.log('Page loaded successfully'))
-	            .catch((err) => console.error('Error loading page:', err));
-	    } else {
-	        console.error('Unknown page:', page);
-	    }
-	});
+    // 🧩 Save session on login from renderer
+    ipcMain.on('save-session', (event, sessionData) => {
+        saveSession(sessionData);
+    });
+
+    // 🧩 Clear session on logout
+    ipcMain.on('clear-session', () => {
+        clearSession();
+    });
+};
+
+// ✅ Helper: checks if session exists and is valid
+function isSessionActive() {
+      const sessionFile = path.join(app.getPath('userData'), 'session.json');
+
+    try {
+        if (fs.existsSync(sessionFile)) {
+            const sessionData = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+            const now = Date.now();
+            const MAX_AGE = 6 * 60 * 60 * 1000; // 6 hours
+
+            if (sessionData.isLoggedIn && now - sessionData.loginTime < MAX_AGE) {
+                return true;
+            }
+        }
+    } catch (err) {
+        console.error("⚠️ Error reading session file:", err);
+    }
+    return false;
 }
+
+function saveSession(data) {
+    const sessionFile = path.join(app.getPath('userData'), 'session.json');
+    try {
+        const sessionData = {
+            ...data,
+            isLoggedIn: true,
+            loginTime: Date.now(),
+        };
+        fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
+        console.log("💾 Session saved:", sessionFile);
+    } catch (err) {
+        console.error("⚠️ Error saving session:", err);
+    }
+}
+
+// ✅ Helper: clear session
+function clearSession() {
+    const sessionFile = path.join(app.getPath('userData'), 'session.json');
+    try {
+        if (fs.existsSync(sessionFile)) {
+            fs.unlinkSync(sessionFile);
+            console.log("🗑️ Session cleared");
+        }
+    } catch (err) {
+        console.error("⚠️ Error clearing session:", err);
+    }
+}
+
 
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'CentrisSync');
@@ -126,32 +220,43 @@ function getMappedDrives() {
     }
 }
 
-function getMappedDriveLetter11(volumeLabel = "CentrisSync") {
+function getMappedDriveLetter(volumeLabel = "CentrisSync") {
     try {
-        // Run Windows 'wmic' command to get drives
-        const output = execSync(`wmic logicaldisk get name,volumename`).toString();
+        // Run WMIC to get drive letter and label
+        const output = execSync(`wmic logicaldisk get Name,VolumeName`, { encoding: "utf8" });
 
         // Example output:
-        // VolumeName  Name
-        // Windows     C:
-        // CentrisSync F:
+        // Name  VolumeName
+        // C:    Windows
+        // F:    CentrisSync
+        // D:    Data
 
-        const lines = output.split('\n').filter(l => l.trim());
+        const lines = output.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("Name"));
+        console.log(lines);
         for (const line of lines) {
-            if (line.includes(volumeLabel)) {
-                const parts = line.trim().split(/\s+/);
-                const drive = parts[parts.length - 1]; // e.g. 'F:'
-                return drive + "\\"; // ensure it ends with backslash
+            // Split keeping drive and label
+            const match = line.match(/^([A-Z]:)\s+(.*)$/i);
+            if (!match) continue;
+
+            const drive = match[1];
+            const label = match[2].trim();
+
+            if (label.toLowerCase() === volumeLabel.toLowerCase()) {
+                console.log(`✅ Found ${volumeLabel} mounted at ${drive}\\`);
+                return `${drive}\\`;
             }
         }
+
+        console.warn(`⚠️ Drive with label "${volumeLabel}" not found.`);
         return null;
+
     } catch (err) {
-        console.error("Error detecting drive:", err);
+        console.error("❌ Error detecting CentrisSync drive:", err);
         return null;
     }
 }
 
-function getMappedDriveLetter(volumeLabel = "CentrisSync") {
+function getMappedDriveLetter11(volumeLabel = "CentrisSync") {
     try {
         // Get all drives with their VolumeName and Name
         const output = execSync(`wmic logicaldisk get name,volumename`, { encoding: 'utf8' });
@@ -163,7 +268,7 @@ function getMappedDriveLetter(volumeLabel = "CentrisSync") {
         // Data        D:
 
         const lines = output.split('\n').map(line => line.trim()).filter(Boolean);
-
+        console.log('kkkk');
         for (const line of lines) {
             if (line.startsWith('VolumeName')) continue; // skip header
             const [label, drive] = line.split(/\s+/).filter(Boolean);
@@ -173,7 +278,7 @@ function getMappedDriveLetter(volumeLabel = "CentrisSync") {
                 return drive.endsWith(':') ? `${drive}\\` : `${drive}:\\`;
             }
         }
-        console.log('kkkk');
+        
         return null; // not found
     } catch (err) {
         console.error("Error detecting CentrisSync drive:", err);
@@ -620,6 +725,35 @@ ipcMain.handle("fs:upload-folder", async (event, srcDir, destDir) => {
         console.error("Upload error:", err);
         return { success: false, error: err.message };
     }
+});
+
+// Set session after login
+ipcMain.on('set-session', (event, data) => {
+    sessionData = {
+        ...data,
+        loginTime: Date.now(),
+    };
+    console.log('✅ Session saved:', sessionData);
+});
+
+// Clear session (on logout)
+ipcMain.on('clear-session', () => {
+    console.log('🧹 Clearing session');
+    sessionData = null;
+});
+
+// Check if session exists
+ipcMain.handle('check-session', () => {
+    if (!sessionData) return null;
+
+    // Optional: expire after 6 hours (21600000 ms)
+    const expired = Date.now() - sessionData.loginTime > 21600000;
+    if (expired) {
+        sessionData = null;
+        return null;
+    }
+
+    return sessionData;
 });
 
 

@@ -1,3 +1,12 @@
+
+const BATCH_SIZE = 1000; // how many files to show per scroll
+let allItems = [];
+let visibleCount = 0;
+let currentDir = "F:\\sync";
+let totalItems = 0;
+let loadedItems = 0;
+let isLoading = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
     
      // Tab switching
@@ -132,7 +141,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load the initial directory (triggered by your “Open Drive” button)
     $(document).on("click", "#openDrive", async function (e) {
         e.preventDefault();
-        await loadFiles("F:\\");
+        await loadFiles(currentDir);
     });
 
     // 🔹 Scroll listener for lazy loading
@@ -172,37 +181,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             alert("No folder selected.");
             return;
         }
+        var  mappedDrive = await window.electronAPI.getMappedDrive();
+        const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+        if (crumbs.length > 0) {
+            const lastCrumb = crumbs[crumbs.length - 1];
+            mappedDrive = lastCrumb.getAttribute('data-path');
+            console.log("mappedDrive path:", mappedDrive);
+        }else{
+            // Get mapped drive dynamically
+            mappedDrive = await window.electronAPI.getMappedDrive();    
+        }
 
-        // Get mapped drive dynamically
-        const mappedDrive = await window.electronAPI.getMappedDrive();
+        
         console.log("Detected Centris Drive:", mappedDrive);
-
         //Confirm upload
         if (!confirm(`Upload contents of "${folderPath}" to ${mappedDrive}?`)) return;
 
         // Trigger recursive copy
-        // const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
+        const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
 
-        // if (result.success) {
-        //     alert("Folder uploaded successfully!");
-        //     // Refresh file list
-        //     loadFiles(mappedDrive, true);
-        // } else {
-        //     alert("Error uploading: " + result.error);
-        // }
+        if (result.success) {
+            alert("Folder uploaded successfully!");
+            // Refresh file list
+            loadFiles(mappedDrive, true);
+        } else {
+            alert("Error uploading: " + result.error);
+        }
     });
     
 
 });
-
-
-  const BATCH_SIZE = 1000; // how many files to show per scroll
-    let allItems = [];
-    let visibleCount = 0;
-    let currentDir = "F:\\";
-    let totalItems = 0;
-    let loadedItems = 0;
-    let isLoading = false;
 
 
 async function loadFiles(dirPath, reset = false) {

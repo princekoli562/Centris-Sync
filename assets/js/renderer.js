@@ -35,12 +35,19 @@ document.getElementById('sync').addEventListener('click', async () => {
         // Success
         showValidation("Login successful!", 'success');
 
+        window.electronAPI.saveSession({
+            user: username,
+            token: secret_key
+        });
+
         window.secureAPI.send('navigate', 'home');
         localStorage.setItem('secret_key', secret_key);
         localStorage.setItem('secret_gen_key', secret_gen_key);
         localStorage.setItem('apiUrl', apiUrl);
         localStorage.setItem('domain_data', JSON.stringify(response.domain_data));
         localStorage.setItem('customer_data', JSON.stringify(response.customer_data));
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('loginTime', Date.now()); // optional, for expiry handling
     } catch (error) {
         showValidation("Error: " + error.message, 'error');
         console.error("Authentication failed:", error);

@@ -213,6 +213,8 @@ button { margin-bottom: 10px; }
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.2s;
+    text-align: left;  
+    padding-left: 12px; 
 }
 
 .sidebar button:hover {

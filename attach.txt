@@ -1,3 +1,0 @@
-select vdisk file="C:\Users\Prince\CentrisSync.vhdx"
-attach vdisk
-exit

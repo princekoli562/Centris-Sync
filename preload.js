@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron')
-//const fs = require('fs');
-//const path = require('path');
+const fs = require('fs');
+const path = require('path');
 
 // async function listFilesRecursively(dir) {
 //     let results = [];
@@ -20,6 +20,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
     //chooseFolder: async () => await ipcRenderer.invoke('dialog:openFolder'),
+    getAppConfig: () => ipcRenderer.invoke('getAppConfig'),
     listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),
     listRecurFiles: (path) => ipcRenderer.invoke('fs:list-recur-files', path),    
     listRecurFiles: (dir, offset = 0, limit = 100) => ipcRenderer.invoke('fs:list-recur-files', dir, offset, limit),
@@ -27,7 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     readDir: (folderPath) => ipcRenderer.invoke('fs:readDir', folderPath),
     readFile: (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
     openItem: (filePath) => ipcRenderer.invoke('shell:openItem', filePath),
-   // createTestFolder: () => await ipcRenderer.invoke('create-test-folder')
+    uploadFolderToDrive: (src, dest) => ipcRenderer.invoke("fs:upload-folder", src, dest),
+    getMappedDrive: () => ipcRenderer.invoke('getMappedDrive'),
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 
@@ -37,6 +39,14 @@ contextBridge.exposeInMainWorld('versions', {
     chrome: () => process.versions.chrome,
     electron: () => process.versions.electron,
     // we can also expose variables, not just functions
+});
+
+// contextBridge.exposeInMainWorld("appPaths", {
+//   base: __dirname.replace(/\\/g, "/"),
+// });
+
+contextBridge.exposeInMainWorld("appPaths", {
+  base: path.join(__dirname, "..").replace(/\\/g, "/"),
 });
 
 // expose centris keys

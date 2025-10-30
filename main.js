@@ -1,10 +1,58 @@
+
 const { app, BrowserWindow, ipcMain,dialog } = require('electron');
 const path = require('node:path');
+
+// ✅ Enable auto reload for all files in your project
+// try {
+//   require("electron-reload")(path.join(__dirname), {
+//     electron: path.join(__dirname, "node_modules", ".bin", "electron"),
+//     hardResetMethod: "exit",
+//   });
+//   console.log("🔁 Electron auto-reload enabled");
+// } catch (err) {
+//   console.warn("⚠️ Electron reload not active:", err.message);
+// }
+
+
 const fs = require('fs');
 const os = require('os');
 const { execSync, exec,spawn } = require('child_process');
 const SECRET_KEY = "25fHeqIXYAfa";
 let win;
+const VHDX_NAME = "CentrisSync.vhdx";
+const VHDX_SIZE_MB = 10240; // 10 GB
+const VOLUME_LABEL = "CentrisSync";
+const homeDir = os.homedir();
+const VHDX_PATH = path.join(homeDir, VHDX_NAME);
+
+
+const createWindow = () => {
+	win = new BrowserWindow({
+		width: 800,
+		height: 600,
+		webPreferences: {
+      		preload: path.join(__dirname, 'preload.js'), // Ensure the correct path to preload.js
+      		contextIsolation: true, // Required for contextBridge to work
+            enableRemoteModule: false, // for Keep secure , it must be false
+            nodeIntegration: true // for Keep secure , it must be false
+    	},
+		icon: path.join(__dirname, 'assets/images/favicon.ico')
+	});
+
+	win.loadFile('index.html');
+    //win.loadFile(path.join(__dirname, 'index.html'));
+
+	// Listen for navigation events from the renderer process
+	ipcMain.on('navigate', (event, page) => {
+	    if (page === 'home') {
+	        win.loadFile('home.html') // Adjust file path as needed
+	            .then(() => console.log('Page loaded successfully'))
+	            .catch((err) => console.error('Error loading page:', err));
+	    } else {
+	        console.error('Unknown page:', page);
+	    }
+	});
+}
 
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'CentrisSync');
@@ -78,6 +126,62 @@ function getMappedDrives() {
     }
 }
 
+function getMappedDriveLetter11(volumeLabel = "CentrisSync") {
+    try {
+        // Run Windows 'wmic' command to get drives
+        const output = execSync(`wmic logicaldisk get name,volumename`).toString();
+
+        // Example output:
+        // VolumeName  Name
+        // Windows     C:
+        // CentrisSync F:
+
+        const lines = output.split('\n').filter(l => l.trim());
+        for (const line of lines) {
+            if (line.includes(volumeLabel)) {
+                const parts = line.trim().split(/\s+/);
+                const drive = parts[parts.length - 1]; // e.g. 'F:'
+                return drive + "\\"; // ensure it ends with backslash
+            }
+        }
+        return null;
+    } catch (err) {
+        console.error("Error detecting drive:", err);
+        return null;
+    }
+}
+
+function getMappedDriveLetter(volumeLabel = "CentrisSync") {
+    try {
+        // Get all drives with their VolumeName and Name
+        const output = execSync(`wmic logicaldisk get name,volumename`, { encoding: 'utf8' });
+
+        // Example output:
+        // VolumeName  Name
+        // Windows     C:
+        // CentrisSync F:
+        // Data        D:
+
+        const lines = output.split('\n').map(line => line.trim()).filter(Boolean);
+
+        for (const line of lines) {
+            if (line.startsWith('VolumeName')) continue; // skip header
+            const [label, drive] = line.split(/\s+/).filter(Boolean);
+
+            // Match by label name
+            if (label && label.toLowerCase() === volumeLabel.toLowerCase()) {
+                return drive.endsWith(':') ? `${drive}\\` : `${drive}:\\`;
+            }
+        }
+        console.log('kkkk');
+        return null; // not found
+    } catch (err) {
+        console.error("Error detecting CentrisSync drive:", err);
+        return null;
+    }
+}
+
+
 /* ------------------ Utility: Find next free drive letter ------------------ */
 function getNextAvailableDriveLetter() {
     const usedLetters = new Set();
@@ -135,10 +239,10 @@ function createSyncFolderAndDrive() {
         const iniPath = path.join(SYNC_FOLDER, 'desktop.ini');
         if (!fs.existsSync(iniPath)) {
             const iniData = `[.ShellClassInfo]
-IconResource=${iconPath},0
-IconFile=${iconPath}
-IconIndex=0
-`;
+            IconResource=${iconPath},0
+            IconFile=${iconPath}
+            IconIndex=0
+            `;
             fs.writeFileSync(iniPath, iniData, 'utf-8');
             execSync(`attrib +s "${SYNC_FOLDER}"`);
             execSync(`attrib +h "${iniPath}"`);
@@ -183,11 +287,6 @@ IconIndex=0
     }
 }
 
-
-const VHDX_NAME = "CentrisSync.vhdx";
-const VHDX_SIZE_MB = 10240; // 10 GB
-const VOLUME_LABEL = "CentrisSync";
-
 function isAdmin() {
     try {
         execSync("fsutil dirty query %systemdrive%", { stdio: "ignore" });
@@ -209,44 +308,18 @@ function relaunchAsAdmin() {
 
 function createDiskpartScript(vhdxPath) {
     return `
-create vdisk file="${vhdxPath}" maximum=${VHDX_SIZE_MB} type=expandable
-select vdisk file="${vhdxPath}"
-attach vdisk
-create partition primary
-format fs=ntfs quick label=${VOLUME_LABEL}
-assign
-exit
-`;
+        create vdisk file="${vhdxPath}" maximum=${VHDX_SIZE_MB} type=expandable
+        select vdisk file="${vhdxPath}"
+        attach vdisk
+        create partition primary
+        format fs=ntfs quick label=${VOLUME_LABEL}
+        assign
+        exit
+        `;
 }
 
-function createAndMountVHDX2() {
-    const homeDir = os.homedir();
-    const VHDX_PATH = path.join(homeDir, VHDX_NAME);
-    console.log(`💽 Virtual disk path: ${VHDX_PATH}`);
-
-    if (fs.existsSync(VHDX_PATH)) {
-        console.log("💿 VHDX already exists. Attaching...");
-        const attachScript = `select vdisk file="${VHDX_PATH}"\nattach vdisk\nexit`;
-        fs.writeFileSync("attach.txt", attachScript);
-        execSync(`diskpart /s attach.txt`, { stdio: "inherit" });
-        fs.unlinkSync("attach.txt");
-        return;
-    }
-
-    console.log(`🪶 Creating ${VHDX_SIZE_MB / 1024} GB VHDX...`);
-    const script = createDiskpartScript(VHDX_PATH);
-    fs.writeFileSync("create.txt", script);
-
-    try {
-        execSync(`diskpart /s create.txt`, { stdio: "inherit" });
-        console.log("✅ VHDX created and mounted successfully!");
-    } finally {
-        fs.unlinkSync("create.txt");
-    }
-}
 
 function createAndMountVHDX() {
-    const homeDir = os.homedir();
     const VHDX_PATH = path.join(homeDir, VHDX_NAME);
     console.log(`💽 Virtual disk path: ${VHDX_PATH}`);
 
@@ -293,8 +366,7 @@ function applyDriveIcon(driveLetter, iconPath) {
     try {
         const autorunPath = path.join(`${driveLetter}:\\`, "autorun.inf");
         const iniData = `[autorun]
-ICON=${iconPath}
-`;
+        ICON=${iconPath}`;
 
         // Write autorun.inf file
         fs.writeFileSync(autorunPath, iniData, "utf8");
@@ -338,33 +410,6 @@ function unmountVHDX() {
     }
 }
 
-const createWindow = () => {
-	win = new BrowserWindow({
-		width: 800,
-		height: 600,
-		webPreferences: {
-      		preload: path.join(__dirname, 'preload.js'), // Ensure the correct path to preload.js
-      		contextIsolation: true, // Required for contextBridge to work
-            enableRemoteModule: false, // for Keep secure , it must be false
-            nodeIntegration: false // for Keep secure , it must be false
-    	},
-		icon: path.join(__dirname, 'assets/images/favicon.ico')
-	});
-
-	win.loadFile('index.html');
-
-	// Listen for navigation events from the renderer process
-	ipcMain.on('navigate', (event, page) => {
-	    if (page === 'home') {
-	        win.loadFile('home.html') // Adjust file path as needed
-	            .then(() => console.log('Page loaded successfully'))
-	            .catch((err) => console.error('Error loading page:', err));
-	    } else {
-	        console.error('Unknown page:', page);
-	    }
-	});
-}
-
 app.whenReady().then(() => {
 	createWindow()
 	//const folderPath = createSyncFolderAndDrive();
@@ -392,6 +437,12 @@ ipcMain.handle('get-secret-key', async () => {
 // 	});
 // 	return result.canceled ? null : result.filePaths[0];
 // });
+
+
+ipcMain.handle('getMappedDrive', async () => {
+    const drive = getMappedDriveLetter();
+    return drive || "A:\\";
+});
   
   // Handle list files
 ipcMain.handle('fs:listFiles', async (event, dirPath) => {
@@ -479,58 +530,96 @@ ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, 
 
 // Open folder via dialog and return folder path
 ipcMain.handle('dialog:openFolder', async () => {
-const res = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-if (res.canceled || res.filePaths.length === 0) return null;
-return res.filePaths[0];
+    const res = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    return res.filePaths[0];
 });
 
 // New code
 // Read directory entries (files + folders)
 ipcMain.handle('fs:readDir', async (ev, folderPath) => {
-try {
-const names = await fs.readdir(folderPath, { withFileTypes: true });
-const items = await Promise.all(names.map(async (dirent) => {
-const full = path.join(folderPath, dirent.name);
-const stat = await fs.stat(full);
-return {
-name: dirent.name,
-path: full,
-isDirectory: dirent.isDirectory(),
-size: dirent.isDirectory() ? 0 : stat.size,
-mtimeMs: stat.mtimeMs
-};
-}));
-// sort: folders first, then files
-items.sort((a,b) => (a.isDirectory === b.isDirectory) ? a.name.localeCompare(b.name) : (a.isDirectory ? -1 : 1));
-return items;
-} catch (err) {
-return { error: err.message };
-}
+    try {
+    const names = await fs.readdir(folderPath, { withFileTypes: true });
+    const items = await Promise.all(names.map(async (dirent) => {
+    const full = path.join(folderPath, dirent.name);
+    const stat = await fs.stat(full);
+    return {
+    name: dirent.name,
+    path: full,
+    isDirectory: dirent.isDirectory(),
+    size: dirent.isDirectory() ? 0 : stat.size,
+    mtimeMs: stat.mtimeMs
+    };
+    }));
+    // sort: folders first, then files
+    items.sort((a,b) => (a.isDirectory === b.isDirectory) ? a.name.localeCompare(b.name) : (a.isDirectory ? -1 : 1));
+    return items;
+    } catch (err) {
+    return { error: err.message };
+    }
 });
 
 
 // Read file content (text) - returns utf8 string
 ipcMain.handle('fs:readFile', async (ev, filePath) => {
-try {
-const buffer = await fs.readFile(filePath);
-// try to detect binary by checking for 0 byte
-const isBinary = buffer.includes(0);
-if (isBinary) return { binary: true };
-return { text: buffer.toString('utf8') };
-} catch (err) {
-return { error: err.message };
-}
+    try {
+        const buffer = await fs.readFile(filePath);
+        // try to detect binary by checking for 0 byte
+        const isBinary = buffer.includes(0);
+        if (isBinary) return { binary: true };
+        return { text: buffer.toString('utf8') };
+    } catch (err) {
+        return { error: err.message };
+    }
 });
 
 
 // Optionally open file in external editor
 ipcMain.handle('shell:openItem', (ev, filePath) => {
-try {
-require('electron').shell.openPath(filePath);
-return { ok: true };
-} catch (err) {
-return { error: err.message };
-}
+    try {
+        require('electron').shell.openPath(filePath);
+        return { ok: true };
+    } catch (err) {
+        return { error: err.message };
+    }
+});
+
+
+ipcMain.handle('getAppConfig', async (event) => {
+    const config = {
+        vhdx_name: VHDX_NAME,
+        drivePath: 'F:\\CentrisSync',
+        userName: 'Prince',
+        version: app.getVersion(),
+        vhdx_path : VHDX_PATH
+    };
+    return config;
+});
+
+ipcMain.handle("fs:upload-folder", async (event, srcDir, destDir) => {
+    try {
+        function copyRecursive(src, dest) {
+            if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+            const entries = fs.readdirSync(src, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const srcPath = path.join(src, entry.name);
+                const destPath = path.join(dest, entry.name);
+
+                if (entry.isDirectory()) {
+                    copyRecursive(srcPath, destPath);
+                } else {
+                    fs.copyFileSync(srcPath, destPath);
+                }
+            }
+        }
+
+        copyRecursive(srcDir, destDir);
+        return { success: true };
+    } catch (err) {
+        console.error("Upload error:", err);
+        return { success: false, error: err.message };
+    }
 });
 
 
@@ -542,8 +631,6 @@ function isHiddenWindows(filePath) {
         return false;
     }
 }
-
-
 
 // ipcMain.handle('create-test-folder', async () => {
 //     try {

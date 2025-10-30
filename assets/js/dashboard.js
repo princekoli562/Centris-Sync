@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     
      // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log("API URL:", apiUrl);
     console.log("Secret key:", secret_key);
+    const config = await  window.electronAPI.getAppConfig();
+    console.log(config);
+   
     
      $(document).on("click",".tab",function(e) {
         const tab = $(this).data('tab');
@@ -153,14 +156,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Infinite scroll handler
-$("#file-list").on("scroll", async function () {
-    if (isLoading) return;
+    $("#file-list").on("scroll", async function () {
+        if (isLoading) return;
 
-    const nearBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 50;
-    if (nearBottom && loadedItems < totalItems) {
-        await loadFiles(currentDir, false);
-    }
-});
+        const nearBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 50;
+        if (nearBottom && loadedItems < totalItems) {
+            await loadFiles(currentDir, false);
+        }
+    });
+
+    $(document).on("click", "#uploadFolder", async function () {
+        // Ask main process to open folder dialog
+        const folderPath = await window.electronAPI.openFolder();
+        if (!folderPath) {
+            alert("No folder selected.");
+            return;
+        }
+
+        // Get mapped drive dynamically
+        const mappedDrive = await window.electronAPI.getMappedDrive();
+        console.log("Detected Centris Drive:", mappedDrive);
+
+        //Confirm upload
+        if (!confirm(`Upload contents of "${folderPath}" to ${mappedDrive}?`)) return;
+
+        // Trigger recursive copy
+        // const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
+
+        // if (result.success) {
+        //     alert("Folder uploaded successfully!");
+        //     // Refresh file list
+        //     loadFiles(mappedDrive, true);
+        // } else {
+        //     alert("Error uploading: " + result.error);
+        // }
+    });
     
 
 });
@@ -175,7 +205,6 @@ $("#file-list").on("scroll", async function () {
     let isLoading = false;
 
 
-
 async function loadFiles(dirPath, reset = false) {
     if (isLoading) return;
     isLoading = true;
@@ -185,8 +214,11 @@ async function loadFiles(dirPath, reset = false) {
         currentDir = dirPath;
         $("#file-list").empty();
     }
-    console.log(loadedItems + ' = ' + BATCH_SIZE);
+
+    console.log(`${loadedItems} = ${BATCH_SIZE}`);
+
     const result = await window.electronAPI.listRecurFiles(dirPath, loadedItems, BATCH_SIZE);
+
     if (result.error) {
         $("#file-list").html(`<p style="color:red">${result.error}</p>`);
         isLoading = false;
@@ -195,14 +227,18 @@ async function loadFiles(dirPath, reset = false) {
 
     totalItems = result.total;
     currentDir = result.currentPath;
+
     $("#breadcrumb").html(buildBreadcrumb(result.currentPath));
 
-    // Append batch
+    // Append batch of items
     result.items.forEach(item => {
-        const icon = item.isDirectory ? "📁" : "📄";
-        const div = $(`<div class='file-item' style='cursor:pointer;margin:4px 0;'>
-            <span>${icon} ${item.name}</span>
-        </div>`);
+        const icon = getFileIcon(item.name, item.isDirectory);
+        const div = $(`
+            <div class="file-item" style="cursor:pointer;margin:4px 0;">
+                <div class="file-icon">${icon}</div>
+                <div class="file-name" title="${item.name}">${item.name}</div>
+            </div>
+        `);
 
         div.on("click", () => {
             if (item.isDirectory) loadFiles(item.path, true);
@@ -215,6 +251,38 @@ async function loadFiles(dirPath, reset = false) {
     isLoading = false;
 }
 
+function getFileIcon(fileName, isDirectory) {
+    if (isDirectory) return "📁";
+
+    const ext = fileName.split('.').pop().toLowerCase();
+
+    switch (ext) {
+        case 'pdf': return "📕";
+        case 'doc':
+        case 'docx': return "📝";
+        case 'xls':
+        case 'xlsx': return "📊";
+        case 'ppt':
+        case 'pptx': return "📈";
+        case 'zip':
+        case 'rar':
+        case '7z': return "🗜️";
+        case 'jpg':
+        case 'jpeg':
+        case 'png':
+        case 'gif':
+        case 'bmp': return "🖼️";
+        case 'txt': return "📄";
+        case 'mp3':
+        case 'wav': return "🎵";
+        case 'mp4':
+        case 'mkv':
+        case 'avi': return "🎬";
+        default: return "📄";
+    }
+}
+
+
 function buildBreadcrumb(fullPath) {
     const parts = fullPath.split(/[\\/]+/).filter(Boolean);
     return parts.map((p, i) => {
@@ -223,12 +291,8 @@ function buildBreadcrumb(fullPath) {
     }).join(" › ");
 }
 
-
-
-
-
  // --- Render File List ---
- function renderFileList(selector, files) {
+function renderFileList(selector, files) {
     const container = $(selector);
     container.empty();
     if (!files || files.length === 0) {
@@ -281,4 +345,31 @@ function renderFileList1(container, files) {
         li.textContent = f;
         container.appendChild(li);
     });
+}
+
+function getFileIcon1(fileName, isDirectory) {
+    if (isDirectory) return "<img src='assets/icons/folder.png' width='28'>";
+    const ext = fileName.split('.').pop().toLowerCase();
+    const iconMap = {
+        pdf: "pdf.png",
+        doc: "word.png",
+        docx: "word.png",
+        xls: "excel.png",
+        xlsx: "excel.png",
+        ppt: "ppt.png",
+        pptx: "ppt.png",
+        zip: "zip.png",
+        rar: "zip.png",
+        '7z': "zip.png",
+        jpg: "image.png",
+        jpeg: "image.png",
+        png: "image.png",
+        gif: "image.png",
+        mp3: "audio.png",
+        wav: "audio.png",
+        mp4: "video.png",
+        mkv: "video.png",
+    };
+    const iconFile = iconMap[ext] || "file.png";
+    return `<img src='assets/icons/${iconFile}' width='28'>`;
 }

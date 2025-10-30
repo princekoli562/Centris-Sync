@@ -157,3 +157,165 @@ button { margin-bottom: 10px; }
   color: #155724;
   border: 1px solid #c3e6cb;
 }
+
+.home_container {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    background: #f9f9f9;
+}
+
+ /* Sidebar */
+
+
+.logo-container {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.drive-logo {
+    width: 80%;
+    max-width: 180px;
+    height: auto;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    object-fit: contain;
+}
+
+.sidebar {
+    width: 220px;
+    background: #fff;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column; /* 👈 Stack elements vertically */
+    align-items: flex-start; /* Align to left side */
+    padding: 20px;
+    gap: 10px; /* space between buttons */
+}
+
+.sidebar h2 {
+    margin-bottom: 15px;
+    font-size: 18px;
+    color: #1967d2;
+    margin-bottom: 10px;
+}
+
+.sidebar button {
+    width: 100%;              /* Full width buttons */
+    padding: 8px;
+    font-size: 12px;
+    background: #e8f0fe;
+    color: #1967d2;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.sidebar button:hover {
+    background: #d2e3fc;
+}
+
+.sidebar-item {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    color: #333;
+}
+
+.sidebar-item:hover {
+    background: #e8f0fe;
+    color: #1967d2;
+}
+
+.sidebar-item.active {
+    background: #e8f0fe;
+    color: #1967d2;
+    font-weight: 600;
+}
+
+/* Main area */
+#main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+
+.content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent width auto expansion */
+}
+
+#breadcrumb {
+    padding: 12px 20px;
+    background: #f1f3f4;
+    border-bottom: 1px solid #ddd;
+}
+
+.crumb {
+    cursor: pointer;
+    color: #1a73e8;
+}
+.crumb:hover { text-decoration: underline; }
+
+#file-list {
+  
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;             
+    align-content: flex-start;
+    justify-content: flex-start; 
+    gap: 10px;
+    padding: 20px;
+
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+
+    overflow-y: auto;          
+    overflow-x: hidden;         
+    width: 100%;             
+    box-sizing: border-box;
+    min-height: 700px;
+    max-height: 500px;
+}
+
+.file-item {
+    width: 160px;
+    height: 140px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.file-item:hover {
+    background: #f1f3f4;
+    transform: translateY(-2px);
+}
+
+.file-icon {
+    font-size: 40px;
+    margin-bottom: 8px;
+}
+
+.file-name {
+    font-size: 13px;
+    text-align: center;
+    color: #333;
+}

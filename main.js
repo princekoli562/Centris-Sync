@@ -719,7 +719,12 @@ ipcMain.handle("fs:upload-folder", async (event, srcDir, destDir) => {
             }
         }
 
-        copyRecursive(srcDir, destDir);
+        // 👇 include the folder itself (e.g., D:\uploads\folder1)
+        const folderName = path.basename(srcDir);
+        const destFolder = path.join(destDir, folderName);
+
+        copyRecursive(srcDir, destFolder);
+
         return { success: true };
     } catch (err) {
         console.error("Upload error:", err);

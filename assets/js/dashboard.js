@@ -208,14 +208,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             alert("Error uploading: " + result.error);
         }
     });
+
+    $(document).on("click", () => $(".file-menu").addClass("hidden"));
     
 
 });
 
 
-async function loadFiles(dirPath, reset = false) {
+async function loadFiles11(dirPath, reset = false) {
     if (isLoading) return;
     isLoading = true;
+     // Show loader overlay
+    $("#loader-overlay").removeClass("hidden");
 
     if (reset) {
         loadedItems = 0;
@@ -242,14 +246,40 @@ async function loadFiles(dirPath, reset = false) {
     result.items.forEach(item => {
         const icon = getFileIcon(item.name, item.isDirectory);
         const div = $(`
-            <div class="file-item" style="cursor:pointer;margin:4px 0;">
-                <div class="file-icon">${icon}</div>
-                <div class="file-name" title="${item.name}">${item.name}</div>
+            <div class="file-item">
+                <div class="file-header">
+                    <div class="file-icon">${icon}</div>
+                    <div class="file-name" title="${item.name}">${item.name}</div>
+                </div>
+                <div class="file-menu-btn">⋮</div>
+                <div class="file-menu hidden">
+                    <div class="menu-item" data-action="delete">🗑 Delete</div>
+                    <div class="menu-item" data-action="move">📁 Move</div>
+                    <div class="menu-item" data-action="rename">✏️ Rename</div>
+                </div>
             </div>
         `);
 
-        div.on("click", () => {
+        div.find(".file-name, .file-icon").on("click", () => {
             if (item.isDirectory) loadFiles(item.path, true);
+        });
+
+        div.find(".file-menu-btn").on("click", (e) => {
+            e.stopPropagation();
+            $(".file-menu").addClass("hidden");
+            div.find(".file-menu").toggleClass("hidden");
+        });
+
+        div.find(".file-menu .menu-item").on("click", (e) => {
+            e.stopPropagation();
+            const action = $(e.target).data("action");
+            console.log(`${action} clicked for`, item.path);
+
+            if (action === "delete") deleteFile(item.path);
+            if (action === "move") moveFile(item.path);
+            if (action === "rename") renameFile(item.path);
+
+            div.find(".file-menu").addClass("hidden");
         });
 
         $("#file-list").append(div);
@@ -257,6 +287,120 @@ async function loadFiles(dirPath, reset = false) {
 
     loadedItems += result.items.length;
     isLoading = false;
+}
+
+
+function tick(ms = 16) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
+function showLoader() {
+    $("#loader-overlay").removeClass("hidden");       // full-screen overlay
+    $("#file-list .inline-loader").remove();          // remove any previous inline loader
+    $("#file-list").append(`<div class="inline-loader" style="width:100%;text-align:center;padding:12px;">
+        <div class="loader" style="display:inline-block;margin-bottom:6px"></div>
+        <div>Loading files, please wait...</div>
+    </div>`);
+}
+
+function hideLoader() {
+  $("#loader-overlay").addClass("hidden");
+  $("#file-list .inline-loader").remove();
+}
+
+async function loadFiles(dirPath, reset = false) {
+    if (isLoading) return;
+    isLoading = true;
+
+    if (reset) {
+        loadedItems = 0;
+        currentDir = dirPath;
+        $("#file-list").empty();
+    }
+
+    // Show loader and allow a paint before heavy work
+    showLoader();
+    await tick(); // give browser a frame to render loader
+
+    try {
+        console.log(`Loading files from: ${dirPath} (offset ${loadedItems})`);
+        const result = await window.electronAPI.listRecurFiles(dirPath, loadedItems, BATCH_SIZE);
+
+        if (result.error) {
+            $("#file-list").html(`<p style="color:red">${result.error}</p>`);
+            return;
+        }
+
+        totalItems = result.total;
+        currentDir = result.currentPath;
+        $("#breadcrumb").html(buildBreadcrumb(result.currentPath));
+
+        // Append batch of items
+        result.items.forEach(item => {
+            const icon = getFileIcon(item.name, item.isDirectory);
+            const div = $(`
+                <div class="file-item">
+                    <div class="file-header">
+                        <div class="file-icon">${icon}</div>
+                        <div class="file-name" title="${item.name}">${item.name}</div>
+                    </div>
+                    <div class="file-menu-btn">⋮</div>
+                    <div class="file-menu hidden">
+                        <div class="menu-item" data-action="delete">🗑 Delete</div>
+                        <div class="menu-item" data-action="move">📁 Move</div>
+                        <div class="menu-item" data-action="rename">✏️ Rename</div>
+                    </div>
+                </div>
+            `);
+
+            // open directory on name/icon click
+            div.find(".file-name, .file-icon").on("click", () => {
+                if (item.isDirectory) loadFiles(item.path, true);
+            });
+
+            div.find(".file-menu-btn").on("click", (e) => {
+                e.stopPropagation();
+                $(".file-menu").addClass("hidden");
+                div.find(".file-menu").toggleClass("hidden");
+            });
+
+            div.find(".file-menu .menu-item").on("click", (e) => {
+                e.stopPropagation();
+                const action = $(e.currentTarget).data("action");
+                if (action === "delete") deleteFile(item.path);
+                if (action === "move") moveFile(item.path);
+                if (action === "rename") renameFile(item.path);
+                div.find(".file-menu").addClass("hidden");
+            });
+
+            $("#file-list").append(div);
+        });
+
+        loadedItems += result.items.length;
+
+        // If there are more items, append a "load more" button / sentinel
+        // if (result.hasMore) {
+        //     if ($("#file-list .load-more").length === 0) {
+        //         $("#file-list").append(`<div class="load-more" style="width:100%;text-align:center;padding:10px;">
+        //             <button id="loadMoreBtn">Load more</button>
+        //         </div>`);
+        //         $(document).on("click", "#loadMoreBtn", async () => {
+        //             $("#loadMoreBtn").prop("disabled", true).text("Loading...");
+        //             await loadFiles(dirPath, false);
+        //             $("#loadMoreBtn").prop("disabled", false).text("Load more");
+        //         });
+        //     }
+        // } else {
+        //     $("#file-list .load-more").remove();
+        // }
+
+    } catch (err) {
+        console.error("Error loading files:", err);
+        $("#file-list").html(`<p style="color:red">${err.message}</p>`);
+    } finally {
+        hideLoader();
+        isLoading = false;
+    }
 }
 
 function getFileIcon(fileName, isDirectory) {

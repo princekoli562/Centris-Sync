@@ -56,31 +56,6 @@ window.initializeGlobals = async function () {
 };
 
 
-// 📦 Global initialization function
-// window.initializeGlobals = async function () {
-//     try {
-//         // 1️⃣ Get secret key from preload (Electron)
-//         window.secret_gen_key = await window.secureAPI.getSecretKey();
-//         console.log("Loaded secret_gen_key:", window.secret_gen_key);
-
-//         // 2️⃣ Get value from input if available (optional, e.g. on login page)
-//         const keyInput = document.getElementById("secret_key");
-//         if (keyInput) {
-//             window.secret_key = keyInput.value;
-//         }
-
-//         // 3️⃣ Decrypt the URL
-//         if (window.secret_key && window.secret_gen_key) {
-//             window.apiUrl = CryptoAESdecrypt(window.secret_key, window.secret_gen_key);
-//             console.log("Decrypted API URL:", window.apiUrl);
-//         }
-
-//     } catch (err) {
-//         console.error("Error initializing globals:", err);
-//     }
-// };
-
-
 // Function to handle login
 async function login(username, password, apiUrl) {
     try {

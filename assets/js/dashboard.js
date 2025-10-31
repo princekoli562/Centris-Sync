@@ -1,5 +1,5 @@
 
-const BATCH_SIZE = 1000; // how many files to show per scroll
+const BATCH_SIZE = 500; // how many files to show per scroll
 let allItems = [];
 let visibleCount = 0;
 let currentDir = "F:\\sync";
@@ -35,15 +35,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 🔹 Optionally trigger loadFiles for the default directory
     await loadFiles(currentDir);
     
-   
-    
-     $(document).on("click",".tab",function(e) {
+    $(document).on("click",".tab",function(e) {
         const tab = $(this).data('tab');
         $('.tab').removeClass('active');
         $(this).addClass('active');
         $('.tab-content').removeClass('active');
         $('#' + tab).addClass('active');
-      });
+    });
 
       // --- Local Files ---
     
@@ -252,20 +250,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     //     document.getElementById('grid-view').classList.remove('active');
     //     // your logic to switch to list view
     // });
-    $("#grid-view").on("click", function() {
+    $("#grid-view").on("click",async function() {
         currentView = "grid";
+        $("#file-list").empty();
         $("#list-view").removeClass("active");
         $(this).addClass("active");
         $("#file-list").removeClass("list-view").addClass("grid-view");
-         $("#file-list-header").addClass("hidden");
+        $("#file-list-header").addClass("hidden"); 
+        var  mappedDrive = await window.electronAPI.getMappedDrive();
+        const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+        if (crumbs.length > 0) {
+            const lastCrumb = crumbs[crumbs.length - 1];
+            mappedDrive = lastCrumb.getAttribute('data-path');
+            console.log("mappedDrive path:", mappedDrive);
+        }else{
+            // Get mapped drive dynamically
+            mappedDrive = await window.electronAPI.getMappedDrive();    
+        }
+        await loadFiles(mappedDrive,true);       
     });
 
-    $("#list-view").on("click", function() {
+    $("#list-view").on("click",async function() {
         currentView = "list";
+        $("#file-list").empty();
         $("#grid-view").removeClass("active");
         $(this).addClass("active");
         $("#file-list").removeClass("grid-view").addClass("list-view");
         $("#file-list-header").removeClass("hidden");
+        var  mappedDrive = await window.electronAPI.getMappedDrive();
+        const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+        if (crumbs.length > 0) {
+            const lastCrumb = crumbs[crumbs.length - 1];
+            mappedDrive = lastCrumb.getAttribute('data-path');
+            console.log("mappedDrive path:", mappedDrive);
+        }else{
+            // Get mapped drive dynamically
+            mappedDrive = await window.electronAPI.getMappedDrive();    
+        }
+        await loadFiles(mappedDrive,true);
     });
 
     
@@ -296,6 +318,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         currentMenu = $menu;
         currentBtn = $btn;
+    });
+
+//    $(document).on("click", ".file-item", function (e) {
+//         // Ignore clicks on the menu button or menu items
+//         if ($(e.target).closest(".file-menu, .file-menu-btn").length) return;
+
+//         const $item = $(this);
+
+//         // Toggle selected class
+//         $item.toggleClass("selected");
+
+//         // Add check icon only once
+//         if ($item.find(".check-icon").length === 0) {
+//             $item.append('<div class="check-icon"></div>');
+//         }
+//     });
+
+    $(document).on("click", ".file-item", function (e) {
+        if ($(e.target).closest(".file-menu, .file-menu-btn").length) return;
+        $(this).toggleClass("selected");
     });
 
 
@@ -372,29 +414,12 @@ async function loadFiles(dirPath, reset = false) {
         // Append batch of items
         result.items.forEach(item => {
             const icon = getFileIcon(item.name, item.isDirectory);
-            // const div = $(`
-            //     <div class="file-item">
-            //         <div class="file-header">
-            //             <div class="file-icon">${icon}</div>
-            //             <div class="file-name" title="${item.name}">${item.name}</div>
-            //         </div>
-            //         <div class="file-menu-btn">⋮</div>
-            //         <div class="file-menu hidden">
-            //             <div class="menu-item" data-action="delete">🗑 Delete</div>
-            //             <div class="menu-item" data-action="move">📁 Move</div>
-            //             <div class="menu-item" data-action="rename">✏️ Rename</div>
-            //         </div>
-            //     </div>
-            // `);
-
-
             const isListView = $("#file-list").hasClass("list-view");
-
             const div = $(`
             <div class="file-item">
                 ${
                 isListView
-                    ? `
+                    ? `<div class="check-icon"></div>
                     <div class="file-icon">${icon}</div>
                     <div class="file-name" title="${item.name}">${item.name}</div>
                     <div class="modified-by">${item.modified_by || "-"}</div>
@@ -409,10 +434,12 @@ async function loadFiles(dirPath, reset = false) {
                     </div>
                     `
                     : `
-                    <div class="file-header">
+                    
+                    <div class="file-header">  
+                        <div class="check-icon"></div>                      
                         <div class="file-icon">${icon}</div>
                         <div class="file-name" title="${item.name}">${item.name}</div>
-                    </div>
+                    </div>                    
                     <div class="file-menu-btn">⋮</div>
                     <div class="file-menu hidden">
                         <div class="menu-item" data-action="delete">🗑 Delete</div>

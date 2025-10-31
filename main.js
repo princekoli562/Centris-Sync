@@ -599,6 +599,21 @@ function isHiddenWindows(filePath) {
     }
 }
 
+function formatSize(bytes) {
+  if (bytes === null || bytes === undefined) return "-";
+  if (typeof bytes !== "number") bytes = Number(bytes) || 0;
+
+  if (bytes === 0) return "0 B";
+
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / Math.pow(k, i);
+
+  // show up to 2 decimals but drop trailing zeros (e.g. 12.00 -> 12)
+  return `${parseFloat(value.toFixed(2))} ${sizes[i]}`;
+}
+
 // 🔹 IPC handler to list folder contents
 ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, limit = 1000) => {
     try {
@@ -614,11 +629,32 @@ ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, 
         // Apply pagination
         const paginated = visibleEntries.slice(offset, offset + limit);
 
-        const items = paginated.map(entry => ({
-            name: entry.name,
-            path: path.join(basePath, entry.name),
-            isDirectory: entry.isDirectory(),
-        }));
+        // const items = paginated.map(entry => ({
+        //     name: entry.name,
+        //     path: path.join(basePath, entry.name),
+        //     isDirectory: entry.isDirectory(),
+        //     size: entry.isDirectory() ? "-" : formatSize(stats.size),
+        //     modified_date: new Date(stats.mtime).toLocaleString(),
+        //     modified_by: os.userInfo().username || "Unknown",
+        //     shared: false,
+        // }));
+
+        const items = await Promise.all(
+            paginated.map(async entry => {
+                const fullPath = path.join(basePath, entry.name);
+                const stats = await fs.promises.stat(fullPath);
+
+                return {
+                    name: entry.name,
+                    path: fullPath,
+                    isDirectory: entry.isDirectory(),
+                    size: entry.isDirectory() ? "-" : formatSize(stats.size),
+                    modified_date: new Date(stats.mtime).toLocaleString(),
+                    modified_by: os.userInfo().username || "Unknown",
+                    shared: false,
+                };
+            })
+        );
 
         return {
             currentPath: basePath,
@@ -626,6 +662,8 @@ ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, 
             total: visibleEntries.length,
             hasMore: offset + limit < visibleEntries.length
         };
+        
+
     } catch (err) {
         console.error('Error reading directory:', err);
         return { error: err.message };
@@ -789,6 +827,7 @@ function isHiddenWindows(filePath) {
 
 process.on('exit', () => {
     try { 
+        clearSession();
         unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {

@@ -162,12 +162,11 @@ button { margin-bottom: 10px; }
     font-family: 'Segoe UI', sans-serif;
     margin: 0;
     display: flex;
-    height: 100vh;
+    height: 100%;
     background: #f9f9f9;
+    height: 100%;
+    padding: 0;
 }
-
- /* Sidebar */
-
 
 .logo-container {
     display: flex;
@@ -184,6 +183,8 @@ button { margin-bottom: 10px; }
     margin-bottom: 10px;
     object-fit: contain;
 }
+
+ /* Sidebar */
 
 .sidebar {
     width: 220px;
@@ -261,7 +262,8 @@ button { margin-bottom: 10px; }
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* Prevent width auto expansion */
+    height: 100vh;
+    /* overflow: hidden; Prevent width auto expansion */
 }
 
 #breadcrumb {
@@ -272,7 +274,7 @@ button { margin-bottom: 10px; }
 
 .crumb {
     cursor: pointer;
-    color: #1a73e8;
+    color: #194d79;
 }
 .crumb:hover { text-decoration: underline; }
 
@@ -293,8 +295,10 @@ button { margin-bottom: 10px; }
     overflow-x: hidden;         
     width: 100%;             
     box-sizing: border-box;
-    min-height: 700px;
-    max-height: 500px;
+    /* min-height: 700px;
+    max-height: 500px; */
+    max-height: calc(100vh - 100px);
+    
 }
 
 .file-item {
@@ -312,7 +316,7 @@ button { margin-bottom: 10px; }
     padding: 6px 10px;
     border-radius: 10px;
     background: #f9f9f9;
-    transition: background 0.2s;
+    transition: background 0.2s ease;
     box-sizing: border-box;    /* Important to prevent overflow */
     /*overflow: hidden;           Ensures child content doesn’t overflow */
     z-index: 1; 
@@ -338,7 +342,22 @@ button { margin-bottom: 10px; }
     width: 20px;
 }
 
-.file-name {
+#file-list.grid-view .file-item .file-name {
+  flex: 1;
+     min-width: 0;  
+    font-size: 13px;
+    color: #333;
+    /* overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap; */
+     overflow-wrap: break-word; /* Allow long words to wrap */
+    word-break: break-word;    /* Break long continuous text if needed */
+    white-space: normal;       /* Allow multiple lines */
+    line-height: 1.4;
+    text-align: center; 
+}
+
+.file-namewww {
     flex: 1;
      min-width: 0;  
     font-size: 13px;
@@ -420,7 +439,12 @@ button { margin-bottom: 10px; }
 .file-menu .menu-item:hover {
     background: #f0f0f0;
 }
-#file-list.grid-view .file-item {
+
+#file-list.grid-view {
+  position: relative;
+}
+
+/* #file-list.grid-view .file-item {
     width: 160px;
     border: 1px solid #ddd;
     border-radius: 8px;
@@ -429,6 +453,49 @@ button { margin-bottom: 10px; }
     background: #fff;
     cursor: pointer;
     transition: box-shadow 0.2s ease;
+} */
+
+#file-list.grid-view .file-item {
+  position: relative; /* make check-icon position relative to this box */
+  width: 160px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px;
+  text-align: center;
+  background: #fff;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease;
+}
+
+#file-list.grid-view .file-item .check-icon {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: transparent;
+  transition: all 0.2s ease;
+}
+
+#file-list.grid-view .file-item:hover:not(.selected) .check-icon {
+  border-color: #aaa;
+}
+
+/* When selected: filled blue circle with check mark */
+#file-list.grid-view .file-item.selected .check-icon {
+  background: #007bff;
+  color: #fff;
+  border-color: #007bff;
+  font-weight: bold;
+  content: "✔";
 }
 
 #file-list.grid-view .file-item:hover {
@@ -437,8 +504,19 @@ button { margin-bottom: 10px; }
 
 #file-list.grid-view .file-icon {
     font-size: 36px;
-    margin-bottom: 6px;
+    margin-top: 20px;
+    margin-left: 20px;
 }
+
+:root {
+  --col-check: 40px;
+  --col-name: 2fr;
+  --col-modified-by: 1fr;
+  --col-modified-date: 1.2fr;
+  --col-size: 0.8fr;
+  --col-share: 0.6fr;
+}
+
 
 /* List view */
 #file-list.list-view {
@@ -475,20 +553,6 @@ button { margin-bottom: 10px; }
     margin-right: 10px;
 }
 
-/* #file-list.list-view .file-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-} */
-
-/* 🔹 Menu button */
-/* #file-list.list-view .file-menu-btn {
-    font-size: 18px;
-    color: #666;
-    cursor: pointer;
-    margin-left: 8px;
-} */
-
 #file-list.list-view .file-menu-btn:hover {
     color: #000;
 }
@@ -497,35 +561,34 @@ button { margin-bottom: 10px; }
   visibility: visible;
 }
 
-:root {
-  --col-name: 2fr;
-  --col-modified-by: 1fr;
-  --col-modified-date: 1fr;
-  --col-size: 0.8fr;
-  --col-share: 0.5fr;
-}
 
-/* Header Row */
 #file-list-header {
   display: grid;
   grid-template-columns:
+    var(--col-check)
     var(--col-name)
     var(--col-modified-by)
     var(--col-modified-date)
     var(--col-size)
-    var(--col-share);
+    var(--col-share)
+    40px; /* menu column */
   align-items: center;
-  background: #f3f3f3;
+  background: #f5f5f5;
   border-bottom: 1px solid #ddd;
-  padding: 6px 12px;
   font-weight: 600;
   color: #444;
+  padding: 8px 12px;
   font-size: 13px;
+  text-align: center;
 }
 
 #file-list-header .col {
   flex: 1;
-  text-align: left;
+  text-align: center;
+}
+
+#file-list-header .col.check {
+  flex: 1;
 }
 
 #file-list-header .col.name {
@@ -539,10 +602,6 @@ button { margin-bottom: 10px; }
 }
 
 
-/* #file-list.list-view .file-item > div {
-  flex: 1;
-} */
-
 #file-list.list-view .file-item .file-icon {
   width: 24px;
   text-align: center;
@@ -550,10 +609,24 @@ button { margin-bottom: 10px; }
 
 #file-list.list-view .file-item .file-name {
   flex: 2;
+  min-width: 0;
+  color: #333;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  justify-content: flex-start;
+  text-align: center;
+  padding-left: 10px;
+  line-height: 1.4;
 }
+
+/* flex: 1;
+    min-width: 0;
+    overflow-wrap: break-word; 
+    word-break: break-word;  
+    white-space: normal;       
+    text-align: center;  */
 
 #file-list.list-view .file-item > div {
   overflow: hidden;
@@ -588,6 +661,63 @@ button { margin-bottom: 10px; }
   color: #555;
   text-align: center;
 }
+
+
+.file-item .check-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent; /* always same width */
+  margin: auto;
+  transition: all 0.2s ease;
+  box-sizing: border-box; /* ensures border stays inside size */
+}
+
+.file-item:hover:not(.selected) .check-icon {
+  display: inline-block;
+  border-color: #aaa;
+}
+
+
+/* .file-item.selected .check-icon {
+  display: flex;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #194d79;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #2196f3;
+  box-sizing: border-box;
+  content: "✓";
+} */
+
+.file-item.selected .check-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2196f3;
+  color: #fff;
+  border-color: #2196f3;
+}
+
+
+.file-item.selected .check-icon::after {
+  content: "✓";
+}
+
+/* Highlight selected file */
+.file-item.selected {
+  background-color: #e7f3ff;
+  /* border: 1px solid #194d79; */
+}
+
 
 
 

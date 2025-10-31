@@ -7,6 +7,11 @@ let totalItems = 0;
 let loadedItems = 0;
 let isLoading = false;
 
+let currentView = "grid";
+
+// Apply initial class
+$("#file-list").addClass("grid-view");
+
 document.addEventListener('DOMContentLoaded', async () => {
     
      // Tab switching
@@ -23,6 +28,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log("Secret key:", secret_key);
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
+
+    $(".sidebar .btnload").removeClass("active");
+    $("#openDrive").addClass("active");
+
+    // 🔹 Optionally trigger loadFiles for the default directory
+    await loadFiles(currentDir);
+    
    
     
      $(document).on("click",".tab",function(e) {
@@ -87,7 +99,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch(err) {
           remoteList.html(`<li style="color:red;">Error: ${err.message}</li>`);
         }
-    });   
+    });  
+    
+    let currentMenu = null;
+    let currentBtn = null;
     
     // $(document).on("click", "#openDrive", async function (e) {
     //     //e.preventDefault();
@@ -145,18 +160,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // 🔹 Scroll listener for lazy loading
-    $("#file-list").on("scroll", function () {
-        const scrollTop = $(this).scrollTop();
-        const scrollHeight = $(this)[0].scrollHeight;
-        const clientHeight = $(this).height();
+    // $("#file-list").on("scroll", function () {
+    //     const scrollTop = $(this).scrollTop();
+    //     const scrollHeight = $(this)[0].scrollHeight;
+    //     const clientHeight = $(this).height();
 
-        // if user scrolled near bottom, load next batch
-        if (scrollTop + clientHeight >= scrollHeight - 50) {
-            if (visibleCount < allItems.length) {
-                renderNextBatch();
-            }
-        }
-    });
+    //     // if user scrolled near bottom, load next batch
+    //     if (scrollTop + clientHeight >= scrollHeight - 50) {
+    //         if (visibleCount < allItems.length) {
+    //             renderNextBatch();
+    //         }
+    //     }
+    // });
 
     // 🔹 Breadcrumb navigation
     $(document).on("click", ".crumb", async function () {
@@ -166,7 +181,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Infinite scroll handler
     $("#file-list").on("scroll", async function () {
+        
         if (isLoading) return;
+
+        // if (currentMenu && currentBtn) {
+        //     const offset = currentBtn.offset();
+        //     currentMenu.css({
+        //         top: offset.top + currentBtn.outerHeight() + 4,
+        //         left: offset.left - 100,
+        //     });
+        // }
+
+        if (currentMenu) {
+            $('.floating-menu').remove();
+            currentMenu = null;
+            currentBtn = null;
+        }
 
         const nearBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 50;
         if (nearBottom && loadedItems < totalItems) {
@@ -210,85 +240,89 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     $(document).on("click", () => $(".file-menu").addClass("hidden"));
+
+    // document.getElementById('grid-view').addEventListener('click', function() {
+    //     this.classList.add('active');
+    //     document.getElementById('list-view').classList.remove('active');
+    //     // your logic to switch to grid view
+    // });
+
+    // document.getElementById('list-view').addEventListener('click', function() {
+    //     this.classList.add('active');
+    //     document.getElementById('grid-view').classList.remove('active');
+    //     // your logic to switch to list view
+    // });
+    $("#grid-view").on("click", function() {
+        currentView = "grid";
+        $("#list-view").removeClass("active");
+        $(this).addClass("active");
+        $("#file-list").removeClass("list-view").addClass("grid-view");
+         $("#file-list-header").addClass("hidden");
+    });
+
+    $("#list-view").on("click", function() {
+        currentView = "list";
+        $("#grid-view").removeClass("active");
+        $(this).addClass("active");
+        $("#file-list").removeClass("grid-view").addClass("list-view");
+        $("#file-list-header").removeClass("hidden");
+    });
+
+    
+
+    $(document).on('click', '.file-menu-btn', function (e) {
+        e.stopPropagation();
+
+        // Close any open menu first
+        $('.floating-menu').remove();
+        currentMenu = null;
+        currentBtn = null;
+
+        const $btn = $(this);
+        const $menu = $btn.siblings('.file-menu').clone();
+        const offset = $btn.offset();
+
+        // Clone and append to body
+        $menu
+            .removeClass('hidden')
+            .addClass('floating-menu')
+            .css({
+                position: 'fixed',
+                top: offset.top + $btn.outerHeight() + 4,
+                left: offset.left - 100,
+                zIndex: 999999,
+            })
+            .appendTo('body');
+
+        currentMenu = $menu;
+        currentBtn = $btn;
+    });
+
+
+
+    // Hide when clicking outside
+    $(document).on('click', function () {
+        $('.floating-menu').remove();
+        currentMenu = null;
+        currentBtn = null;
+    });
+
+    // Handle menu actions
+    $(document).on('click', '.floating-menu .menu-item', function (e) {
+        e.stopPropagation();
+        const action = $(this).data('action');
+        $('.floating-menu').remove();
+        currentMenu = null;
+        currentBtn = null;
+
+        const targetPath = $(this).closest('.file-item').data('path');
+        if (action === 'delete') deleteFile(targetPath);
+        if (action === 'move') moveFile(targetPath);
+        if (action === 'rename') renameFile(targetPath);
+    });
     
 
 });
-
-
-async function loadFiles11(dirPath, reset = false) {
-    if (isLoading) return;
-    isLoading = true;
-     // Show loader overlay
-    $("#loader-overlay").removeClass("hidden");
-
-    if (reset) {
-        loadedItems = 0;
-        currentDir = dirPath;
-        $("#file-list").empty();
-    }
-
-    console.log(`${loadedItems} = ${BATCH_SIZE}`);
-
-    const result = await window.electronAPI.listRecurFiles(dirPath, loadedItems, BATCH_SIZE);
-
-    if (result.error) {
-        $("#file-list").html(`<p style="color:red">${result.error}</p>`);
-        isLoading = false;
-        return;
-    }
-
-    totalItems = result.total;
-    currentDir = result.currentPath;
-
-    $("#breadcrumb").html(buildBreadcrumb(result.currentPath));
-
-    // Append batch of items
-    result.items.forEach(item => {
-        const icon = getFileIcon(item.name, item.isDirectory);
-        const div = $(`
-            <div class="file-item">
-                <div class="file-header">
-                    <div class="file-icon">${icon}</div>
-                    <div class="file-name" title="${item.name}">${item.name}</div>
-                </div>
-                <div class="file-menu-btn">⋮</div>
-                <div class="file-menu hidden">
-                    <div class="menu-item" data-action="delete">🗑 Delete</div>
-                    <div class="menu-item" data-action="move">📁 Move</div>
-                    <div class="menu-item" data-action="rename">✏️ Rename</div>
-                </div>
-            </div>
-        `);
-
-        div.find(".file-name, .file-icon").on("click", () => {
-            if (item.isDirectory) loadFiles(item.path, true);
-        });
-
-        div.find(".file-menu-btn").on("click", (e) => {
-            e.stopPropagation();
-            $(".file-menu").addClass("hidden");
-            div.find(".file-menu").toggleClass("hidden");
-        });
-
-        div.find(".file-menu .menu-item").on("click", (e) => {
-            e.stopPropagation();
-            const action = $(e.target).data("action");
-            console.log(`${action} clicked for`, item.path);
-
-            if (action === "delete") deleteFile(item.path);
-            if (action === "move") moveFile(item.path);
-            if (action === "rename") renameFile(item.path);
-
-            div.find(".file-menu").addClass("hidden");
-        });
-
-        $("#file-list").append(div);
-    });
-
-    loadedItems += result.items.length;
-    isLoading = false;
-}
-
 
 function tick(ms = 16) {
   return new Promise(res => setTimeout(res, ms));
@@ -338,8 +372,43 @@ async function loadFiles(dirPath, reset = false) {
         // Append batch of items
         result.items.forEach(item => {
             const icon = getFileIcon(item.name, item.isDirectory);
+            // const div = $(`
+            //     <div class="file-item">
+            //         <div class="file-header">
+            //             <div class="file-icon">${icon}</div>
+            //             <div class="file-name" title="${item.name}">${item.name}</div>
+            //         </div>
+            //         <div class="file-menu-btn">⋮</div>
+            //         <div class="file-menu hidden">
+            //             <div class="menu-item" data-action="delete">🗑 Delete</div>
+            //             <div class="menu-item" data-action="move">📁 Move</div>
+            //             <div class="menu-item" data-action="rename">✏️ Rename</div>
+            //         </div>
+            //     </div>
+            // `);
+
+
+            const isListView = $("#file-list").hasClass("list-view");
+
             const div = $(`
-                <div class="file-item">
+            <div class="file-item">
+                ${
+                isListView
+                    ? `
+                    <div class="file-icon">${icon}</div>
+                    <div class="file-name" title="${item.name}">${item.name}</div>
+                    <div class="modified-by">${item.modified_by || "-"}</div>
+                    <div class="modified-date">${item.modified_date || "-"}</div>
+                    <div class="file-size">${item.size || "-"}</div>
+                    <div class="share">${item.shared ? "🔗" : ""}</div>
+                    <div class="file-menu-btn">⋮</div>
+                    <div class="file-menu hidden">
+                        <div class="menu-item" data-action="delete">🗑 Delete</div>
+                        <div class="menu-item" data-action="move">📁 Move</div>
+                        <div class="menu-item" data-action="rename">✏️ Rename</div>
+                    </div>
+                    `
+                    : `
                     <div class="file-header">
                         <div class="file-icon">${icon}</div>
                         <div class="file-name" title="${item.name}">${item.name}</div>
@@ -350,19 +419,51 @@ async function loadFiles(dirPath, reset = false) {
                         <div class="menu-item" data-action="move">📁 Move</div>
                         <div class="menu-item" data-action="rename">✏️ Rename</div>
                     </div>
-                </div>
+                    `
+                }
+            </div>
             `);
+
+            // const div = $(`
+            //     <div class="file-item">
+            //         ${
+            //             isListView
+            //                 ? `
+            //                     <div class="file-icon">${icon}</div>
+            //                     <div class="file-name" title="${item.name}">${item.name}</div>
+            //                     <div class="file-menu-btn">⋮</div>
+            //                     <div class="file-menu hidden">
+            //                         <div class="menu-item" data-action="delete">🗑 Delete</div>
+            //                         <div class="menu-item" data-action="move">📁 Move</div>
+            //                         <div class="menu-item" data-action="rename">✏️ Rename</div>
+            //                     </div>
+            //                 `
+            //                 : `
+            //                     <div class="file-header">
+            //                         <div class="file-icon">${icon}</div>
+            //                         <div class="file-name" title="${item.name}">${item.name}</div>
+            //                     </div>
+            //                     <div class="file-menu-btn">⋮</div>
+            //                     <div class="file-menu hidden">
+            //                         <div class="menu-item" data-action="delete">🗑 Delete</div>
+            //                         <div class="menu-item" data-action="move">📁 Move</div>
+            //                         <div class="menu-item" data-action="rename">✏️ Rename</div>
+            //                     </div>
+            //                 `
+            //         }
+            //     </div>
+            // `);
 
             // open directory on name/icon click
             div.find(".file-name, .file-icon").on("click", () => {
                 if (item.isDirectory) loadFiles(item.path, true);
             });
 
-            div.find(".file-menu-btn").on("click", (e) => {
-                e.stopPropagation();
-                $(".file-menu").addClass("hidden");
-                div.find(".file-menu").toggleClass("hidden");
-            });
+            // div.find(".file-menu-btn").on("click", (e) => {
+            //     e.stopPropagation();
+            //     $(".file-menu").addClass("hidden");
+            //     div.find(".file-menu").toggleClass("hidden");
+            // });
 
             div.find(".file-menu .menu-item").on("click", (e) => {
                 e.stopPropagation();
@@ -398,6 +499,9 @@ async function loadFiles(dirPath, reset = false) {
         console.error("Error loading files:", err);
         $("#file-list").html(`<p style="color:red">${err.message}</p>`);
     } finally {
+        $("#file-list")
+            .removeClass("grid-view list-view")
+            .addClass(currentView === "grid" ? "grid-view" : "list-view");
         hideLoader();
         isLoading = false;
     }

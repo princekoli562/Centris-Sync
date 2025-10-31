@@ -2,6 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Drive Browser (F:\)</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body class="home_container">
@@ -10,8 +11,8 @@
             <img src="assets/images/centris-sync.png" alt="Centris Drive Logo" class="drive-logo">
         </div>
         <h2>My Drive</h2>
-        <button id="openDrive">📁 My Files </button>
-        <button id="uploadFolder">⬆️ Upload Folder</button>
+        <button id="openDrive" class="btnload">📁 My Files </button>
+        <button id="uploadFolder" class="btnload">⬆️ Upload Folder</button>
     </div>
     <div id="main">
         <div class="header">
@@ -21,6 +22,30 @@
 			</div>
         </div>
         <div class="content">
+            <div class="title-bar">
+                <div class="left-section">
+                    <button class="menu-btn" title="Menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 class="title">Files</h2>
+                </div>
+
+                <div class="right-section">
+                    <button class="view-btn active" id="grid-view" title="Grid View">
+                        <i class="fas fa-th-large"></i>
+                    </button>
+                    <button class="view-btn" id="list-view" title="List View">
+                        <i class="fas fa-list"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="file-list-header" class="hidden">
+                <div class="col name">Name</div>
+                <div class="col modified-by">Modified By</div>
+                <div class="col modified-date">Modified Date</div>
+                <div class="col size">Size</div>
+                <div class="col share">Share</div>
+            </div>
 			<div id="file-list">
 			</div>
         </div>

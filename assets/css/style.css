@@ -203,11 +203,11 @@ button { margin-bottom: 10px; }
     margin-bottom: 10px;
 }
 
-.sidebar button {
+.sidebar .btnload  {
     width: 100%;              /* Full width buttons */
     padding: 8px;
     font-size: 12px;
-    background: #e8f0fe;
+    background: #f3f3f3;
     color: #1967d2;
     border: none;
     border-radius: 6px;
@@ -219,6 +219,12 @@ button { margin-bottom: 10px; }
 
 .sidebar button:hover {
     background: #d2e3fc;
+}
+
+.sidebar .btnload.active {
+    background-color: #e3f2fd; /* light blue hover */
+    color: #0078d7;
+    border-radius: 6px;
 }
 
 .sidebar-item {
@@ -271,7 +277,6 @@ button { margin-bottom: 10px; }
 .crumb:hover { text-decoration: underline; }
 
 #file-list {
-  
     flex: 1;
     display: flex;
     flex-wrap: wrap;             
@@ -292,10 +297,6 @@ button { margin-bottom: 10px; }
     max-height: 500px;
 }
 
-/* .file-item {
-    transition: all 0.2s;
-} */
-
 .file-item {
     width: 160px;
     height: 140px;
@@ -313,10 +314,9 @@ button { margin-bottom: 10px; }
     background: #f9f9f9;
     transition: background 0.2s;
     box-sizing: border-box;    /* Important to prevent overflow */
-    overflow: hidden;          /* Ensures child content doesn’t overflow */
+    /*overflow: hidden;           Ensures child content doesn’t overflow */
+    z-index: 1; 
 }
-
-
 
 .file-item:hover {
     background: #f1f3f4;
@@ -377,8 +377,32 @@ button { margin-bottom: 10px; }
     border: 1px solid #ddd;
     border-radius: 6px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    z-index: 100;
+    z-index: 9999;  
     width: 120px;
+}
+
+.floating-menu {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    width: 140px;
+    padding: 4px 0;
+}
+
+.floating-menu .menu-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.floating-menu .menu-item:hover {
+    background: #f0f0f0;
+}
+
+
+.file-item .file-menu.visible {
+    display: block;
 }
 
 .file-menu.hidden {
@@ -390,11 +414,182 @@ button { margin-bottom: 10px; }
     cursor: pointer;
     font-size: 13px;
     color: #333;
+    white-space: nowrap;
 }
 
 .file-menu .menu-item:hover {
     background: #f0f0f0;
 }
+#file-list.grid-view .file-item {
+    width: 160px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+    background: #fff;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease;
+}
+
+#file-list.grid-view .file-item:hover {
+    box-shadow: 0 0 5px rgba(0,0,0,0.15);
+}
+
+#file-list.grid-view .file-icon {
+    font-size: 36px;
+    margin-bottom: 6px;
+}
+
+/* List view */
+#file-list.list-view {
+    display: flex;
+    width: 100%;
+}
+
+#file-list.list-view .file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #eee;
+    background: #fff;
+    padding: 6px 12px;
+    height: 40px;          /* ✅ fixed compact height */
+    box-sizing: border-box;
+    width: 100%;           /* ✅ span full width */
+}
+
+#file-list.list-view .file-item:hover {
+    background: #f9f9f9;
+}
+
+/* 🔹 Icon + Name alignment */
+#file-list.list-view .file-header {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    overflow: hidden;
+}
+
+#file-list.list-view .file-icon {
+    font-size: 20px;
+    margin-right: 10px;
+}
+
+/* #file-list.list-view .file-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+} */
+
+/* 🔹 Menu button */
+/* #file-list.list-view .file-menu-btn {
+    font-size: 18px;
+    color: #666;
+    cursor: pointer;
+    margin-left: 8px;
+} */
+
+#file-list.list-view .file-menu-btn:hover {
+    color: #000;
+}
+
+#file-list.list-view .file-item:hover .file-menu-btn {
+  visibility: visible;
+}
+
+:root {
+  --col-name: 2fr;
+  --col-modified-by: 1fr;
+  --col-modified-date: 1fr;
+  --col-size: 0.8fr;
+  --col-share: 0.5fr;
+}
+
+/* Header Row */
+#file-list-header {
+  display: grid;
+  grid-template-columns:
+    var(--col-name)
+    var(--col-modified-by)
+    var(--col-modified-date)
+    var(--col-size)
+    var(--col-share);
+  align-items: center;
+  background: #f3f3f3;
+  border-bottom: 1px solid #ddd;
+  padding: 6px 12px;
+  font-weight: 600;
+  color: #444;
+  font-size: 13px;
+}
+
+#file-list-header .col {
+  flex: 1;
+  text-align: left;
+}
+
+#file-list-header .col.name {
+  flex: 2;
+}
+
+#file-list-header .col.size,
+#file-list-header .col.share {
+  text-align: center;
+  flex: 0.8;
+}
+
+
+/* #file-list.list-view .file-item > div {
+  flex: 1;
+} */
+
+#file-list.list-view .file-item .file-icon {
+  width: 24px;
+  text-align: center;
+}
+
+#file-list.list-view .file-item .file-name {
+  flex: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#file-list.list-view .file-item > div {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#file-list.list-view .file-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ✅ Menu button adjustment */
+#file-list.list-view .file-menu-btn {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  font-weight: bold;
+  font-size: 16px;
+  color: #666;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+#file-list.list-view .file-item .modified-by,
+#file-list.list-view .file-item .modified-date,
+#file-list.list-view .file-item .file-size,
+#file-list.list-view .file-item .share {
+  flex: 1;
+  font-size: 13px;
+  color: #555;
+  text-align: center;
+}
+
+
 
 #loader-overlay {
     position: fixed;
@@ -410,6 +605,10 @@ button { margin-bottom: 10px; }
     z-index: 9999;
     font-size: 14px;
     color: #333;
+}
+
+.hidden {
+  display: none !important;
 }
 
 #loader-overlay.hidden {
@@ -429,4 +628,45 @@ button { margin-bottom: 10px; }
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+.title-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    padding: 4px 8px;
+}
+
+.title-bar .left-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.title-bar .title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+}
+
+.title-bar .menu-btn,
+.title-bar .view-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #555;
+    transition: color 0.2s ease;
+}
+
+.title-bar .menu-btn:hover,
+.title-bar .view-btn:hover {
+    color: #000;
+}
+
+.title-bar .view-btn.active {
+    color: #007bff;
 }

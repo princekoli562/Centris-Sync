@@ -194,7 +194,7 @@ button { margin-bottom: 10px; }
     flex-direction: column; /* 👈 Stack elements vertically */
     align-items: flex-start; /* Align to left side */
     padding: 20px;
-    gap: 10px; /* space between buttons */
+    gap: 2px; /* space between buttons */
 }
 
 .sidebar h2 {
@@ -773,7 +773,19 @@ button { margin-bottom: 10px; }
     padding: 4px 8px;
 }
 
-.title-bar .left-section {
+
+.middle-section {
+  flex: 1;
+  justify-content: center;
+}
+
+/* Hide by default */
+.middle-section.hidden {
+  display: none;
+}
+
+.title-bar .left-section,
+.title-bar .middle-section {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -803,4 +815,45 @@ button { margin-bottom: 10px; }
 
 .title-bar .view-btn.active {
     color: #007bff;
+}
+
+/* Center middle section */
+
+.action-btn {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.action-btn:hover {
+  color: #000;
+}
+
+.upload-menu {
+  position: absolute;
+  display: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  z-index: 1; /* ensures it stays above everything */
+  min-width: 220px;
+}
+
+.upload-menu .menu-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+}
+
+.upload-menu .menu-item:hover {
+  background: #f0f0f0;
+}
+
+.upload-menu.show {
+  display: block;
 }

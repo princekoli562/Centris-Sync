@@ -202,42 +202,79 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    $(document).on("click", "#uploadFolder", async function () {
-        // Ask main process to open folder dialog
+    
+
+    $(document).on("click", "#uploadFolder", function (e) {
+        e.stopPropagation();
+        const menu = $("#uploadMenu");
+        $(".upload-menu").not(menu).removeClass("show"); // close others
+        menu.toggleClass("show");
+
+        // Correct button reference
+        const rect = e.currentTarget.getBoundingClientRect();
+        menu.css({
+            top: rect.bottom + window.scrollY + "px",
+            left: rect.left + "px"
+        });
+    });
+
+
+    $(document).on("click", () => $(".file-menu").addClass("hidden"));
+
+    $(document).on("click", function () {
+        $(".upload-menu").removeClass("show");
+    });
+
+    $(document).on("click", "#uploadFolderOption", async function () {
+        $(".upload-menu").removeClass("show");
         const folderPath = await window.electronAPI.openFolder();
-        if (!folderPath) {
-            alert("No folder selected.");
-            return;
-        }
-        var  mappedDrive = await window.electronAPI.getMappedDrive();
+        if (!folderPath) return alert("No folder selected.");
+
+        let mappedDrive;
         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
         if (crumbs.length > 0) {
             const lastCrumb = crumbs[crumbs.length - 1];
             mappedDrive = lastCrumb.getAttribute('data-path');
-            console.log("mappedDrive path:", mappedDrive);
-        }else{
-            // Get mapped drive dynamically
-            mappedDrive = await window.electronAPI.getMappedDrive();    
+        } else {
+            mappedDrive = await window.electronAPI.getMappedDrive();
         }
 
-        
-        console.log("Detected Centris Drive:", mappedDrive);
-        //Confirm upload
         if (!confirm(`Upload contents of "${folderPath}" to ${mappedDrive}?`)) return;
 
-        // Trigger recursive copy
         const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
-
         if (result.success) {
             alert("Folder uploaded successfully!");
-            // Refresh file list
             loadFiles(mappedDrive, true);
         } else {
             alert("Error uploading: " + result.error);
         }
     });
 
-    $(document).on("click", () => $(".file-menu").addClass("hidden"));
+    // 📄 Upload File option
+    $(document).on("click", "#uploadFileOption", async function () {
+        $(".upload-menu").removeClass("show");
+        const filePath = await window.electronAPI.openFiles(); // You need to define this in preload
+        if (!filePath) return alert("No file selected.");
+
+        let mappedDrive;
+        const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+        if (crumbs.length > 0) {
+            const lastCrumb = crumbs[crumbs.length - 1];
+            mappedDrive = lastCrumb.getAttribute('data-path');
+        } else {
+            mappedDrive = await window.electronAPI.getMappedDrive();
+        }
+
+        if (!confirm(`Upload "${filePath}" to ${mappedDrive}?`)) return;
+
+        const result = await window.electronAPI.uploadFileToDrive(filePath, mappedDrive);
+        if (result.success) {
+            alert("File uploaded successfully!");
+            loadFiles(mappedDrive, true);
+        } else {
+            alert("Error uploading: " + result.error);
+        }
+    });
 
     // document.getElementById('grid-view').addEventListener('click', function() {
     //     this.classList.add('active');
@@ -320,24 +357,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentBtn = $btn;
     });
 
-//    $(document).on("click", ".file-item", function (e) {
-//         // Ignore clicks on the menu button or menu items
-//         if ($(e.target).closest(".file-menu, .file-menu-btn").length) return;
-
-//         const $item = $(this);
-
-//         // Toggle selected class
-//         $item.toggleClass("selected");
-
-//         // Add check icon only once
-//         if ($item.find(".check-icon").length === 0) {
-//             $item.append('<div class="check-icon"></div>');
-//         }
-//     });
-
     $(document).on("click", ".file-item", function (e) {
         if ($(e.target).closest(".file-menu, .file-menu-btn").length) return;
         $(this).toggleClass("selected");
+
+        // Add check icon only once
+        // if ($item.find(".check-icon").length === 0) {
+        //  $item.append('<div class="check-icon"></div>');
+        // }
+
+        hideMiddleSection();
     });
 
 
@@ -383,6 +412,16 @@ function hideLoader() {
   $("#loader-overlay").addClass("hidden");
   $("#file-list .inline-loader").remove();
 }
+
+function hideMiddleSection(){
+    const selectedCount = $(".file-item.selected").length;
+    if (selectedCount > 0) {
+        $(".middle-section").removeClass("hidden");
+    } else {
+        $(".middle-section").addClass("hidden");
+    }
+}
+
 
 async function loadFiles(dirPath, reset = false) {
     if (isLoading) return;
@@ -482,7 +521,7 @@ async function loadFiles(dirPath, reset = false) {
             // `);
 
             // open directory on name/icon click
-            div.find(".file-name, .file-icon").on("click", () => {
+            div.find(".file-name, .file-icon").on("dblclick", () => {
                 if (item.isDirectory) loadFiles(item.path, true);
             });
 
@@ -505,6 +544,7 @@ async function loadFiles(dirPath, reset = false) {
         });
 
         loadedItems += result.items.length;
+        hideMiddleSection();
 
         // If there are more items, append a "load more" button / sentinel
         // if (result.hasMore) {

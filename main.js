@@ -678,6 +678,28 @@ ipcMain.handle('dialog:openFolder', async () => {
     return res.filePaths[0];
 });
 
+ipcMain.handle('dialog:openFile', async () => {
+    const res = await dialog.showOpenDialog({
+        properties: ['openFile'], // allows single file selection
+        filters: [
+        { name: 'All Files', extensions: ['*'] }
+        // you can restrict types, e.g. { name: 'Documents', extensions: ['pdf', 'docx'] }
+        ]
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+        return res.filePaths[0];
+});
+
+ipcMain.handle('dialog:openFiles', async () => {
+    // Open dialog to select multiple files
+    const res = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections']
+    });
+
+    if (res.canceled || res.filePaths.length === 0) return null;
+    return res.filePaths; // array of selected file paths
+});
+
 // New code
 // Read directory entries (files + folders)
 ipcMain.handle('fs:readDir', async (ev, folderPath) => {
@@ -769,6 +791,31 @@ ipcMain.handle("fs:upload-folder", async (event, srcDir, destDir) => {
         return { success: false, error: err.message };
     }
 });
+//deepak
+
+ipcMain.handle('uploadFileToDrive', async (event, files, targetDir) => {
+  try {
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      throw new Error('No files selected for upload.');
+    }
+
+    if (!fs.existsSync(targetDir)) {
+      throw new Error('Target directory not found.');
+    }
+
+    for (const file of files) {
+      const fileName = path.basename(file);
+      const destPath = path.join(targetDir, fileName);
+      fs.copyFileSync(file, destPath); // simple copy (synchronous)
+    }
+
+    return { success: true, message: 'All files uploaded successfully.' };
+  } catch (err) {
+    console.error('Upload error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 
 // Set session after login
 ipcMain.on('set-session', (event, data) => {
@@ -827,7 +874,7 @@ function isHiddenWindows(filePath) {
 
 process.on('exit', () => {
     try { 
-        clearSession();
+       clearSession();
         unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {

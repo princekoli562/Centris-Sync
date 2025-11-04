@@ -42,9 +42,9 @@ const os = require('os');
 const { execSync, exec,spawn } = require('child_process');
 const SECRET_KEY = "25fHeqIXYAfa";
 let win;
-const VHDX_NAME = "CentrisSync.vhdx";
+const VHDX_NAME = "Centris-Drive.vhdx";
 const VHDX_SIZE_MB = 10240; // 10 GB
-const VOLUME_LABEL = "CentrisSync";
+const VOLUME_LABEL = "Centris-Drive";
 const homeDir = os.homedir();
 const VHDX_PATH = path.join(homeDir, VHDX_NAME);
 let sessionData = null;
@@ -149,7 +149,7 @@ function clearSession() {
 
 
 function createTestFolderDocumentpath() {
-    const TEST_FOLDER = path.join(app.getPath('documents'), 'CentrisSync');
+    const TEST_FOLDER = path.join(app.getPath('documents'), 'Centris-Drive');
     if (!fs.existsSync(TEST_FOLDER)) {
         fs.mkdirSync(TEST_FOLDER, { recursive: true });
         console.log('Test folder created at', TEST_FOLDER);
@@ -220,7 +220,7 @@ function getMappedDrives() {
     }
 }
 
-function getMappedDriveLetter(volumeLabel = "CentrisSync") {
+function getMappedDriveLetter(volumeLabel = "Centris-Drive") {
     try {
         // Run WMIC to get drive letter and label
         const output = execSync(`wmic logicaldisk get Name,VolumeName`, { encoding: "utf8" });
@@ -228,7 +228,7 @@ function getMappedDriveLetter(volumeLabel = "CentrisSync") {
         // Example output:
         // Name  VolumeName
         // C:    Windows
-        // F:    CentrisSync
+        // F:    Centris-Drive
         // D:    Data
 
         const lines = output.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("Name"));
@@ -251,12 +251,12 @@ function getMappedDriveLetter(volumeLabel = "CentrisSync") {
         return null;
 
     } catch (err) {
-        console.error("❌ Error detecting CentrisSync drive:", err);
+        console.error("❌ Error detecting Centris-Drive drive:", err);
         return null;
     }
 }
 
-function getMappedDriveLetter11(volumeLabel = "CentrisSync") {
+function getMappedDriveLetter11(volumeLabel = "Centris-Drive") {
     try {
         // Get all drives with their VolumeName and Name
         const output = execSync(`wmic logicaldisk get name,volumename`, { encoding: 'utf8' });
@@ -281,7 +281,7 @@ function getMappedDriveLetter11(volumeLabel = "CentrisSync") {
         
         return null; // not found
     } catch (err) {
-        console.error("Error detecting CentrisSync drive:", err);
+        console.error("Error detecting Centris-Drive drive:", err);
         return null;
     }
 }
@@ -452,7 +452,7 @@ function createAndMountVHDX() {
         'wmic logicaldisk get name, volumename'
     ).toString();
 
-    const match = output.match(/([A-Z]):\s+CentrisSync/);
+    const match = output.match(/([A-Z]):\s+Centris-Drive/);
     if (match) {
         const driveLetter = match[1];
         console.log(`🔤 Mounted as ${driveLetter}:\\`);
@@ -467,7 +467,7 @@ function createAndMountVHDX() {
     }
 }
 
-function applyDriveIcon(driveLetter, iconPath) {
+function applyDriveIcon1(driveLetter, iconPath) {
     try {
         const autorunPath = path.join(`${driveLetter}:\\`, "autorun.inf");
         const iniData = `[autorun]
@@ -488,9 +488,34 @@ function applyDriveIcon(driveLetter, iconPath) {
     }
 }
 
+function applyDriveIcon(driveLetter, iconPath) {
+    try {
+        const driveIconPath = path.join(`${driveLetter}:\\`, "favicon.ico");
+        const autorunPath = path.join(`${driveLetter}:\\`, "autorun.inf");
+
+        // Copy icon into the drive (so it persists)
+        fs.copyFileSync(iconPath, driveIconPath);
+
+        // Create autorun.inf pointing to local icon
+        const iniData = `[autorun]\nICON=favicon.ico\n`;
+        fs.writeFileSync(autorunPath, iniData, "utf8");
+
+        // Hide autorun.inf and icon (optional)
+        execSync(`attrib +h +s "${autorunPath}"`);
+        execSync(`attrib +h "${driveIconPath}"`);
+
+        // Refresh Explorer view of the drive
+        execSync(`powershell -Command "((New-Object -ComObject Shell.Application).NameSpace('${driveLetter}:\\')).Self.InvokeVerb('refresh')"`);
+        
+        console.log(`🎨 Custom icon applied to drive ${driveLetter}:\\`);
+    } catch (err) {
+        console.warn(`⚠️ Could not set custom icon: ${err.message}`);
+    }
+}
+
 function unmountVHDX() {
     const homeDir = os.homedir();
-    const VHDX_PATH = path.join(homeDir, "CentrisSync.vhdx");
+    const VHDX_PATH = path.join(homeDir, "Centris-Drive.vhdx");
     console.log(`🔌 Detaching VHDX: ${VHDX_PATH}`);
 
     if (!fs.existsSync(VHDX_PATH)) {
@@ -617,7 +642,7 @@ function formatSize(bytes) {
 // 🔹 IPC handler to list folder contents
 ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, limit = 1000) => {
     try {
-        const basePath = dirPath || 'F:\\';
+        const basePath = dirPath || 'E:\\';
         const entries = fs.readdirSync(basePath, { withFileTypes: true });
 
         // Filter hidden files
@@ -751,9 +776,10 @@ ipcMain.handle('shell:openItem', (ev, filePath) => {
 
 
 ipcMain.handle('getAppConfig', async (event) => {
+    const drive = getMappedDriveLetter();
     const config = {
         vhdx_name: VHDX_NAME,
-        drivePath: 'F:\\CentrisSync',
+        drivePath: drive + ':\\Centris-Drive',
         userName: 'Prince',
         version: app.getVersion(),
         vhdx_path : VHDX_PATH

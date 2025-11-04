@@ -2,7 +2,7 @@
 const BATCH_SIZE = 500; // how many files to show per scroll
 let allItems = [];
 let visibleCount = 0;
-let currentDir = "F:\\sync";
+
 let totalItems = 0;
 let loadedItems = 0;
 let isLoading = false;
@@ -13,7 +13,10 @@ let currentView = "grid";
 $("#file-list").addClass("grid-view");
 
 document.addEventListener('DOMContentLoaded', async () => {
-    
+    const config = await  window.electronAPI.getAppConfig();
+    console.log(config);
+
+    let currentDir = config.drivePath;
      // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
@@ -26,8 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     console.log("API URL:", apiUrl);
     console.log("Secret key:", secret_key);
-    const config = await  window.electronAPI.getAppConfig();
-    console.log(config);
+    
 
     $(".sidebar .btnload").removeClass("active");
     $("#openDrive").addClass("active");
@@ -225,32 +227,62 @@ document.addEventListener('DOMContentLoaded', async () => {
         $(".upload-menu").removeClass("show");
     });
 
+   
     $(document).on("click", "#uploadFolderOption", async function () {
-        $(".upload-menu").removeClass("show");
-        const folderPath = await window.electronAPI.openFolder();
-        if (!folderPath) return alert("No folder selected.");
+        try {
+            $(".upload-menu").removeClass("show");
 
-        let mappedDrive;
-        const crumbs = document.querySelectorAll('#breadcrumb .crumb');
-        if (crumbs.length > 0) {
-            const lastCrumb = crumbs[crumbs.length - 1];
-            mappedDrive = lastCrumb.getAttribute('data-path');
-        } else {
-            mappedDrive = await window.electronAPI.getMappedDrive();
-        }
+            var customer_data = JSON.parse(localStorage.getItem('customer_data'));
+            var domain_data = JSON.parse(localStorage.getItem('domain_data'));
 
-        if (!confirm(`Upload contents of "${folderPath}" to ${mappedDrive}?`)) return;
+            const folderPath = await window.electronAPI.openFolder();
+            if (!folderPath) {
+                alert("No folder selected.");
+                return;
+            }
 
-        const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
-        if (result.success) {
+            let mappedDrive;
+            const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+            if (crumbs.length > 0) {
+                mappedDrive = crumbs[crumbs.length - 1].getAttribute('data-path');
+            } else {
+                mappedDrive = await window.electronAPI.getMappedDrive();
+            }
+
+            if (!confirm(`Upload contents of "${folderPath}" to ${mappedDrive}?`)) return;
+
+            const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
+
+            if (!result.success) {
+                alert("Error uploading: " + result.error);
+                return;
+            }
+
             alert("Folder uploaded successfully!");
             loadFiles(mappedDrive, true);
-        } else {
-            alert("Error uploading: " + result.error);
+
+            const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);
+            console.log("File Tree:", filesTree);
+
+            const res = await fetch(`${apiUrl}/api/sync-files`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    customer_id: customer_data.id,
+                    domain_id: domain_data.id,
+                    root_path: folderPath,
+                    files: filesTree
+                })
+            });
+
+            const data = await res.json();
+            console.log("Sync Result:", data);
+        } catch (err) {
+            console.error("Upload or Sync Error:", err);
+            alert("An error occurred: " + err.message);
         }
     });
 
-    // 📄 Upload File option
     $(document).on("click", "#uploadFileOption", async function () {
         $(".upload-menu").removeClass("show");
         const filePath = await window.electronAPI.openFiles(); // You need to define this in preload

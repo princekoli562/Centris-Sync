@@ -34,7 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uploadFileToDrive: (files, targetDir) => ipcRenderer.invoke('uploadFileToDrive', files, targetDir),
     getMappedDrive: () => ipcRenderer.invoke('getMappedDrive'),
     saveSession: (data) => ipcRenderer.send('save-session', data),
-    clearSession: () => ipcRenderer.send('clear-session'),
+    clearSession: () => ipcRenderer.send('clear-session'),    
+    listFilesRecursively: (path) => ipcRenderer.invoke('fs:listFilesRecursively',path)
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

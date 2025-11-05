@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
 
+
     let currentDir = config.drivePath;
      // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
@@ -259,6 +260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             alert("Folder uploaded successfully!");
+            console.log(folderPath);
             loadFiles(mappedDrive, true);
 
             const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);

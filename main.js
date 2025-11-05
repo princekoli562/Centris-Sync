@@ -4,35 +4,62 @@ const { app, BrowserWindow, ipcMain,dialog } = require('electron');
 const path = require("path");
 const fs = require('fs');
 
-console.log(process.env.NODE_ENV);
+//console.log(process.env.NODE_ENV);
+// if (process.env.NODE_ENV === "development") {
+//   try {
+//     // 👇 Detect electron binary properly (Windows-friendly)
+//     let electronBinary = path.join(
+//       __dirname,
+//       "node_modules",
+//       ".bin",
+//       "electron.cmd"
+//     );
+
+//     // Fallback if .cmd doesn't exist (Linux/macOS case)
+//     if (!fs.existsSync(electronBinary)) {
+//       electronBinary = path.join(
+//         __dirname,
+//         "node_modules",
+//         ".bin",
+//         "electron"
+//       );
+//     }
+
+//     // Load electron-reload
+//     require("electron-reload")(__dirname, {
+//       electron: electronBinary,
+//       //hardResetMethod: "exit",
+//       hardResetMethod: "reload",
+//     });
+
+//     console.log("🔁 Electron auto-reload enabled (Windows Dev Mode)");
+//   } catch (err) {
+//     console.warn("⚠️ Electron reload not active:", err.message);
+//   }
+// }
+///
 if (process.env.NODE_ENV === "development") {
   try {
-    // 👇 Detect electron binary properly (Windows-friendly)
-    let electronBinary = path.join(
-      __dirname,
-      "node_modules",
-      ".bin",
-      "electron.cmd"
-    );
+    const path = require("path");
+    const fs = require("fs");
 
-    // Fallback if .cmd doesn't exist (Linux/macOS case)
+    // Absolute path to Electron executable
+    const electronBinary = path.join(__dirname, "node_modules", "electron", "dist", "electron.exe");
+
     if (!fs.existsSync(electronBinary)) {
-      electronBinary = path.join(
-        __dirname,
-        "node_modules",
-        ".bin",
-        "electron"
-      );
+      throw new Error(`Electron binary not found at ${electronBinary}`);
     }
 
-    // Load electron-reload
     require("electron-reload")(__dirname, {
-      electron: electronBinary,
-      //hardResetMethod: "exit",
-      hardResetMethod: "reload",
+      electron: electronBinary,   // 🔥 must point to .exe
+      usePolling: true,           // required for VHDX/mapped drives
+      awaitWriteFinish: true,
+      forceHardReset: true,
+      hardResetMethod: "exit",
+      ignored: /node_modules|[\/\\]\./,
     });
 
-    console.log("🔁 Electron auto-reload enabled (Windows Dev Mode)");
+    console.log("✅ electron-reload enabled (polling mode)");
   } catch (err) {
     console.warn("⚠️ Electron reload not active:", err.message);
   }
@@ -612,6 +639,49 @@ ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
 	return await listFilesRecursively(dir);
 });
 
+// ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
+//   async function listFilesRecursively(dir, visited = new Set()) {
+//     let results = [];
+
+//     let realPath;
+//     try {
+//       realPath = fs.realpathSync(dir);
+//     } catch {
+//       return results; // skip inaccessible directories
+//     }
+
+//     if (visited.has(realPath)) return results;
+//     visited.add(realPath);
+
+//     const items = fs.readdirSync(dir, { withFileTypes: true });
+
+//     for (const item of items) {
+//       const fullPath = path.join(dir, item.name);
+
+//       try {
+//         const stat = fs.lstatSync(fullPath);
+
+//         if (stat.isSymbolicLink()) continue; // skip junctions
+//         if (item.name.startsWith('.') || item.name.startsWith('$')) continue; // optional: skip hidden/system
+
+//         if (item.isDirectory()) {
+//           results.push({ type: 'folder', name: item.name, path: fullPath });
+//           results = results.concat(await listFilesRecursively(fullPath, visited));
+//         } else if (item.isFile()) {
+//           results.push({ type: 'file', name: item.name, path: fullPath });
+//         }
+//       } catch (err) {
+//         console.warn(`Skipping inaccessible item: ${fullPath}`);
+//         continue;
+//       }
+//     }
+
+//     return results;
+//   }
+
+//   return await listFilesRecursively(dir);
+// });
+
 function isHiddenWindows(filePath) {
     try {
         const output = execSync(
@@ -779,7 +849,7 @@ ipcMain.handle('getAppConfig', async (event) => {
     const drive = getMappedDriveLetter();
     const config = {
         vhdx_name: VHDX_NAME,
-        drivePath: drive + ':\\Centris-Drive',
+        drivePath: drive + '\Centris-Drive',
         userName: 'Prince',
         version: app.getVersion(),
         vhdx_path : VHDX_PATH
@@ -901,7 +971,7 @@ function isHiddenWindows(filePath) {
 process.on('exit', () => {
     try { 
        clearSession();
-        unmountVHDX(); 
+       unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);

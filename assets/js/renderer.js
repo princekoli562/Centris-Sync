@@ -66,5 +66,10 @@ tabs.forEach(tab => {
     });
 });
 
+// Run every 5 minutes
+setInterval(() => {
+    autoSync({ customer_id, domain_id }).catch(err => console.error("Auto sync error:", err));
+}, 300000);
+
 
 

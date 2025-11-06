@@ -3,6 +3,9 @@ const { app, BrowserWindow, ipcMain,dialog } = require('electron');
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
+const crypto = require('crypto');
+
+
 
 //console.log(process.env.NODE_ENV);
 // if (process.env.NODE_ENV === "development") {
@@ -175,6 +178,86 @@ function clearSession() {
     }
 }
 
+async function getDirectorySnapshot(dir) {
+    const snapshot = {};
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const stats = fs.statSync(fullPath);
+        if (entry.isDirectory()) {
+        Object.assign(snapshot, await getDirectorySnapshot(fullPath));
+        } else {
+        const hash = await hashFile(fullPath); // stream-based hashing
+        snapshot[fullPath] = { size: stats.size, mtime: stats.mtimeMs, hash };
+        }
+    }
+    return snapshot;
+}
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('md5');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+function loadTracker() {
+    const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
+    if (fs.existsSync(trackerPath)) {
+        return JSON.parse(fs.readFileSync(trackerPath, 'utf8'));
+    }
+    return {};
+}
+
+function saveTracker(snapshot) {
+    const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
+    fs.writeFileSync(trackerPath, JSON.stringify(snapshot, null, 2));
+}
+
+function findNewOrChangedFiles(current, previous) {
+    const changed = [];
+    for (const file in current) {
+        if (!previous[file] ||
+            previous[file].mtime !== current[file].mtime ||
+            previous[file].hash !== current[file].hash) {
+            changed.push(file);
+        }
+    }
+    return changed;
+}
+
+async function autoSync({ customer_id, domain_id }) {
+    const mappedDrivePath = getMappedDriveLetter();
+    console.log('mappedDrivePath - > ' + mappedDrivePath);
+    const previousSnapshot = loadTracker();
+    const currentSnapshot = getDirectorySnapshot(mappedDrivePath);
+    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
+    
+    if (changedItems.length === 0) {
+        console.log("✅ No new or modified files found to sync.");
+        return;
+    }
+
+    console.log("🔄 Syncing new/updated files...");
+    console.log(apiUrl);
+    const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+            customer_id: customer_id,
+            domain_id: domain_id,
+            files: changedItems 
+        })
+    });
+
+    const data = await res.json();
+    console.log("✅ Auto sync complete:", data.message);
+
+    saveTracker(currentSnapshot);
+}
 
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'Centris-Drive');
@@ -576,6 +659,12 @@ app.whenReady().then(() => {
     } else {
         createAndMountVHDX();
     }
+
+    // 🔄 Auto sync every 5 minutes
+    setInterval(() => {
+        autoSync({ customer_id, domain_id }).catch(console.error);
+    }, 5 * 60 * 1000); // 5 min
+
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
 			createWindow();
@@ -595,6 +684,27 @@ ipcMain.handle('get-secret-key', async () => {
 // 	});
 // 	return result.canceled ? null : result.filePaths[0];
 // });
+
+// ipcMain.handle('auto-sync', async () => {
+//     await autoSync();
+//     return { success: true };
+// });
+
+ipcMain.handle('auto-sync', async (event, args) => {
+    try {
+        console.log("Auto sync triggered...");
+        const result = await autoSync(args);
+
+        // Optional: send status updates to renderer
+        const win = BrowserWindow.getFocusedWindow();
+        win.webContents.send('sync-status', 'Auto sync complete.');
+
+        return { success: true, message: "Auto sync completed", data: result };
+    } catch (error) {
+        console.error("Auto sync failed:", error);
+        return { success: false, message: error.message };
+    }
+});
 
 
 ipcMain.handle('getMappedDrive', async () => {

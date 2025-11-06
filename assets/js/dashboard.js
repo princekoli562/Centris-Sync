@@ -266,7 +266,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadFiles(mappedDrive, true);
             await wait(2000);
 
-            showValidation("Syncing files to Centris Local Drive. Please wait...", 'info');
+            showValidation("Syncing files to Centris Local Drive. Please wait...", 'info',0);
         
            // const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);
            // console.log("File Tree:", filesTree);
@@ -292,60 +292,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             showValidation("An error occurred: " + err.message , 'error');
         }
     });
-
-    // $(document).on("click", "#uploadFileOption", async function () {
-
-    //     try {
-    //         $(".upload-menu").removeClass("show");
-    //         var customer_data = JSON.parse(localStorage.getItem('customer_data'));
-    //         var domain_data = JSON.parse(localStorage.getItem('domain_data'));
-
-    //         const filePath = await window.electronAPI.openFiles(); // You need to define this in preload
-    //         if (!filePath) return alert("No file selected.");
-
-    //         let mappedDrive;
-    //         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
-    //         if (crumbs.length > 0) {
-    //             const lastCrumb = crumbs[crumbs.length - 1];
-    //             mappedDrive = lastCrumb.getAttribute('data-path');
-    //         } else {
-    //             mappedDrive = await window.electronAPI.getMappedDrive();
-    //         }
-
-    //         if (!confirm(`Upload "${filePath}" to ${mappedDrive}?`)) return;
-
-    //         const result = await window.electronAPI.uploadFileToDrive(filePath, mappedDrive);
-    //         if (result.success) {
-    //             showValidation("The files have been uploaded to Centris Local Drive successfully.", 'success');
-    //             loadFiles(mappedDrive, true);
-    //         } else {
-    //             alert("Error uploading: " + result.error);
-    //         }
-
-    //         await wait(2000);
-
-    //         showValidation("Syncing files to Centris Local Drive. Please wait...", 'info');
-            
-    //         const res = await fetch(`${apiUrl}/api/sync-files`, {
-    //             method: "POST",
-    //             headers: { "Content-Type": "application/json" },
-    //             body: JSON.stringify({
-    //                 customer_id: customer_data.id,
-    //                 domain_id: domain_data.id,
-    //                 root_path: filePath
-    //             })
-    //         });
-
-    //         const data = await res.json();
-    //         console.log("Sync Result:", data);
-    //         await wait(2000);
-        
-    //         showValidation(data.message, 'success');
-    //     } catch (err) {
-    //         console.error("Upload or Sync Error:", err);
-    //         showValidation("An error occurred: " + err.message , 'error');
-    //     }
-    // });
 
     // document.getElementById('grid-view').addEventListener('click', function() {
     //     this.classList.add('active');
@@ -450,6 +396,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             mappedDrive = await window.electronAPI.getMappedDrive();    
         }
         await loadFiles(mappedDrive,true);
+    });
+
+    $(document).on("click", "#SyncDrive", async function () {
+        const btn = $(this);
+        btn.prop("disabled", true);
+        btn.html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
+        const customer_data = JSON.parse(localStorage.getItem("customer_data"));
+        const domain_data = JSON.parse(localStorage.getItem("domain_data"));
+
+        try {
+
+            const result = await window.electronAPI.autoSync({
+                customer_id: customer_data.id,
+                domain_id: domain_data.id
+            });
+          
+            showValidation(result.message, result.success ? 'success' : 'error');
+        } catch (err) {
+            console.error("Auto sync error:", err);
+            showValidation("Sync failed: " + err.message, 'error');
+        }
+
+        btn.prop("disabled", false);
+        btn.html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
     });
 
     

@@ -18,6 +18,7 @@
 // assets/js/functions.js
 // Crypto helpers
 // AES Encryption
+
 window.CryptoAESencrypt = function (text, secretKey) {
     return CryptoJS.AES.encrypt(text, secretKey).toString();
 };
@@ -98,18 +99,23 @@ function showValidation(message, type = 'info', duration = 5000) {
     const box = document.getElementById('validationBox');
     if (!box) return;
 
-    // Reset and show
+    // Clear previous timer if any
+    if (box._timeout) {
+        clearTimeout(box._timeout);
+        box._timeout = null;
+    }
+
+    // Reset class and set new message
     box.className = `validation-box ${type}`;
     box.textContent = message;
     box.style.display = 'block';
 
-    // Clear old timers
-    if (box._timeout) clearTimeout(box._timeout);
-
-    // Auto-hide after delay
-    box._timeout = setTimeout(() => {
-        box.style.display = 'none';
-    }, duration);
+    // Only auto-hide if duration > 0
+    if (duration > 0) {
+        box._timeout = setTimeout(() => {
+            box.style.display = 'none';
+        }, duration);
+    }
 }
 
 function hideValidation() {
@@ -120,3 +126,7 @@ function hideValidation() {
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+
+
+

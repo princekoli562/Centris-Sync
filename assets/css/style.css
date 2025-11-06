@@ -158,6 +158,23 @@ button { margin-bottom: 10px; }
   border: 1px solid #c3e6cb;
 }
 
+.validation-box.info {
+  display: block;
+  background-color: #d1ecf1; 
+  color: #0c5460;          
+  border: 1px solid #bee5eb;
+}
+
+/* Add blinking dots for info */
+.validation-box.info::after {
+  content: " ⏳";
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0.5; }
+}
+
 .home_container {
     font-family: 'Segoe UI', sans-serif;
     margin: 0;

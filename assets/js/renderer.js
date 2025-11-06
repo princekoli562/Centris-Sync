@@ -68,15 +68,3 @@ tabs.forEach(tab => {
 
 
 
-function showValidation(message, type = 'error') {
-    validationBox.textContent = message;
-    validationBox.className = `validation-box ${type}`;
-}
-
-function hideValidation() {
-    validationBox.className = 'validation-box';
-    validationBox.textContent = '';
-}
-
-
-

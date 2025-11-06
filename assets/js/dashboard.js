@@ -238,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const folderPath = await window.electronAPI.openFolder();
             if (!folderPath) {
-                alert("No folder selected.");
+                showValidation("No folder selected.", 'info');
                 return;
             }
 
@@ -259,56 +259,93 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            alert("Folder uploaded successfully!");
+           // alert("Folder uploaded successfully!");
+            showValidation("The folder and files have been uploaded to Centris Local Drive successfully.", 'success');
             console.log(folderPath);
+            console.log(mappedDrive);
             loadFiles(mappedDrive, true);
+            await wait(2000);
 
-            const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);
-            console.log("File Tree:", filesTree);
+            showValidation("Syncing files to Centris Local Drive. Please wait...", 'info');
+        
+           // const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);
+           // console.log("File Tree:", filesTree);
 
-            const res = await fetch(`${apiUrl}/api/sync-files`, {
+            const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     customer_id: customer_data.id,
                     domain_id: domain_data.id,
-                    root_path: folderPath,
-                    files: filesTree
+                    root_path: folderPath
                 })
             });
 
             const data = await res.json();
             console.log("Sync Result:", data);
+            await wait(2000);
+          
+            showValidation(data.message, 'success');
+    
         } catch (err) {
             console.error("Upload or Sync Error:", err);
-            alert("An error occurred: " + err.message);
+            showValidation("An error occurred: " + err.message , 'error');
         }
     });
 
-    $(document).on("click", "#uploadFileOption", async function () {
-        $(".upload-menu").removeClass("show");
-        const filePath = await window.electronAPI.openFiles(); // You need to define this in preload
-        if (!filePath) return alert("No file selected.");
+    // $(document).on("click", "#uploadFileOption", async function () {
 
-        let mappedDrive;
-        const crumbs = document.querySelectorAll('#breadcrumb .crumb');
-        if (crumbs.length > 0) {
-            const lastCrumb = crumbs[crumbs.length - 1];
-            mappedDrive = lastCrumb.getAttribute('data-path');
-        } else {
-            mappedDrive = await window.electronAPI.getMappedDrive();
-        }
+    //     try {
+    //         $(".upload-menu").removeClass("show");
+    //         var customer_data = JSON.parse(localStorage.getItem('customer_data'));
+    //         var domain_data = JSON.parse(localStorage.getItem('domain_data'));
 
-        if (!confirm(`Upload "${filePath}" to ${mappedDrive}?`)) return;
+    //         const filePath = await window.electronAPI.openFiles(); // You need to define this in preload
+    //         if (!filePath) return alert("No file selected.");
 
-        const result = await window.electronAPI.uploadFileToDrive(filePath, mappedDrive);
-        if (result.success) {
-            alert("File uploaded successfully!");
-            loadFiles(mappedDrive, true);
-        } else {
-            alert("Error uploading: " + result.error);
-        }
-    });
+    //         let mappedDrive;
+    //         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+    //         if (crumbs.length > 0) {
+    //             const lastCrumb = crumbs[crumbs.length - 1];
+    //             mappedDrive = lastCrumb.getAttribute('data-path');
+    //         } else {
+    //             mappedDrive = await window.electronAPI.getMappedDrive();
+    //         }
+
+    //         if (!confirm(`Upload "${filePath}" to ${mappedDrive}?`)) return;
+
+    //         const result = await window.electronAPI.uploadFileToDrive(filePath, mappedDrive);
+    //         if (result.success) {
+    //             showValidation("The files have been uploaded to Centris Local Drive successfully.", 'success');
+    //             loadFiles(mappedDrive, true);
+    //         } else {
+    //             alert("Error uploading: " + result.error);
+    //         }
+
+    //         await wait(2000);
+
+    //         showValidation("Syncing files to Centris Local Drive. Please wait...", 'info');
+            
+    //         const res = await fetch(`${apiUrl}/api/sync-files`, {
+    //             method: "POST",
+    //             headers: { "Content-Type": "application/json" },
+    //             body: JSON.stringify({
+    //                 customer_id: customer_data.id,
+    //                 domain_id: domain_data.id,
+    //                 root_path: filePath
+    //             })
+    //         });
+
+    //         const data = await res.json();
+    //         console.log("Sync Result:", data);
+    //         await wait(2000);
+        
+    //         showValidation(data.message, 'success');
+    //     } catch (err) {
+    //         console.error("Upload or Sync Error:", err);
+    //         showValidation("An error occurred: " + err.message , 'error');
+    //     }
+    // });
 
     // document.getElementById('grid-view').addEventListener('click', function() {
     //     this.classList.add('active');
@@ -321,6 +358,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     //     document.getElementById('grid-view').classList.remove('active');
     //     // your logic to switch to list view
     // });
+    
+
+    $(document).on("click", "#uploadFileOption", async function () {
+        try {
+            $(".upload-menu").removeClass("show");
+            const customer_data = JSON.parse(localStorage.getItem('customer_data'));
+            const domain_data = JSON.parse(localStorage.getItem('domain_data'));
+
+            const filePaths = await window.electronAPI.openFiles(); // now returns array
+            if (!filePaths || filePaths.length === 0) return alert("No files selected.");
+
+            let mappedDrive;
+            const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+            if (crumbs.length > 0) {
+                mappedDrive = crumbs[crumbs.length - 1].getAttribute('data-path');
+            } else {
+                mappedDrive = await window.electronAPI.getMappedDrive();
+            }
+
+            if (!confirm(`Upload ${filePaths.length} file(s) to ${mappedDrive}?`)) return;
+
+            const result = await window.electronAPI.uploadFileToDrive(filePaths, mappedDrive);
+            if (result.success) {
+                showValidation("The files have been uploaded to Centris Local Drive successfully.", 'success');
+                loadFiles(mappedDrive, true);
+            } else {
+                alert("Error uploading: " + result.error);
+            }
+            console.log(filePaths);
+            await wait(2000);
+            showValidation("Syncing files to Centris Local Drive. Please wait...", 'info');
+
+            const res = await fetch(`${apiUrl}/api/sync-files`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    customer_id: customer_data.id,
+                    domain_id: domain_data.id,
+                    files: filePaths  // send all files for sync
+                })
+            });
+
+            const data = await res.json();
+            console.log("Sync Result:", data);
+
+            await wait(2000);
+            showValidation(data.message, 'success');
+
+        } catch (err) {
+            console.error("Upload or Sync Error:", err);
+            showValidation("An error occurred: " + err.message, 'error');
+        }
+    });
+
     $("#grid-view").on("click",async function() {
         currentView = "grid";
         $("#file-list").empty();

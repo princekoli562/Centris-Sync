@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     //listRecurFiles: (path) => ipcRenderer.invoke('fs:list-recur-files', path),    
     listRecurFiles: (dir, offset = 0, limit = 100) => ipcRenderer.invoke('fs:list-recur-files', dir, offset, limit),
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    openFolders : () => ipcRenderer.invoke('dialog:openFolders'),
     openFile: () => ipcRenderer.invoke('dialog:openFile'),
     openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
     readDir: (folderPath) => ipcRenderer.invoke('fs:readDir', folderPath),

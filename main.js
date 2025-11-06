@@ -45,17 +45,18 @@ if (process.env.NODE_ENV === "development") {
 
     // Absolute path to Electron executable
     const electronBinary = path.join(__dirname, "node_modules", "electron", "dist", "electron.exe");
+    const mainPath = path.join(__dirname, "main.js");
 
     if (!fs.existsSync(electronBinary)) {
       throw new Error(`Electron binary not found at ${electronBinary}`);
     }
 
-    require("electron-reload")(__dirname, {
+    require("electron-reload")(mainPath, {
       electron: electronBinary,   // 🔥 must point to .exe
       usePolling: true,           // required for VHDX/mapped drives
       awaitWriteFinish: true,
       forceHardReset: true,
-      hardResetMethod: "exit",
+      hardResetMethod: "reload",
       ignored: /node_modules|[\/\\]\./,
     });
 
@@ -773,6 +774,23 @@ ipcMain.handle('dialog:openFolder', async () => {
     return res.filePaths[0];
 });
 
+ipcMain.handle('dialog:openFolders', async () => {
+  let folders = [];
+
+  while (true) {
+    const res = await dialog.showOpenDialog({
+      title: 'Select a Folder (Cancel when done)',
+      properties: ['openDirectory','multiSelections']
+    });
+
+    if (res.canceled || res.filePaths.length === 0) break;
+
+    folders.push(res.filePaths[0]);
+  }
+
+  return folders.length > 0 ? folders : null;
+});
+
 ipcMain.handle('dialog:openFile', async () => {
     const res = await dialog.showOpenDialog({
         properties: ['openFile'], // allows single file selection
@@ -952,6 +970,7 @@ function isHiddenWindows(filePath) {
     }
 }
 
+
 // ipcMain.handle('create-test-folder', async () => {
 //     try {
 //         const TEST_FOLDER = path.join(app.getPath('documents'), 'CentrisSyncTest');
@@ -970,8 +989,8 @@ function isHiddenWindows(filePath) {
 
 process.on('exit', () => {
     try { 
-       clearSession();
-       unmountVHDX(); 
+       //clearSession();
+       //unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);

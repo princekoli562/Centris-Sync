@@ -1,0 +1,3 @@
+select vdisk file="C:\Users\Prince\Centris-Drive.vhdx"
+attach vdisk
+exit

@@ -37,7 +37,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveSession: (data) => ipcRenderer.send('save-session', data),
     clearSession: () => ipcRenderer.send('clear-session'),    
     listFilesRecursively: (path) => ipcRenderer.invoke('fs:listFilesRecursively',path),
+     onMainLog: (callback) => ipcRenderer.on('main-log', (_event, message) => callback(message)),
     autoSync: (args) => ipcRenderer.invoke("auto-sync", args),
+    sendSyncIds: (data) => ipcRenderer.send('set-sync-ids', data),
+    getDirectorySnapshot: (dir) => ipcRenderer.invoke("get-directory-snapshot", dir),   
+    saveTracker: (dir) => ipcRenderer.invoke("save-tracker", dir), 
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

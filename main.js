@@ -79,6 +79,26 @@ const VOLUME_LABEL = "Centris-Drive";
 const homeDir = os.homedir();
 const VHDX_PATH = path.join(homeDir, VHDX_NAME);
 let sessionData = null;
+let syncCustomerId = null;
+let syncDomainId = null;
+
+function sendLogToRenderer(message) {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (win && win.webContents) {
+    win.webContents.send('main-log', message);
+  }
+}
+
+// Monkey-patch console.log to also send to renderer
+const originalLog = console.log;
+console.log = (...args) => {
+  originalLog(...args);
+  try {
+    sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
+  } catch (err) {
+    originalLog('Log mirror error:', err);
+  }
+};
 
 const createWindow = async () => {
     win = new BrowserWindow({
@@ -229,12 +249,21 @@ function findNewOrChangedFiles(current, previous) {
     return changed;
 }
 
-async function autoSync({ customer_id, domain_id }) {
+async function autoSync({ customer_id, domain_id, apiUrl }) {
     const mappedDrivePath = getMappedDriveLetter();
     console.log('mappedDrivePath - > ' + mappedDrivePath);
+    console.log('API - > ' + apiUrl);
     const previousSnapshot = loadTracker();
+    console.log(previousSnapshot);
     const currentSnapshot = getDirectorySnapshot(mappedDrivePath);
+    console.log(currentSnapshot);
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
+
+    // if (!Object.keys(previousSnapshot).length) {
+    //     console.log("🆕 First run detected. Creating tracker file...");
+    //     saveTracker(currentSnapshot);
+    //     return;
+    // }
     
     if (changedItems.length === 0) {
         console.log("✅ No new or modified files found to sync.");
@@ -242,7 +271,7 @@ async function autoSync({ customer_id, domain_id }) {
     }
 
     console.log("🔄 Syncing new/updated files...");
-    console.log(apiUrl);
+    
     const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -258,6 +287,8 @@ async function autoSync({ customer_id, domain_id }) {
 
     saveTracker(currentSnapshot);
 }
+
+
 
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'Centris-Drive');
@@ -662,7 +693,7 @@ app.whenReady().then(() => {
 
     // 🔄 Auto sync every 5 minutes
     setInterval(() => {
-        autoSync({ customer_id, domain_id }).catch(console.error);
+        autoSync({ customer_id, domain_id , apiUrl }).catch(console.error);
     }, 5 * 60 * 1000); // 5 min
 
 	app.on('activate', () => {
@@ -685,10 +716,13 @@ ipcMain.handle('get-secret-key', async () => {
 // 	return result.canceled ? null : result.filePaths[0];
 // });
 
-// ipcMain.handle('auto-sync', async () => {
-//     await autoSync();
-//     return { success: true };
-// });
+// Receive and store customer/domain IDs from renderer
+ipcMain.on('set-sync-ids', (event, { customer_id, domain_id , apiUrl }) => {
+    syncCustomerId = customer_id;
+    syncDomainId = domain_id;
+    syncapiUrl = apiUrl;
+    console.log("Received sync IDs:", syncCustomerId, syncDomainId,syncapiUrl);
+});
 
 ipcMain.handle('auto-sync', async (event, args) => {
     try {
@@ -1068,6 +1102,21 @@ ipcMain.handle('check-session', () => {
     }
 
     return sessionData;
+});
+
+ipcMain.handle("get-directory-snapshot", async (event, dir) => {
+    try {
+        const snapshot = await getDirectorySnapshot(dir);
+        return { success: true, snapshot };
+    } catch (error) {
+        console.error("Error generating directory snapshot:", error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('save-tracker', async (event, snapshot) => {
+    saveTracker(snapshot);
+    return { success: true };
 });
 
 

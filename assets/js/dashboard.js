@@ -9,6 +9,27 @@ let isLoading = false;
 
 let currentView = "grid";
 
+const customer_data = JSON.parse(localStorage.getItem('customer_data'));
+const domain_data = JSON.parse(localStorage.getItem('domain_data'));
+const apiUrl = localStorage.getItem('apiUrl');
+
+if (customer_data && domain_data) {
+    window.electronAPI.sendSyncIds({
+        customer_id: customer_data.id,
+        domain_id: domain_data.id,
+        apiUrl:apiUrl
+    });
+
+    // setInterval(() => {
+    //     console.log('start snync');
+    //     window.electronAPI.autoSync({
+    //         customer_id: customer_data.id,
+    //         domain_id: domain_data.id,
+    //         apiUrl:apiUrl
+    //     }).catch(console.error);
+    // }, 2 * 60 * 1000);
+}
+
 // Apply initial class
 $("#file-list").addClass("grid-view");
 
@@ -281,6 +302,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 })
             });
 
+            const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive);
+            const saveShots  = await window.electronAPI.saveTracker(newSnapshot);
+
             const data = await res.json();
             console.log("Sync Result:", data);
             await wait(2000);
@@ -409,7 +433,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const result = await window.electronAPI.autoSync({
                 customer_id: customer_data.id,
-                domain_id: domain_data.id
+                domain_id: domain_data.id,
+                apiUrl:apiUrl
             });
           
             showValidation(result.message, result.success ? 'success' : 'error');
@@ -490,6 +515,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 });
 
+window.electronAPI.onMainLog((message) => {
+  console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
+});
+
 function tick(ms = 16) {
   return new Promise(res => setTimeout(res, ms));
 }
@@ -545,16 +574,80 @@ async function loadFiles(dirPath, reset = false) {
         currentDir = result.currentPath;
         $("#breadcrumb").html(buildBreadcrumb(result.currentPath));
 
+         const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                customer_id: customer_data.id,
+                domain_id: domain_data.id
+            })
+        });
+        const iconMap = await res_icon.json();
+        
         // Append batch of items
         result.items.forEach(item => {
-            const icon = getFileIcon(item.name, item.isDirectory);
+            //const icon = getFileIcon(item.name, item.isDirectory);
+
+            let icon = '';
+            let iconHTML = '';
+
+            if (item.isDirectory) {
+                // Use folder icon
+                if(iconMap.data['folder'].type == 'path'){
+                    icon = iconMap.data['folder'].value;
+                }
+
+                iconHTML = `<div class="file-icon">${iconMap.data['folder'].value}</div>`;
+                
+            } else {
+                // Extract file extension safely
+                const parts = item.name.split('.');
+                const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+                console.log(ext);
+                // Find icon from Laravel map or use default
+
+                // if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
+                //     if(iconMap.data[ext].type == 'path'){
+                //         icon = iconMap.data[ext].value || iconMap.data['default'].value;
+                //     }else{
+                //         icon = iconMap.data[ext].value;    
+                //     }
+                // }
+                // if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
+                //     if (iconMap.data[ext].type === 'path') {
+                //         iconHTML = `<img src="${iconMap.data[ext].value}" class="file-icon-img" alt="${ext} icon">`;
+                //     } else {
+                //         iconHTML = `${iconMap.data[ext].value}`;
+                //     }
+                // }
+
+                if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
+                    // Extension found in iconMap
+                    const iconData = iconMap.data[ext];
+                    if (iconData.type === 'path') {
+                        iconHTML = `<img src="${iconData.value}" class="file-icon-img" alt="${ext} icon">`;
+                    } else {
+                        iconHTML = `${iconData.value}`;
+                    }
+                } else {
+                    // Extension not found → use default
+                    const defaultIcon = iconMap.data['default'];
+                    if (defaultIcon.type === 'path') {
+                        iconHTML = `<img src="${defaultIcon.value}" class="file-icon-img" alt="file icon">`;
+                    } else {
+                        iconHTML = `${defaultIcon.value}`;
+                    }
+                }
+                
+            }
+
             const isListView = $("#file-list").hasClass("list-view");
             const div = $(`
             <div class="file-item">
                 ${
                 isListView
                     ? `<div class="check-icon"></div>
-                    <div class="file-icon">${icon}</div>
+                    <div class="file-icon">${iconHTML}</div>
                     <div class="file-name" title="${item.name}">${item.name}</div>
                     <div class="modified-by">${item.modified_by || "-"}</div>
                     <div class="modified-date">${item.modified_date || "-"}</div>
@@ -571,7 +664,7 @@ async function loadFiles(dirPath, reset = false) {
                     
                     <div class="file-header">  
                         <div class="check-icon"></div>                      
-                        <div class="file-icon">${icon}</div>
+                        <div class="file-icon">${iconHTML}</div>
                         <div class="file-name" title="${item.name}">${item.name}</div>
                     </div>                    
                     <div class="file-menu-btn">⋮</div>

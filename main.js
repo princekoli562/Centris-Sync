@@ -198,21 +198,51 @@ function clearSession() {
     }
 }
 
+// async function getDirectorySnapshot(dir) {
+//     const snapshot = {};
+//     const entries = fs.readdirSync(dir, { withFileTypes: true });
+//     for (const entry of entries) {
+//         const fullPath = path.join(dir, entry.name);
+//         const stats = fs.statSync(fullPath);
+//         if (entry.isDirectory()) {
+//         Object.assign(snapshot, await getDirectorySnapshot(fullPath));
+//         } else {
+//         const hash = await hashFile(fullPath); // stream-based hashing
+//         snapshot[fullPath] = { size: stats.size, mtime: stats.mtimeMs, hash };
+//         }
+//     }
+//     return snapshot;
+// }
+
 async function getDirectorySnapshot(dir) {
-    const snapshot = {};
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        const stats = fs.statSync(fullPath);
-        if (entry.isDirectory()) {
-        Object.assign(snapshot, await getDirectorySnapshot(fullPath));
-        } else {
-        const hash = await hashFile(fullPath); // stream-based hashing
-        snapshot[fullPath] = { size: stats.size, mtime: stats.mtimeMs, hash };
-        }
+  const snapshot = {};
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    const stats = fs.statSync(fullPath);
+
+    if (entry.isDirectory()) {
+      snapshot[fullPath] = {
+        type: "folder",
+        mtime: stats.mtimeMs,
+      };
+      Object.assign(snapshot, await getDirectorySnapshot(fullPath));
+    } else {
+      const hash = await hashFile(fullPath);
+      snapshot[fullPath] = {
+        type: "file",
+        size: stats.size,
+        mtime: stats.mtimeMs,
+        hash,
+      };
     }
-    return snapshot;
+  }
+
+  return snapshot;
 }
+
+
 
 function hashFile(filePath) {
   return new Promise((resolve, reject) => {
@@ -224,6 +254,8 @@ function hashFile(filePath) {
   });
 }
 
+
+
 function loadTracker() {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     if (fs.existsSync(trackerPath)) {
@@ -231,6 +263,8 @@ function loadTracker() {
     }
     return {};
 }
+
+
 
 function saveTracker(snapshot) {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
@@ -249,15 +283,84 @@ function findNewOrChangedFiles(current, previous) {
     return changed;
 }
 
+function findNewOrChangedItems(current, previous) {
+  const changed = [];
+  for (const file in current) {
+    if (!previous[file]) {
+      changed.push({ path: file, ...current[file], reason: "new" });
+    } else if (
+      current[file].type === "file" &&
+      (previous[file].mtime !== current[file].mtime ||
+        previous[file].hash !== current[file].hash)
+    ) {
+      changed.push({ path: file, ...current[file], reason: "modified" });
+    }
+  }
+  return changed;
+}
+
+// 🚀 Auto sync function
+async function autoSync11({ customer_id, domain_id, apiUrl }) {
+  const mappedDrivePath = getMappedDriveLetter() + '\Centris-Drive';
+  console.log("📁 Mapped Drive Path:", mappedDrivePath);
+  console.log("🌐 API:", apiUrl);
+
+  const previousSnapshot = loadTracker();
+  const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
+  const changedItems = findNewOrChangedItems(currentSnapshot, previousSnapshot);
+
+  if (!Object.keys(previousSnapshot).length) {
+    console.log("🆕 First sync detected — saving baseline snapshot...");
+    saveTracker(currentSnapshot);
+    return;
+  }
+
+  if (changedItems.length === 0) {
+    console.log("✅ No new or modified files/folders to sync.");
+    return;
+  }
+
+  console.log(`🔄 Syncing ${changedItems.length} new/updated items...`);
+
+  for (const item of changedItems) {
+    try {
+      const formData = new FormData();
+      formData.append("customer_id", customer_id);
+      formData.append("domain_id", domain_id);
+      formData.append("path", item.path);
+      formData.append("type", item.type);
+
+      // If it's a file, attach its binary content
+      if (item.type === "file") {
+        const fileStream = fs.createReadStream(item.path);
+        formData.append("file", fileStream, path.basename(item.path));
+      }
+
+      const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      console.log(`✅ Synced: ${item.path} → ${data.message || "OK"}`);
+    } catch (err) {
+      console.error(`❌ Error syncing ${item.path}:`, err);
+    }
+  }
+
+  console.log("✅ All changed items synced successfully!");
+  saveTracker(currentSnapshot);
+}
+
 async function autoSync({ customer_id, domain_id, apiUrl }) {
-    const mappedDrivePath = getMappedDriveLetter();
+    const mappedDrivePath = getMappedDriveLetter()  + '\Centris-Drive';
     console.log('mappedDrivePath - > ' + mappedDrivePath);
     console.log('API - > ' + apiUrl);
     const previousSnapshot = loadTracker();
     console.log(previousSnapshot);
-    const currentSnapshot = getDirectorySnapshot(mappedDrivePath);
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
     console.log(currentSnapshot);
-    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
+    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));;
 
     // if (!Object.keys(previousSnapshot).length) {
     //     console.log("🆕 First run detected. Creating tracker file...");
@@ -272,13 +375,14 @@ async function autoSync({ customer_id, domain_id, apiUrl }) {
 
     console.log("🔄 Syncing new/updated files...");
     
-    const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
+    const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
             customer_id: customer_id,
             domain_id: domain_id,
-            files: changedItems 
+            root_path: mappedDrivePath,
+            changed_items: changedItems 
         })
     });
 
@@ -287,7 +391,6 @@ async function autoSync({ customer_id, domain_id, apiUrl }) {
 
     saveTracker(currentSnapshot);
 }
-
 
 
 function createTestFolderDocumentpath() {

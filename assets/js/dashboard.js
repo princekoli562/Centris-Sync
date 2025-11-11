@@ -20,14 +20,14 @@ if (customer_data && domain_data) {
         apiUrl:apiUrl
     });
 
-    // setInterval(() => {
-    //     console.log('start snync');
-    //     window.electronAPI.autoSync({
-    //         customer_id: customer_data.id,
-    //         domain_id: domain_data.id,
-    //         apiUrl:apiUrl
-    //     }).catch(console.error);
-    // }, 2 * 60 * 1000);
+    setInterval(() => {
+        console.log('start snync');
+        window.electronAPI.autoSync({
+            customer_id: customer_data.id,
+            domain_id: domain_data.id,
+            apiUrl:apiUrl
+        }).catch(console.error);
+    }, 2 * 60 * 1000);
 }
 
 // Apply initial class
@@ -605,21 +605,6 @@ async function loadFiles(dirPath, reset = false) {
                 const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
                 console.log(ext);
                 // Find icon from Laravel map or use default
-
-                // if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
-                //     if(iconMap.data[ext].type == 'path'){
-                //         icon = iconMap.data[ext].value || iconMap.data['default'].value;
-                //     }else{
-                //         icon = iconMap.data[ext].value;    
-                //     }
-                // }
-                // if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
-                //     if (iconMap.data[ext].type === 'path') {
-                //         iconHTML = `<img src="${iconMap.data[ext].value}" class="file-icon-img" alt="${ext} icon">`;
-                //     } else {
-                //         iconHTML = `${iconMap.data[ext].value}`;
-                //     }
-                // }
 
                 if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
                     // Extension found in iconMap

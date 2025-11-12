@@ -81,6 +81,16 @@ const VHDX_PATH = path.join(homeDir, VHDX_NAME);
 let sessionData = null;
 let syncCustomerId = null;
 let syncDomainId = null;
+let syncConfigData = null;
+
+let syncData = {
+  customer_id: null,
+  domain_id: null,
+  customer_name: null,
+  domain_name: null,
+  config_data: null,
+  apiUrl: null,
+};
 
 function sendLogToRenderer(message) {
   const win = BrowserWindow.getAllWindows()[0];
@@ -300,66 +310,152 @@ function findNewOrChangedItems(current, previous) {
 }
 
 // 🚀 Auto sync function
-async function autoSync11({ customer_id, domain_id, apiUrl }) {
-  const mappedDrivePath = getMappedDriveLetter() + '\Centris-Drive';
-  console.log("📁 Mapped Drive Path:", mappedDrivePath);
-  console.log("🌐 API:", apiUrl);
 
-  const previousSnapshot = loadTracker();
-  const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
-  const changedItems = findNewOrChangedItems(currentSnapshot, previousSnapshot);
+async function autoSync_wrong({ customer_id, domain_id, apiUrl, syncData }) {
 
-  if (!Object.keys(previousSnapshot).length) {
-    console.log("🆕 First sync detected — saving baseline snapshot...");
-    saveTracker(currentSnapshot);
-    return;
-  }
+    // Show progress UI
+    const progressContainer = document.getElementById('syncProgressContainer');
+    const progressBar = document.getElementById('syncProgressBar');
+    const progressLabel = document.getElementById('syncProgressLabel');
+    progressContainer.style.display = 'block';
+    progressBar.value = 0;
+    progressLabel.textContent = 'Syncing... 0%';
 
-  if (changedItems.length === 0) {
-    console.log("✅ No new or modified files/folders to sync.");
-    return;
-  }
+    return new Promise((resolve, reject) => {
+        // Listen for progress updates from main
+        window.electronAPI.onSyncProgress((_event, data) => {
+            const { done, total } = data;
+            const percent = Math.round((done / total) * 100);
 
-  console.log(`🔄 Syncing ${changedItems.length} new/updated items...`);
+            progressBar.value = percent;
+            progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
 
-  for (const item of changedItems) {
-    try {
-      const formData = new FormData();
-      formData.append("customer_id", customer_id);
-      formData.append("domain_id", domain_id);
-      formData.append("path", item.path);
-      formData.append("type", item.type);
+            if (percent >= 100) {
+                progressLabel.textContent = '✅ Sync complete!';
+            }
+        });
 
-      // If it's a file, attach its binary content
-      if (item.type === "file") {
-        const fileStream = fs.createReadStream(item.path);
-        formData.append("file", fileStream, path.basename(item.path));
-      }
+        // Listen for final status message
+        window.electronAPI.onSyncStatus((_event, statusMsg) => {
+            console.log("📦 Sync status:", statusMsg);
+        });
 
-      const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      console.log(`✅ Synced: ${item.path} → ${data.message || "OK"}`);
-    } catch (err) {
-      console.error(`❌ Error syncing ${item.path}:`, err);
-    }
-  }
-
-  console.log("✅ All changed items synced successfully!");
-  saveTracker(currentSnapshot);
+        // Call main process to start sync
+        window.electronAPI.autoSync({
+            customer_id,
+            domain_id,
+            apiUrl,
+            syncData,
+        })
+        .then(result => {
+            console.log("✅ Sync finished:", result);
+            progressLabel.textContent = '✅ Sync completed!';
+            resolve(result);
+        })
+        .catch(err => {
+            console.error("❌ Auto sync error:", err);
+            progressLabel.textContent = '❌ Sync failed!';
+            reject(err);
+        });
+    });
 }
 
-async function autoSync({ customer_id, domain_id, apiUrl }) {
-    const mappedDrivePath = getMappedDriveLetter()  + '\Centris-Drive';
+async function autoSync({ customer_id, domain_id, apiUrl, syncData }) {
+    progressContainer.style.display = 'block';
+    progressBar.value = 0;
+    progressLabel.textContent = 'Syncing... 0%';
+
+    try {
+        const result = await window.electronAPI.autoSync({
+            customer_id,
+            domain_id,
+            apiUrl,
+            syncData,
+        });
+
+        console.log("✅ Sync finished:", result);
+        progressLabel.textContent = '✅ Sync completed!';
+        return result;
+    } catch (err) {
+        console.error("❌ Auto sync error:", err);
+        progressLabel.textContent = '❌ Sync failed!';
+        throw err;
+    }
+}
+
+
+async function autoSync12({ customer_id, domain_id, apiUrl, syncData, onProgress }) {
+    console.log("🔁 Starting sync...");
+
+    const mappedDrivePath =
+        getMappedDriveLetter() + '\\' +
+        syncData.centris_drive + '\\' +
+        syncData.customer_name + '\\' +
+        syncData.domain_name + '\\';
+
+    const previousSnapshot = loadTracker();
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
+
+    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
+        .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
+    if (changedItems.length === 0) {
+        console.log("✅ No new or modified files found to sync.");
+        return;
+    }
+
+    console.log(`🔄 Found ${changedItems.length} changed items.`);
+
+    let processed = 0;
+    const chunkSize = 10; // adjust based on server/network
+
+    for (let i = 0; i < changedItems.length; i += chunkSize) {
+        const chunk = changedItems.slice(i, i + chunkSize);
+
+        // Upload up to `chunkSize` files in parallel
+        await Promise.all(chunk.map(async (relativePath) => {
+            try {
+                const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        customer_id,
+                        domain_id,
+                        root_path: mappedDrivePath,
+                        changed_items: [relativePath],
+                    }),
+                });
+
+                const data = await res.json();
+                processed++;
+
+                // Update progress in real time
+                if (onProgress) onProgress(processed, changedItems.length, relativePath);
+
+                console.log(`✅ Synced (${processed}/${changedItems.length}): ${relativePath}`);
+            } catch (err) {
+                console.error(`❌ Error syncing ${relativePath}:`, err);
+            }
+        }));
+
+        // Optional small delay between chunks to avoid API overload
+        await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    saveTracker(currentSnapshot);
+    console.log("🎉 Sync complete.");
+}
+
+async function autoSync11({ customer_id, domain_id, apiUrl, syncData }) {
+    console.log(syncData);
+    const mappedDrivePath = getMappedDriveLetter()  + '\\' + syncData.centris_drive + '\\' + syncData.customer_name + '\\' + syncData.domain_name + '\\';
     console.log('mappedDrivePath - > ' + mappedDrivePath);
     console.log('API - > ' + apiUrl);
+    
     const previousSnapshot = loadTracker();
-    console.log(previousSnapshot);
+    //console.log(previousSnapshot);
     const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
-    console.log(currentSnapshot);
+    //console.log(currentSnapshot);
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));;
 
     // if (!Object.keys(previousSnapshot).length) {
@@ -795,9 +891,9 @@ app.whenReady().then(() => {
     }
 
     // 🔄 Auto sync every 5 minutes
-    setInterval(() => {
-        autoSync({ customer_id, domain_id , apiUrl }).catch(console.error);
-    }, 5 * 60 * 1000); // 5 min
+    // setInterval(() => {
+    //     autoSync({ customer_id, domain_id , apiUrl ,syncData }).catch(console.error);
+    // }, 5 * 60 * 1000); // 5 min
 
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
@@ -820,28 +916,124 @@ ipcMain.handle('get-secret-key', async () => {
 // });
 
 // Receive and store customer/domain IDs from renderer
-ipcMain.on('set-sync-ids', (event, { customer_id, domain_id , apiUrl }) => {
+ipcMain.on('set-sync-data-lll', (event, { customer_id, domain_id ,customer_name, domain_name ,config_data, apiUrl}) => {
     syncCustomerId = customer_id;
     syncDomainId = domain_id;
+    syncCustomerName = customer_name;
+    syncDomainName = domain_name;
+    syncConfigData = config_data;
     syncapiUrl = apiUrl;
     console.log("Received sync IDs:", syncCustomerId, syncDomainId,syncapiUrl);
 });
 
-ipcMain.handle('auto-sync', async (event, args) => {
-    try {
-        console.log("Auto sync triggered...");
-        const result = await autoSync(args);
-
-        // Optional: send status updates to renderer
-        const win = BrowserWindow.getFocusedWindow();
-        win.webContents.send('sync-status', 'Auto sync complete.');
-
-        return { success: true, message: "Auto sync completed", data: result };
-    } catch (error) {
-        console.error("Auto sync failed:", error);
-        return { success: false, message: error.message };
-    }
+ipcMain.on('set-sync-data', (event, data) => {
+  syncData = { ...syncData, ...data };
+  event.sender.send('sync-data-updated', syncData);
+  console.log('✅ Received syncData in main:', syncData);
 });
+
+ipcMain.handle('get-sync-data', async () => {
+  return syncData;
+});
+
+
+// ipcMain.handle('auto-sync', async (event, args) => {
+//     try {
+//         console.log("Auto sync triggered...");
+//         const result = await autoSync(args);
+
+//         // Optional: send status updates to renderer
+//         const win = BrowserWindow.getFocusedWindow();
+//         win.webContents.send('sync-status', 'Auto sync complete.');
+
+//         return { success: true, message: "Auto sync completed", data: result };
+//     } catch (error) {
+//         console.error("Auto sync failed:", error);
+//         return { success: false, message: error.message };
+//     }
+// });
+
+ipcMain.handle('auto-sync', async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+  console.log("Auto sync triggered...");
+
+  try {
+    const mappedDrivePath =
+      getMappedDriveLetter() + '\\' +
+      syncData.centris_drive + '\\' +
+      syncData.customer_name + '\\' +
+      syncData.domain_name + '\\';
+
+    const previousSnapshot = loadTracker();
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
+
+    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
+      .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
+    if (changedItems.length === 0) {
+      console.log("✅ No new or modified files found to sync.");
+      return { success: true, message: "No changes" };
+    }
+
+    console.log(`🔄 Found ${changedItems.length} changed items.`);
+    let processed = 0;
+    const chunkSize = 50; // 🔹 Now batch size is 20
+
+    for (let i = 0; i < changedItems.length; i += chunkSize) {
+      const chunk = changedItems.slice(i, i + chunkSize); // batch of 20
+
+      try {
+        // 🔹 Send all 20 files in one POST request
+        const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            root_path: mappedDrivePath,
+            changed_items: chunk, // 👈 send whole batch
+          }),
+        });
+
+        const data = await res.json();
+        processed += chunk.length; // ✅ update count by batch size
+
+        // ✅ Notify renderer of progress after each batch
+       event.sender.send('sync-progress', {
+            done: processed || 0,
+            total: changedItems.length || 0,
+            file: chunk?.[chunk.length - 1] || null,
+        });
+
+        console.log(`✅ Synced batch (${processed}/${changedItems.length})`);
+      } catch (err) {
+        console.error(`❌ Error syncing batch ${i}-${i + chunkSize - 1}:`, err);
+      }
+
+      // Optional delay to prevent API overload
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    saveTracker(currentSnapshot);
+
+    const win = BrowserWindow.getFocusedWindow();
+    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (error) {
+    console.error("Auto sync failed:", error);
+    return { success: false, message: error.message };
+  }
+});
+
+// ipcRenderer.on('sync-progress', (event, data = {}) => {
+//   const { done = 0, total = 0, file = '' } = data;
+//   if (!total) return; // Skip invalid messages
+
+//   //window.postMessage({ type: 'sync-progress', data: { done, total, file } });
+// });
+
 
 
 ipcMain.handle('getMappedDrive', async () => {
@@ -1115,6 +1307,7 @@ ipcMain.handle('getAppConfig', async (event) => {
     const config = {
         vhdx_name: VHDX_NAME,
         drivePath: drive + '\Centris-Drive',
+        driveCustDomPath: drive + '\Centris-Drive',
         userName: 'Prince',
         version: app.getVersion(),
         vhdx_path : VHDX_PATH
@@ -1251,7 +1444,7 @@ function isHiddenWindows(filePath) {
 
 process.on('exit', () => {
     try { 
-       //clearSession();
+      // clearSession();
        //unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {

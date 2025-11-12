@@ -19,6 +19,10 @@
             <div class="menu-item" id="uploadFileOption">📄 Upload File</div>
         </div>
         <button id="SyncDrive" class="btnload">🔄 Sync Drive</button>
+        <div class="progress-container" id="syncProgressContainer" style="display:block;">
+            <label id="syncProgressLabel">Syncing... 0%</label>
+            <progress id="syncProgressBar" value="0" max="100"></progress>
+        </div>
     </div>
     <div id="main">
         <div class="header">
@@ -73,6 +77,6 @@
     
 	<script src="node_modules/jquery/dist/jquery.min.js"></script>
     <script src="assets/js/functions.js"></script>
-  	<script src="assets/js/dashboard.js"></script>
+  	<script  src="assets/js/dashboard.js"></script>
 </body>
 </html>

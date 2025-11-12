@@ -37,13 +37,27 @@ document.getElementById('sync').addEventListener('click', async () => {
 
         window.electronAPI.saveSession({
             user: username,
-            token: secret_key
+            token: secret_key,
+            customer_name : response.customer_data.customer_name,
+            customer_id : response.customer_data.id,
+            domain_name : response.domain_data.domain_name,
+            domain_id : response.domain_data.id,
+        });
+
+        window.electronAPI.sendSyncData({
+            customer_id: response.customer_data.id,
+            domain_id: response.domain_data.id,
+            customer_name : response.customer_data.customer_name,
+            domain_name : response.domain_data.domain_name,
+            config_data : response.config_data,
+            apiUrl:apiUrl
         });
 
         window.secureAPI.send('navigate', 'home');
         localStorage.setItem('secret_key', secret_key);
         localStorage.setItem('secret_gen_key', secret_gen_key);
         localStorage.setItem('apiUrl', apiUrl);
+        localStorage.setItem('config_data', JSON.stringify(response.config_data));
         localStorage.setItem('domain_data', JSON.stringify(response.domain_data));
         localStorage.setItem('customer_data', JSON.stringify(response.customer_data));
         localStorage.setItem('isLoggedIn', 'true');

@@ -12,23 +12,88 @@ let currentView = "grid";
 const customer_data = JSON.parse(localStorage.getItem('customer_data'));
 const domain_data = JSON.parse(localStorage.getItem('domain_data'));
 const apiUrl = localStorage.getItem('apiUrl');
+let syncData = JSON.parse(localStorage.getItem('config_data'));
+const progressContainer = document.getElementById('syncProgressContainer');
+const progressLabel = document.getElementById('syncProgressLabel');
+const progressBar = document.getElementById('syncProgressBar');
+progressContainer.style.display = 'block';
+let isSyncing = false;
+let autoSyncInterval = null;
 
 if (customer_data && domain_data) {
-    window.electronAPI.sendSyncIds({
-        customer_id: customer_data.id,
-        domain_id: domain_data.id,
-        apiUrl:apiUrl
-    });
+   
+    syncData = { ...syncData, customer_name:customer_data.customer_name, domain_name: domain_data.domain_name };
+    console.log(syncData);
+    startAutoSync();
+   
+    // setInterval(async () => {
+    //     if (isSyncing) {
+    //         console.log("⚠️ Sync already in progress, skipping this interval...");
+    //         return;
+    //     }
 
-    setInterval(() => {
-        console.log('start snync');
-        window.electronAPI.autoSync({
-            customer_id: customer_data.id,
-            domain_id: domain_data.id,
-            apiUrl:apiUrl
-        }).catch(console.error);
-    }, 2 * 60 * 1000);
+    //     isSyncing = true;
+    //     console.log("🔄 Starting sync...");
+
+    //     try {
+    //         await window.electronAPI.autoSync({
+    //                 customer_id: customer_data.id,
+    //                 domain_id: domain_data.id,
+    //                 apiUrl: apiUrl,
+    //                 syncData: syncData
+
+    //         });
+    //         console.log("✅ Sync completed successfully");
+    //     } catch (err) {
+    //         console.error("❌ Sync failed:", err);
+    //     } finally {
+    //         isSyncing = false; // Always reset flag after completion
+    //     }
+    // }, 2 * 60 * 1000);
 }
+
+// window.electronAPI.onSyncProgress(({ done, total, file }) => {
+//     const percent = Math.round((done / total) * 100);
+//     progressBar.value = percent;
+//     progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
+
+//     if (percent === 100) {
+//         progressLabel.textContent = '✅ Sync complete!';
+//     }
+// });
+
+// window.electronAPI.onSyncProgress((_event, data) => {
+//     const { done, total } = data;
+//     const percent = Math.round((done / total) * 100);
+
+//     progressContainer.style.display = 'block';
+//     progressBar.value = percent;
+//     progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
+
+//     if (percent >= 100) {
+//         progressLabel.textContent = '✅ Sync complete!';
+//     }
+// });
+
+window.electronAPI.onSyncProgress(({ done, total, file }) => {
+  const percent = Math.round((done / total) * 100);
+  progressBar.value = percent;
+  progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
+  if (percent === 100) progressLabel.textContent = '✅ Sync complete!';
+});
+
+// window.electronAPI.onSyncProgress(({ done, total, file }) => {
+//   const percent = Math.round((done / total) * 100);
+//   const progressBar = document.getElementById('syncProgressBar');
+//   const progressLabel = document.getElementById('syncProgressLabel');
+
+//   progressBar.value = percent;
+//   progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
+// });
+
+window.electronAPI.onSyncStatus((_event, statusMsg) => {
+    console.log("📦 Sync status:", statusMsg);
+});
 
 // Apply initial class
 $("#file-list").addClass("grid-view");
@@ -422,32 +487,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadFiles(mappedDrive,true);
     });
 
+    // $(document).on("click", "#SyncDrive", async function () {
+    //     const btn = $(this);
+    //     btn.prop("disabled", true);
+    //     btn.html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
+    //     const customer_data = JSON.parse(localStorage.getItem("customer_data"));
+    //     const domain_data = JSON.parse(localStorage.getItem("domain_data"));
+
+    //     if (isSyncing) {
+    //         console.log("⚠️ Sync already in progress, skipping this interval...");
+    //         return;
+    //     }
+
+    //     isSyncing = true;
+        
+    //     try {
+    //         const result = await window.electronAPI.autoSync({
+    //             customer_id: customer_data.id,
+    //             domain_id: domain_data.id,
+    //             apiUrl:apiUrl,
+    //             syncData : syncData
+    //         });
+          
+    //         showValidation(result.message, result.success ? 'success' : 'error');
+    //     } catch (err) {
+    //         console.error("Auto sync error:", err);
+    //         showValidation("Sync failed: " + err.message, 'error');
+    //     } finally {
+    //         isSyncing = false; 
+    //     }
+
+    //     btn.prop("disabled", false);
+    //     btn.html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
+    // });
+
     $(document).on("click", "#SyncDrive", async function () {
         const btn = $(this);
-        btn.prop("disabled", true);
-        btn.html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
-        const customer_data = JSON.parse(localStorage.getItem("customer_data"));
-        const domain_data = JSON.parse(localStorage.getItem("domain_data"));
+        btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
 
-        try {
+        await triggerSync(true);
 
-            const result = await window.electronAPI.autoSync({
-                customer_id: customer_data.id,
-                domain_id: domain_data.id,
-                apiUrl:apiUrl
-            });
-          
-            showValidation(result.message, result.success ? 'success' : 'error');
-        } catch (err) {
-            console.error("Auto sync error:", err);
-            showValidation("Sync failed: " + err.message, 'error');
-        }
-
-        btn.prop("disabled", false);
-        btn.html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
+        btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
     });
-
-    
 
     $(document).on('click', '.file-menu-btn', function (e) {
         e.stopPropagation();
@@ -518,6 +599,48 @@ document.addEventListener('DOMContentLoaded', async () => {
 window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
+
+async function triggerSync(manual = false) {
+    if (isSyncing) {
+        console.log("⚠️ Sync already in progress, skipping...");
+        if (manual) showValidation("Sync already in progress.", "warning");
+        return;
+    }
+
+    isSyncing = true;
+    console.log(manual ? "🔄 Manual sync started..." : "🔄 Auto sync started...");
+
+    try {
+        const customer_data = JSON.parse(localStorage.getItem("customer_data"));
+        const domain_data = JSON.parse(localStorage.getItem("domain_data"));
+
+        if (!customer_data || !domain_data) {
+            console.error("Missing customer or domain data");
+            return;
+        }
+
+        const result = await window.electronAPI.autoSync({
+            customer_id: customer_data.id,
+            domain_id: domain_data.id,
+            apiUrl: apiUrl,
+            syncData: syncData
+        });
+
+        console.log(result.message);
+        if (manual) showValidation(result.message, result.success ? 'success' : 'error');
+    } catch (err) {
+        console.error("❌ Sync failed:", err);
+        if (manual) showValidation("Sync failed: " + err.message, 'error');
+    } finally {
+        isSyncing = false;
+    }
+}
+
+
+function startAutoSync() {
+    if (autoSyncInterval) clearInterval(autoSyncInterval); // avoid duplicates
+    autoSyncInterval = setInterval(() => triggerSync(false), 2 * 60 * 1000);
+}
 
 function tick(ms = 16) {
   return new Promise(res => setTimeout(res, ms));

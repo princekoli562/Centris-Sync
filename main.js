@@ -361,26 +361,38 @@ async function autoSync_wrong({ customer_id, domain_id, apiUrl, syncData }) {
 }
 
 async function autoSync({ customer_id, domain_id, apiUrl, syncData }) {
+  // Reset progress UI
+  progressContainer.style.display = 'none';
+  progressBar.value = 0;
+  progressLabel.textContent = 'Syncing... 0%';
+
+  try {
+    // Start sync
+    const result = await window.electronAPI.autoSync({
+      customer_id,
+      domain_id,
+      apiUrl,
+      syncData,
+    });
+
+    console.log("✅ Sync finished:", result);
+
+    // ✅ Show 100% completion
+    progressBar.value = 100;
+    progressLabel.textContent = '✅ Sync completed!';
+
+    // Optional: hide after a delay
+    setTimeout(() => {
+      progressContainer.style.display = 'none';
+    }, 2000);
+
+    return result;
+  } catch (err) {
+    console.error("❌ Auto sync error:", err);
     progressContainer.style.display = 'block';
-    progressBar.value = 0;
-    progressLabel.textContent = 'Syncing... 0%';
-
-    try {
-        const result = await window.electronAPI.autoSync({
-            customer_id,
-            domain_id,
-            apiUrl,
-            syncData,
-        });
-
-        console.log("✅ Sync finished:", result);
-        progressLabel.textContent = '✅ Sync completed!';
-        return result;
-    } catch (err) {
-        console.error("❌ Auto sync error:", err);
-        progressLabel.textContent = '❌ Sync failed!';
-        throw err;
-    }
+    progressLabel.textContent = '❌ Sync failed!';
+    throw err;
+  }
 }
 
 

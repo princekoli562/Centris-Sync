@@ -16,7 +16,7 @@ let syncData = JSON.parse(localStorage.getItem('config_data'));
 const progressContainer = document.getElementById('syncProgressContainer');
 const progressLabel = document.getElementById('syncProgressLabel');
 const progressBar = document.getElementById('syncProgressBar');
-progressContainer.style.display = 'block';
+progressContainer.style.display = 'none';
 let isSyncing = false;
 let autoSyncInterval = null;
 
@@ -24,8 +24,7 @@ if (customer_data && domain_data) {
    
     syncData = { ...syncData, customer_name:customer_data.customer_name, domain_name: domain_data.domain_name };
     console.log(syncData);
-    startAutoSync();
-   
+    
     // setInterval(async () => {
     //     if (isSyncing) {
     //         console.log("⚠️ Sync already in progress, skipping this interval...");
@@ -52,47 +51,41 @@ if (customer_data && domain_data) {
     // }, 2 * 60 * 1000);
 }
 
-// window.electronAPI.onSyncProgress(({ done, total, file }) => {
-//     const percent = Math.round((done / total) * 100);
-//     progressBar.value = percent;
-//     progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
-
-//     if (percent === 100) {
-//         progressLabel.textContent = '✅ Sync complete!';
-//     }
-// });
-
-// window.electronAPI.onSyncProgress((_event, data) => {
-//     const { done, total } = data;
-//     const percent = Math.round((done / total) * 100);
-
-//     progressContainer.style.display = 'block';
-//     progressBar.value = percent;
-//     progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
-
-//     if (percent >= 100) {
-//         progressLabel.textContent = '✅ Sync complete!';
-//     }
-// });
-
 window.electronAPI.onSyncProgress(({ done, total, file }) => {
   const percent = Math.round((done / total) * 100);
+
+  // 🔹 Show progress bar when sync starts
+  progressContainer.style.display = 'block';
+
+  // 🔹 Update values
   progressBar.value = percent;
   progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
-  if (percent === 100) progressLabel.textContent = '✅ Sync complete!';
+
+  // Optional: show current file being synced (if you want)
+  if (file) {
+    console.log(`📁 Currently syncing: ${file}`);
+  }
+
+  // 🔹 When sync completes
+  if (percent === 100) {
+    progressLabel.textContent = '✅ Sync complete!';
+  }
 });
 
-// window.electronAPI.onSyncProgress(({ done, total, file }) => {
-//   const percent = Math.round((done / total) * 100);
-//   const progressBar = document.getElementById('syncProgressBar');
-//   const progressLabel = document.getElementById('syncProgressLabel');
-
-//   progressBar.value = percent;
-//   progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
-// });
 
 window.electronAPI.onSyncStatus((_event, statusMsg) => {
     console.log("📦 Sync status:", statusMsg);
+
+    progressLabel.textContent = statusMsg;
+
+    // 🔹 If sync completed successfully, hide progress bar after 1 second
+    if (statusMsg.toLowerCase().includes('complete')) {
+        setTimeout(() => {
+        progressContainer.style.display = 'none';
+        progressBar.value = 0;
+        progressLabel.textContent = 'Syncing... 0%';
+        }, 5000); // 5 second delay
+    }
 });
 
 // Apply initial class
@@ -101,7 +94,7 @@ $("#file-list").addClass("grid-view");
 document.addEventListener('DOMContentLoaded', async () => {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
-
+    startAutoSync();
 
     let currentDir = config.drivePath;
      // Tab switching

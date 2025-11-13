@@ -76,7 +76,7 @@ window.electronAPI.onSyncProgress(({ done, total, file }) => {
 window.electronAPI.onSyncStatus((_event, statusMsg) => {
     console.log("📦 Sync status:", statusMsg);
 
-    progressLabel.textContent = statusMsg;
+    //progressLabel.textContent = statusMsg;
 
     // 🔹 If sync completed successfully, hide progress bar after 1 second
     if (statusMsg.toLowerCase().includes('complete')) {

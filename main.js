@@ -395,112 +395,6 @@ async function autoSync({ customer_id, domain_id, apiUrl, syncData }) {
   }
 }
 
-
-async function autoSync12({ customer_id, domain_id, apiUrl, syncData, onProgress }) {
-    console.log("🔁 Starting sync...");
-
-    const mappedDrivePath =
-        getMappedDriveLetter() + '\\' +
-        syncData.centris_drive + '\\' +
-        syncData.customer_name + '\\' +
-        syncData.domain_name + '\\';
-
-    const previousSnapshot = loadTracker();
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
-
-    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
-        .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
-
-    if (changedItems.length === 0) {
-        console.log("✅ No new or modified files found to sync.");
-        return;
-    }
-
-    console.log(`🔄 Found ${changedItems.length} changed items.`);
-
-    let processed = 0;
-    const chunkSize = 10; // adjust based on server/network
-
-    for (let i = 0; i < changedItems.length; i += chunkSize) {
-        const chunk = changedItems.slice(i, i + chunkSize);
-
-        // Upload up to `chunkSize` files in parallel
-        await Promise.all(chunk.map(async (relativePath) => {
-            try {
-                const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        customer_id,
-                        domain_id,
-                        root_path: mappedDrivePath,
-                        changed_items: [relativePath],
-                    }),
-                });
-
-                const data = await res.json();
-                processed++;
-
-                // Update progress in real time
-                if (onProgress) onProgress(processed, changedItems.length, relativePath);
-
-                console.log(`✅ Synced (${processed}/${changedItems.length}): ${relativePath}`);
-            } catch (err) {
-                console.error(`❌ Error syncing ${relativePath}:`, err);
-            }
-        }));
-
-        // Optional small delay between chunks to avoid API overload
-        await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    saveTracker(currentSnapshot);
-    console.log("🎉 Sync complete.");
-}
-
-async function autoSync11({ customer_id, domain_id, apiUrl, syncData }) {
-    console.log(syncData);
-    const mappedDrivePath = getMappedDriveLetter()  + '\\' + syncData.centris_drive + '\\' + syncData.customer_name + '\\' + syncData.domain_name + '\\';
-    console.log('mappedDrivePath - > ' + mappedDrivePath);
-    console.log('API - > ' + apiUrl);
-    
-    const previousSnapshot = loadTracker();
-    //console.log(previousSnapshot);
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
-    //console.log(currentSnapshot);
-    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));;
-
-    // if (!Object.keys(previousSnapshot).length) {
-    //     console.log("🆕 First run detected. Creating tracker file...");
-    //     saveTracker(currentSnapshot);
-    //     return;
-    // }
-    
-    if (changedItems.length === 0) {
-        console.log("✅ No new or modified files found to sync.");
-        return;
-    }
-
-    console.log("🔄 Syncing new/updated files...");
-    
-    const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-            customer_id: customer_id,
-            domain_id: domain_id,
-            root_path: mappedDrivePath,
-            changed_items: changedItems 
-        })
-    });
-
-    const data = await res.json();
-    console.log("✅ Auto sync complete:", data.message);
-
-    saveTracker(currentSnapshot);
-}
-
-
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'Centris-Drive');
     if (!fs.existsSync(TEST_FOLDER)) {
@@ -965,7 +859,7 @@ ipcMain.handle('get-sync-data', async () => {
 //     }
 // });
 
-ipcMain.handle('auto-sync', async (event, args) => {
+ipcMain.handle('auto-sync-old', async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
   console.log("Auto sync triggered...");
 
@@ -982,8 +876,13 @@ ipcMain.handle('auto-sync', async (event, args) => {
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
       .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
 
-    if (changedItems.length === 0) {
-      console.log("✅ No new or modified files found to sync.");
+       // 🔹 Find deleted files/folders
+    const deletedItems = Object.keys(previousSnapshot).filter(
+      oldPath => !currentSnapshot[oldPath]
+    ).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
+     if (changedItems.length === 0 && deletedItems.length === 0) {
+      console.log("✅ No new, modified, or deleted files found to sync.");
       return { success: true, message: "No changes" };
     }
 
@@ -1038,6 +937,107 @@ ipcMain.handle('auto-sync', async (event, args) => {
     return { success: false, message: error.message };
   }
 });
+
+
+ipcMain.handle('auto-sync', async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+  console.log("Auto sync triggered...");
+
+  try {
+    const mappedDrivePath =
+      getMappedDriveLetter() + '\\' +
+      syncData.centris_drive + '\\' +
+      syncData.customer_name + '\\' +
+      syncData.domain_name + '\\';
+
+    const previousSnapshot = loadTracker();
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
+
+    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
+      .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
+    // 🔹 Find deleted files/folders
+    const deletedItems = Object.keys(previousSnapshot).filter(
+      oldPath => !currentSnapshot[oldPath]
+    ).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
+    if (changedItems.length === 0 && deletedItems.length === 0) {
+      console.log("✅ No new, modified, or deleted files found to sync.");
+      return { success: true, message: "No changes" };
+    }
+
+    console.log(`🔄 Found ${changedItems.length} changed and ${deletedItems.length} deleted items.`);
+
+    // 🔹 Sync changed/new files
+    if (changedItems.length > 0) {
+      let processed = 0;
+      const chunkSize = 50;
+
+      for (let i = 0; i < changedItems.length; i += chunkSize) {
+        const chunk = changedItems.slice(i, i + chunkSize);
+        try {
+          const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              customer_id,
+              domain_id,
+              root_path: mappedDrivePath,
+              changed_items: chunk,
+            }),
+          });
+
+          await res.json();
+          processed += chunk.length;
+
+          event.sender.send('sync-progress', {
+            done: processed,
+            total: changedItems.length,
+            file: chunk?.[chunk.length - 1] || null,
+          });
+
+          console.log(`✅ Synced batch (${processed}/${changedItems.length})`);
+        } catch (err) {
+          console.error(`❌ Error syncing batch:`, err);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    // 🔹 Handle deleted files/folders
+    if (deletedItems.length > 0) {
+      try {
+        console.log(`🗑️ Deleting ${deletedItems.length} items from server...`);
+        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            root_path: mappedDrivePath,
+            deleted_items: deletedItems,
+          }),
+        });
+      } catch (err) {
+        console.error("❌ Error deleting items on server:", err);
+      }
+    }
+
+    // ✅ Save latest snapshot
+    saveTracker(currentSnapshot);
+
+    const win = BrowserWindow.getFocusedWindow();
+    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (error) {
+    console.error("Auto sync failed:", error);
+    return { success: false, message: error.message };
+  }
+});
+
 
 // ipcRenderer.on('sync-progress', (event, data = {}) => {
 //   const { done = 0, total = 0, file = '' } = data;

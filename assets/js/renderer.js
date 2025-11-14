@@ -41,6 +41,7 @@ document.getElementById('sync').addEventListener('click', async () => {
             customer_data : response.customer_data,
             config_data : response.config_data,
             domain_data : response.domain_data,
+            user_data : response.data,
             apiUrl:apiUrl
         });
 
@@ -48,6 +49,7 @@ document.getElementById('sync').addEventListener('click', async () => {
             customer_data : response.customer_data,
             domain_data : response.domain_data,
             config_data : response.config_data,
+            user_data : response.data,
             apiUrl:apiUrl
         });
 
@@ -58,6 +60,7 @@ document.getElementById('sync').addEventListener('click', async () => {
         localStorage.setItem('config_data', JSON.stringify(response.config_data));
         localStorage.setItem('domain_data', JSON.stringify(response.domain_data));
         localStorage.setItem('customer_data', JSON.stringify(response.customer_data));
+        localStorage.setItem('user_data', JSON.stringify(response.data));
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('loginTime', Date.now()); // optional, for expiry handling
     } catch (error) {

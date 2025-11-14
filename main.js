@@ -86,6 +86,7 @@ let redirectingToLogin = false;
 let syncData = {
   customer_data: null,
   domain_data: null,
+  user_data: null,
   config_data: null,
   apiUrl: null,
 };
@@ -863,6 +864,7 @@ app.whenReady().then(() => {
         syncData = {
             customer_data: savedSession.customer_data || {},
             domain_data: savedSession.domain_data || {},
+            user_data: savedSession.user_data || {},
             config_data: savedSession.config_data || {},
             apiUrl: savedSession.apiUrl || "",
         };
@@ -958,6 +960,8 @@ ipcMain.handle('auto-sync', async (event, args) => {
     const previousSnapshot = loadTracker();
     const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
 
+    const user_id = syncData.user_data.id;
+
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
       .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
 
@@ -987,6 +991,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
             body: JSON.stringify({
               customer_id,
               domain_id,
+              user_id,
               root_path: mappedDrivePath,
               changed_items: chunk,
             }),

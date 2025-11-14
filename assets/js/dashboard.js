@@ -11,6 +11,7 @@ let currentView = "grid";
 
 let customer_data = localStorage.getItem('customer_data');
 let domain_data = localStorage.getItem('domain_data');
+let user_data = localStorage.getItem('user_data');
 
 //let syncData = JSON.parse(localStorage.getItem('config_data'));
 const progressContainer = document.getElementById('syncProgressContainer');
@@ -110,7 +111,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
-     console.log(syncData);
     startAutoSync(syncData);
 
     let currentDir = config.drivePath;
@@ -119,9 +119,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(local_stored){
         customer_data = JSON.parse(localStorage.getItem("customer_data"));
         domain_data = JSON.parse(localStorage.getItem("domain_data"));
+        user_data = JSON.parse(localStorage.getItem("user_data"));
     }else{
         customer_data  = syncData.customer_data; 
         domain_data  = syncData.domain_data; 
+        user_data = syncData.user_data; 
     }
     console.log(currentDir);
      // Tab switching
@@ -380,6 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({
                     customer_id: customer_data.id,
                     domain_id: domain_data.id,
+                    user_id: user_data.id,
                     root_path: folderPath
                 })
             });
@@ -420,8 +423,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if(local_stored){
                 customer_data = JSON.parse(localStorage.getItem("customer_data"));
                 domain_data = JSON.parse(localStorage.getItem("domain_data"));
+                user_data = JSON.parse(localStorage.getItem("user_data"));
             }else{
                 customer_data  = syncData.customer_data; 
+                domain_data  = syncData.domain_data; 
+                user_data = syncData.user_data; 
             }           
 
             const filePaths = await window.electronAPI.openFiles(); // now returns array
@@ -454,6 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({
                     customer_id: customer_data.id,
                     domain_id: domain_data.id,
+                    user_id: user_data.id,
                     files: filePaths  // send all files for sync
                 })
             });
@@ -601,8 +608,8 @@ async function triggerSync(syncData,manual = false) {
     console.log(apiUrl);
     try {
         
-        if (!customer_data || !domain_data) {
-            console.error("Missing customer or domain data");
+        if (!customer_data || !domain_data || !user_data) {
+            console.error("Missing customer or domain or User data !");
             return;
         }
 
@@ -672,9 +679,11 @@ async function loadFiles(dirPath, reset = false) {
     if(local_stored){
         customer_data = JSON.parse(localStorage.getItem("customer_data"));
         domain_data = JSON.parse(localStorage.getItem("domain_data"));
+        user_data = JSON.parse(localStorage.getItem("user_data"));
     }else{
         customer_data  = syncData.customer_data; 
         domain_data  = syncData.domain_data; 
+        user_data  = syncData.user_data; 
     }
 
     // Show loader and allow a paint before heavy work
@@ -699,7 +708,8 @@ async function loadFiles(dirPath, reset = false) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 customer_id: customer_data.id,
-                domain_id: domain_data.id
+                domain_id: domain_data.id,
+                user_id: user_data.id
             })
         });
         const iconMap = await res_icon.json();

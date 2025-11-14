@@ -38,17 +38,15 @@ document.getElementById('sync').addEventListener('click', async () => {
         window.electronAPI.saveSession({
             user: username,
             token: secret_key,
-            customer_name : response.customer_data.customer_name,
-            customer_id : response.customer_data.id,
-            domain_name : response.domain_data.domain_name,
-            domain_id : response.domain_data.id,
+            customer_data : response.customer_data,
+            config_data : response.config_data,
+            domain_data : response.domain_data,
+            apiUrl:apiUrl
         });
 
         window.electronAPI.sendSyncData({
-            customer_id: response.customer_data.id,
-            domain_id: response.domain_data.id,
-            customer_name : response.customer_data.customer_name,
-            domain_name : response.domain_data.domain_name,
+            customer_data : response.customer_data,
+            domain_data : response.domain_data,
             config_data : response.config_data,
             apiUrl:apiUrl
         });
@@ -67,7 +65,7 @@ document.getElementById('sync').addEventListener('click', async () => {
         console.error("Authentication failed:", error);
     }
 });
-
+//  hh
 const tabs = document.querySelectorAll(".tab");
 const contents = document.querySelectorAll(".tab-content");
 

@@ -9,22 +9,37 @@ let isLoading = false;
 
 let currentView = "grid";
 
-const customer_data = JSON.parse(localStorage.getItem('customer_data'));
-const domain_data = JSON.parse(localStorage.getItem('domain_data'));
-const apiUrl = localStorage.getItem('apiUrl');
-let syncData = JSON.parse(localStorage.getItem('config_data'));
+let customer_data = localStorage.getItem('customer_data');
+let domain_data = localStorage.getItem('domain_data');
+
+//let syncData = JSON.parse(localStorage.getItem('config_data'));
 const progressContainer = document.getElementById('syncProgressContainer');
 const progressLabel = document.getElementById('syncProgressLabel');
 const progressBar = document.getElementById('syncProgressBar');
-progressContainer.style.display = 'none';
+let syncData = null;
+
+if (progressContainer) {
+  progressContainer.style.display = 'none';
+} 
+
 let isSyncing = false;
 let autoSyncInterval = null;
 
-if (customer_data && domain_data) {
+// window.electronAPI.getSyncData().then((syncData) => {
+//   console.log("✅ Sync data:", syncData);
+ 
+// }).catch((err) => {
+//   console.error("❌ Error getting sync data:", err);
+// });
+
+// customer_data = customer_data ? JSON.parse(customer_data) : null;
+// domain_data = domain_data ? JSON.parse(domain_data) : null;
+
+
+//if (customer_data && domain_data) {
    
-    syncData = { ...syncData, customer_name:customer_data.customer_name, domain_name: domain_data.domain_name };
-    console.log(syncData);
-    
+    //syncData = { ...syncData, customer_name:customer_data.customer_name, domain_name: domain_data.domain_name };
+   
     // setInterval(async () => {
     //     if (isSyncing) {
     //         console.log("⚠️ Sync already in progress, skipping this interval...");
@@ -49,7 +64,7 @@ if (customer_data && domain_data) {
     //         isSyncing = false; // Always reset flag after completion
     //     }
     // }, 2 * 60 * 1000);
-}
+//}
 
 window.electronAPI.onSyncProgress(({ done, total, file }) => {
   const percent = Math.round((done / total) * 100);
@@ -94,13 +109,25 @@ $("#file-list").addClass("grid-view");
 document.addEventListener('DOMContentLoaded', async () => {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
-    startAutoSync();
+    syncData = await window.electronAPI.getSyncData();
+     console.log(syncData);
+    startAutoSync(syncData);
 
     let currentDir = config.drivePath;
+    let local_stored = localStorage.getItem("customer_data");
+
+    if(local_stored){
+        customer_data = JSON.parse(localStorage.getItem("customer_data"));
+        domain_data = JSON.parse(localStorage.getItem("domain_data"));
+    }else{
+        customer_data  = syncData.customer_data; 
+        domain_data  = syncData.domain_data; 
+    }
+    console.log(currentDir);
      // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
-    window.apiUrl = localStorage.getItem('apiUrl');
+    window.apiUrl = syncData.apiUrl;
     
 
     var apiUrl = window.apiUrl;
@@ -310,10 +337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    
     $(document).on("click", "#uploadFolderOption", async function () {
         try {
-            $(".upload-menu").removeClass("show");
-
-            var customer_data = JSON.parse(localStorage.getItem('customer_data'));
-            var domain_data = JSON.parse(localStorage.getItem('domain_data'));
+            $(".upload-menu").removeClass("show");            
 
             const folderPath = await window.electronAPI.openFolder();
             if (!folderPath) {
@@ -391,8 +415,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     $(document).on("click", "#uploadFileOption", async function () {
         try {
             $(".upload-menu").removeClass("show");
-            const customer_data = JSON.parse(localStorage.getItem('customer_data'));
-            const domain_data = JSON.parse(localStorage.getItem('domain_data'));
+            const local_stored = localStorage.getItem("customer_data");
+       
+            if(local_stored){
+                customer_data = JSON.parse(localStorage.getItem("customer_data"));
+                domain_data = JSON.parse(localStorage.getItem("domain_data"));
+            }else{
+                customer_data  = syncData.customer_data; 
+            }           
 
             const filePaths = await window.electronAPI.openFiles(); // now returns array
             if (!filePaths || filePaths.length === 0) return alert("No files selected.");
@@ -480,45 +510,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadFiles(mappedDrive,true);
     });
 
-    // $(document).on("click", "#SyncDrive", async function () {
-    //     const btn = $(this);
-    //     btn.prop("disabled", true);
-    //     btn.html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
-    //     const customer_data = JSON.parse(localStorage.getItem("customer_data"));
-    //     const domain_data = JSON.parse(localStorage.getItem("domain_data"));
-
-    //     if (isSyncing) {
-    //         console.log("⚠️ Sync already in progress, skipping this interval...");
-    //         return;
-    //     }
-
-    //     isSyncing = true;
-        
-    //     try {
-    //         const result = await window.electronAPI.autoSync({
-    //             customer_id: customer_data.id,
-    //             domain_id: domain_data.id,
-    //             apiUrl:apiUrl,
-    //             syncData : syncData
-    //         });
-          
-    //         showValidation(result.message, result.success ? 'success' : 'error');
-    //     } catch (err) {
-    //         console.error("Auto sync error:", err);
-    //         showValidation("Sync failed: " + err.message, 'error');
-    //     } finally {
-    //         isSyncing = false; 
-    //     }
-
-    //     btn.prop("disabled", false);
-    //     btn.html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
-    // });
-
     $(document).on("click", "#SyncDrive", async function () {
         const btn = $(this);
         btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
 
-        await triggerSync(true);
+        await triggerSync(syncData,true);
 
         btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
     });
@@ -593,20 +589,18 @@ window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
 
-async function triggerSync(manual = false) {
+async function triggerSync(syncData,manual = false) {
     if (isSyncing) {
         console.log("⚠️ Sync already in progress, skipping...");
         if (manual) showValidation("Sync already in progress.", "warning");
         return;
     }
-
+ 
     isSyncing = true;
     console.log(manual ? "🔄 Manual sync started..." : "🔄 Auto sync started...");
-
+    console.log(apiUrl);
     try {
-        const customer_data = JSON.parse(localStorage.getItem("customer_data"));
-        const domain_data = JSON.parse(localStorage.getItem("domain_data"));
-
+        
         if (!customer_data || !domain_data) {
             console.error("Missing customer or domain data");
             return;
@@ -630,9 +624,9 @@ async function triggerSync(manual = false) {
 }
 
 
-function startAutoSync() {
+function startAutoSync(syncData) {
     if (autoSyncInterval) clearInterval(autoSyncInterval); // avoid duplicates
-    autoSyncInterval = setInterval(() => triggerSync(false), 2 * 60 * 1000);
+    autoSyncInterval = setInterval(() => triggerSync(syncData,false), 2 * 60 * 1000);
 }
 
 function tick(ms = 16) {
@@ -671,6 +665,16 @@ async function loadFiles(dirPath, reset = false) {
         loadedItems = 0;
         currentDir = dirPath;
         $("#file-list").empty();
+    }
+
+    const local_stored = localStorage.getItem("customer_data");
+       
+    if(local_stored){
+        customer_data = JSON.parse(localStorage.getItem("customer_data"));
+        domain_data = JSON.parse(localStorage.getItem("domain_data"));
+    }else{
+        customer_data  = syncData.customer_data; 
+        domain_data  = syncData.domain_data; 
     }
 
     // Show loader and allow a paint before heavy work
@@ -914,7 +918,7 @@ function renderFileList(selector, files) {
     files.forEach(f => container.append(`<li>${f.file_name}</li>`));
   }
 
-  function renderTree(containerSelector, files) {
+function renderTree(containerSelector, files) {
     const container = $(containerSelector);
     container.empty();
 

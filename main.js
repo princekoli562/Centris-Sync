@@ -1,11 +1,9 @@
 
-const { app, BrowserWindow, ipcMain,dialog } = require('electron');
+const { app, BrowserWindow, ipcMain,dialog, Tray, Menu } = require('electron');
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
 const crypto = require('crypto');
-
-
 
 //console.log(process.env.NODE_ENV);
 // if (process.env.NODE_ENV === "development") {
@@ -73,6 +71,7 @@ const os = require('os');
 const { execSync, exec,spawn } = require('child_process');
 const SECRET_KEY = "25fHeqIXYAfa";
 let win;
+let tray;
 const VHDX_NAME = "Centris-Drive.vhdx";
 const VHDX_SIZE_MB = 10240; // 10 GB
 const VOLUME_LABEL = "Centris-Drive";
@@ -82,12 +81,11 @@ let sessionData = null;
 let syncCustomerId = null;
 let syncDomainId = null;
 let syncConfigData = null;
+let redirectingToLogin = false;
 
 let syncData = {
-  customer_id: null,
-  domain_id: null,
-  customer_name: null,
-  domain_name: null,
+  customer_data: null,
+  domain_data: null,
   config_data: null,
   apiUrl: null,
 };
@@ -109,8 +107,13 @@ console.log = (...args) => {
     originalLog('Log mirror error:', err);
   }
 };
-
+//
 const createWindow = async () => {
+    // if (win) {
+    //     // 👇 If already exists, just show instead of recreating
+    //     win.show();
+    //     return;
+    // }
     win = new BrowserWindow({
         width: 800,
         height: 600,
@@ -133,6 +136,18 @@ const createWindow = async () => {
         console.log("🔒 Session expired or not logged in");
         await win.loadFile('index.html');
     }
+
+    //✅ Handle close — minimize to tray, not quit
+    win.on('close', (event) => {
+        if (!app.isQuiting) {
+        event.preventDefault();
+        win.hide(); // keep running in tray
+        return false;
+        }
+    });
+
+    //win.webContents.on('did-finish-load', handleSessionCheck);
+   // win.webContents.on('did-navigate', handleSessionCheck);
 
     // 🧩 Handle navigation from renderer
     ipcMain.on('navigate', (event, page) => {
@@ -158,11 +173,49 @@ const createWindow = async () => {
     ipcMain.on('clear-session', () => {
         clearSession();
     });
+
+    ipcMain.handle('load-session', async () => {
+        return loadSession();
+    });
+
+    function handleSessionCheck() {
+        if (!isSessionActive() && !redirectingToLogin) {
+            redirectingToLogin = true; // 🔒 prevent multiple triggers
+            console.log("⚠️ Session expired — redirecting to login page...");
+            win.loadFile('index.html').then(() => {
+            redirectingToLogin = false; // ✅ reset once done
+        });
+    }
+}
 };
+
+function createTray() {
+  tray = new Tray(path.join(__dirname, 'assets/images/favicon.png'));
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open Centris Drive',
+      click: () => win.show(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Exit',
+      click: () => {
+        app.isQuiting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setToolTip('Centris Drive');
+  tray.setContextMenu(contextMenu);
+}
+
+
+
+
 
 // ✅ Helper: checks if session exists and is valid
 function isSessionActive() {
-      const sessionFile = path.join(app.getPath('userData'), 'session.json');
+    const sessionFile = path.join(app.getPath('userData'), 'session.json');
 
     try {
         if (fs.existsSync(sessionFile)) {
@@ -179,7 +232,7 @@ function isSessionActive() {
     }
     return false;
 }
-
+//
 function saveSession(data) {
     const sessionFile = path.join(app.getPath('userData'), 'session.json');
     try {
@@ -206,6 +259,21 @@ function clearSession() {
     } catch (err) {
         console.error("⚠️ Error clearing session:", err);
     }
+}
+
+function loadSession() {
+    const sessionFile = path.join(app.getPath('userData'), 'session.json');
+
+    try {
+        if (fs.existsSync(sessionFile)) {
+            const raw = fs.readFileSync(sessionFile, "utf-8");
+            return JSON.parse(raw);   // return saved session object
+        }
+    } catch (err) {
+        console.error("⚠️ Error reading session:", err);
+    }
+
+    return {}; // default empty session
 }
 
 // async function getDirectorySnapshot(dir) {
@@ -638,7 +706,7 @@ function createSyncFolderAndDrive() {
         return null;
     }
 }
-
+//
 function isAdmin() {
     try {
         execSync("fsutil dirty query %systemdrive%", { stdio: "ignore" });
@@ -788,7 +856,20 @@ function unmountVHDX() {
 }
 
 app.whenReady().then(() => {
-	createWindow()
+    const savedSession = loadSession();
+
+    if (savedSession) {
+        // IMPORTANT: Restore into syncData
+        syncData = {
+            customer_data: savedSession.customer_data || {},
+            domain_data: savedSession.domain_data || {},
+            config_data: savedSession.config_data || {},
+            apiUrl: savedSession.apiUrl || "",
+        };
+        console.log("🔄 Restored syncData from session:", syncData);
+    }
+    //
+	createWindow();
 	//const folderPath = createSyncFolderAndDrive();
     if (!isAdmin()) {
         relaunchAsAdmin();
@@ -806,6 +887,17 @@ app.whenReady().then(() => {
 			createWindow();
 		}
 	});
+
+     //createTray();
+
+    // Prevent creating new windows unnecessarily
+    // app.on('activate', () => {
+    //     if (win) {
+    //         win.show();
+    //     } else {
+    //         createWindow();
+    //     }
+    // });  
 	
 })
 
@@ -822,16 +914,8 @@ ipcMain.handle('get-secret-key', async () => {
 // });
 
 // Receive and store customer/domain IDs from renderer
-ipcMain.on('set-sync-data-lll', (event, { customer_id, domain_id ,customer_name, domain_name ,config_data, apiUrl}) => {
-    syncCustomerId = customer_id;
-    syncDomainId = domain_id;
-    syncCustomerName = customer_name;
-    syncDomainName = domain_name;
-    syncConfigData = config_data;
-    syncapiUrl = apiUrl;
-    console.log("Received sync IDs:", syncCustomerId, syncDomainId,syncapiUrl);
-});
 
+//
 ipcMain.on('set-sync-data', (event, data) => {
   syncData = { ...syncData, ...data };
   event.sender.send('sync-data-updated', syncData);
@@ -859,85 +943,6 @@ ipcMain.handle('get-sync-data', async () => {
 //     }
 // });
 
-ipcMain.handle('auto-sync-old', async (event, args) => {
-  const { customer_id, domain_id, apiUrl, syncData } = args;
-  console.log("Auto sync triggered...");
-
-  try {
-    const mappedDrivePath =
-      getMappedDriveLetter() + '\\' +
-      syncData.centris_drive + '\\' +
-      syncData.customer_name + '\\' +
-      syncData.domain_name + '\\';
-
-    const previousSnapshot = loadTracker();
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
-
-    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
-      .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
-
-       // 🔹 Find deleted files/folders
-    const deletedItems = Object.keys(previousSnapshot).filter(
-      oldPath => !currentSnapshot[oldPath]
-    ).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
-
-     if (changedItems.length === 0 && deletedItems.length === 0) {
-      console.log("✅ No new, modified, or deleted files found to sync.");
-      return { success: true, message: "No changes" };
-    }
-
-    console.log(`🔄 Found ${changedItems.length} changed items.`);
-    let processed = 0;
-    const chunkSize = 50; // 🔹 Now batch size is 20
-
-    for (let i = 0; i < changedItems.length; i += chunkSize) {
-      const chunk = changedItems.slice(i, i + chunkSize); // batch of 20
-
-      try {
-        // 🔹 Send all 20 files in one POST request
-        const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            root_path: mappedDrivePath,
-            changed_items: chunk, // 👈 send whole batch
-          }),
-        });
-
-        const data = await res.json();
-        processed += chunk.length; // ✅ update count by batch size
-
-        // ✅ Notify renderer of progress after each batch
-       event.sender.send('sync-progress', {
-            done: processed || 0,
-            total: changedItems.length || 0,
-            file: chunk?.[chunk.length - 1] || null,
-        });
-
-        console.log(`✅ Synced batch (${processed}/${changedItems.length})`);
-      } catch (err) {
-        console.error(`❌ Error syncing batch ${i}-${i + chunkSize - 1}:`, err);
-      }
-
-      // Optional delay to prevent API overload
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    saveTracker(currentSnapshot);
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
-
-    return { success: true, message: "Sync completed successfully" };
-
-  } catch (error) {
-    console.error("Auto sync failed:", error);
-    return { success: false, message: error.message };
-  }
-});
-
 
 ipcMain.handle('auto-sync', async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
@@ -946,9 +951,9 @@ ipcMain.handle('auto-sync', async (event, args) => {
   try {
     const mappedDrivePath =
       getMappedDriveLetter() + '\\' +
-      syncData.centris_drive + '\\' +
-      syncData.customer_name + '\\' +
-      syncData.domain_name + '\\';
+      syncData.config_data.centris_drive + '\\' +
+      syncData.customer_data.customer_name + '\\' +
+      syncData.domain_data.domain_name + '\\';
 
     const previousSnapshot = loadTracker();
     const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);

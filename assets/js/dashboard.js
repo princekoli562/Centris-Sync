@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
-    startAutoSync(syncData);
+    //startAutoSync(syncData);
 
     let currentDir = config.drivePath;
     let local_stored = localStorage.getItem("customer_data");
@@ -386,9 +386,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     root_path: folderPath
                 })
             });
-
+            console.log(mappedDrive);
             const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive);
-            const saveShots  = await window.electronAPI.saveTracker(newSnapshot);
+            console.log('prince');
+            console.log(newSnapshot['snapshot']);
+            const saveShots  = await window.electronAPI.saveTracker(newSnapshot['snapshot']);
 
             const data = await res.json();
             console.log("Sync Result:", data);

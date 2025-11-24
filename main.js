@@ -302,14 +302,14 @@ async function getDirectorySnapshot(dir) {
     const stats = fs.statSync(fullPath);
 
     if (entry.isDirectory()) {
-      snapshot[fullPath] = {
+      snapshot[normalizePath(fullPath)] = {
         type: "folder",
         mtime: stats.mtimeMs,
       };
       Object.assign(snapshot, await getDirectorySnapshot(fullPath));
     } else {
       const hash = await hashFile(fullPath);
-      snapshot[fullPath] = {
+      snapshot[normalizePath(fullPath)] = {
         type: "file",
         size: stats.size,
         mtime: stats.mtimeMs,
@@ -350,7 +350,7 @@ function saveTracker(snapshot) {
     fs.writeFileSync(trackerPath, JSON.stringify(snapshot, null, 2));
 }
 
-function findNewOrChangedFiles(current, previous) {
+function findNewOrChangedFilesOld(current, previous) {
     const changed = [];
     for (const file in current) {
         if (!previous[file] ||
@@ -359,6 +359,26 @@ function findNewOrChangedFiles(current, previous) {
             changed.push(file);
         }
     }
+    return changed;
+}
+
+function findNewOrChangedFiles(current, previous) {
+    const changed = [];
+
+    for (const file in current) {
+        const norm = normalizePath(file);
+
+        const prevItem = previous[norm];
+        const currItem = current[file];
+
+        if (!prevItem ||
+            prevItem.mtime !== currItem.mtime ||
+            prevItem.hash !== currItem.hash) 
+        {
+            changed.push(norm);
+        }
+    }
+
     return changed;
 }
 
@@ -957,33 +977,50 @@ ipcMain.handle('auto-sync', async (event, args) => {
       syncData.customer_data.customer_name + '\\' +
       syncData.domain_data.domain_name + '\\';
 
+    const drive_letter =  getMappedDriveLetter();
+
     const previousSnapshot = loadTracker();
     const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
 
     const user_id = syncData.user_data.id;
 
+    //const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
+    //  .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
-      .map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+    .map(file => file.replace(/\\/g, '/'));
 
     // 🔹 Find deleted files/folders
+    // const deletedItems = Object.keys(previousSnapshot).filter(
+    //   oldPath => !currentSnapshot[oldPath]
+    // ).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+
     const deletedItems = Object.keys(previousSnapshot).filter(
       oldPath => !currentSnapshot[oldPath]
-    ).map(file => path.relative(mappedDrivePath, file).replace(/\\/g, '/'));
+    ).map(file => file.replace(/\\/g, '/'));
 
     if (changedItems.length === 0 && deletedItems.length === 0) {
       console.log("✅ No new, modified, or deleted files found to sync.");
       return { success: true, message: "No changes" };
     }
 
-    console.log(`🔄 Found ${changedItems.length} changed and ${deletedItems.length} deleted items.`);
+    const changedItemsWithDrive = changedItems.map(
+        file => addDriveLetter(drive_letter, file)
+    );
+
+    const deletedItemsWithDrive = deletedItems.map(
+        file => addDriveLetter(drive_letter, file)
+    );
+
+    console.log(`🔄 Found ${changedItemsWithDrive.length} changed and ${deletedItemsWithDrive.length} deleted items.`);
 
     // 🔹 Sync changed/new files
-    if (changedItems.length > 0) {
+    if (changedItemsWithDrive.length > 0) {
       let processed = 0;
       const chunkSize = 50;
 
-      for (let i = 0; i < changedItems.length; i += chunkSize) {
-        const chunk = changedItems.slice(i, i + chunkSize);
+      for (let i = 0; i < changedItemsWithDrive.length; i += chunkSize) {
+        const chunk = changedItemsWithDrive.slice(i, i + chunkSize);
         try {
           const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
             method: "POST",
@@ -1002,11 +1039,11 @@ ipcMain.handle('auto-sync', async (event, args) => {
 
           event.sender.send('sync-progress', {
             done: processed,
-            total: changedItems.length,
+            total: changedItemsWithDrive.length,
             file: chunk?.[chunk.length - 1] || null,
           });
 
-          console.log(`✅ Synced batch (${processed}/${changedItems.length})`);
+          console.log(`✅ Synced batch (${processed}/${changedItemsWithDrive.length})`);
         } catch (err) {
           console.error(`❌ Error syncing batch:`, err);
         }
@@ -1016,9 +1053,9 @@ ipcMain.handle('auto-sync', async (event, args) => {
     }
 
     // 🔹 Handle deleted files/folders
-    if (deletedItems.length > 0) {
+    if (deletedItemsWithDrive.length > 0) {
       try {
-        console.log(`🗑️ Deleting ${deletedItems.length} items from server...`);
+        console.log(`🗑️ Deleting ${deletedItemsWithDrive.length} items from server...`);
         await fetch(`${apiUrl}/api/deleteSyncedItems`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1026,7 +1063,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
             customer_id,
             domain_id,
             root_path: mappedDrivePath,
-            deleted_items: deletedItems,
+            deleted_items: deletedItemsWithDrive,
           }),
         });
       } catch (err) {
@@ -1445,6 +1482,16 @@ function isHiddenWindows(filePath) {
     } catch {
         return false;
     }
+}
+
+function normalizePath(p) {
+  return p.replace(/^[A-Za-z]:/, ""); // remove drive letters
+}
+
+function addDriveLetter(drive, filePath) {
+  // ensure begins with slash
+  if (!filePath.startsWith('/')) filePath = '/' + filePath;
+  return drive + filePath.replace(/\//g, '\\');
 }
 
 

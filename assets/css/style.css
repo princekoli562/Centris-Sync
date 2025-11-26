@@ -835,13 +835,15 @@ button { margin-bottom: 10px; }
 }
 
 .title-bar .menu-btn:hover,
-.title-bar .view-btn:hover {
+.title-bar .view-btn:hover,
+.title-bar .togg-view:hover {
     color: #000;
 }
 
 .title-bar .view-btn.active {
     color: #007bff;
 }
+
 
 /* Center middle section */
 

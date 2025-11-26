@@ -971,13 +971,16 @@ ipcMain.handle('auto-sync', async (event, args) => {
   console.log("Auto sync triggered...");
 
   try {
-    const mappedDrivePath =
-      getMappedDriveLetter() + '\\' +
+    
+    const drive_letter =  getMappedDriveLetter();
+
+    const CustomerDomainUserDrivePath =
+      drive_letter + '\\' +
       syncData.config_data.centris_drive + '\\' +
       syncData.customer_data.customer_name + '\\' +
-      syncData.domain_data.domain_name + '\\';
+      syncData.domain_data.domain_name + '\\' + syncData.user_data.user_name + '\\';
 
-    const drive_letter =  getMappedDriveLetter();
+    const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
 
     const previousSnapshot = loadTracker();
     const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
@@ -1053,23 +1056,66 @@ ipcMain.handle('auto-sync', async (event, args) => {
     }
 
     // 🔹 Handle deleted files/folders
+    // if (deletedItemsWithDrive.length > 0) {
+    //   try {
+    //     console.log(`🗑️ Deleting ${deletedItemsWithDrive.length} items from server...`);
+    //     await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+    //       method: "POST",
+    //       headers: { "Content-Type": "application/json" },
+    //       body: JSON.stringify({
+    //         customer_id,
+    //         domain_id,
+    //         user_id,
+    //         root_path: mappedDrivePath,
+    //         deleted_items: deletedItemsWithDrive,
+    //       }),
+    //     });
+    //   } catch (err) {
+    //     console.error("❌ Error deleting items on server:", err);
+    //   }
+    // }
+
     if (deletedItemsWithDrive.length > 0) {
-      try {
-        console.log(`🗑️ Deleting ${deletedItemsWithDrive.length} items from server...`);
-        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            root_path: mappedDrivePath,
-            deleted_items: deletedItemsWithDrive,
-          }),
-        });
-      } catch (err) {
-        console.error("❌ Error deleting items on server:", err);
-      }
+  let processed = 0;
+  const chunkSize = 50;
+
+  console.log(`🗑️ Deleting ${deletedItemsWithDrive.length} items from server...`);
+
+  for (let i = 0; i < deletedItemsWithDrive.length; i += chunkSize) {
+    const chunk = deletedItemsWithDrive.slice(i, i + chunkSize);
+
+    try {
+      const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id,
+          domain_id,
+          user_id,
+          root_path: mappedDrivePath,
+          deleted_items: chunk,
+        }),
+      });
+
+      await res.json();
+      processed += chunk.length;
+
+      // Send progress for UI
+      event.sender.send('delete-progress', {
+        done: processed,
+        total: deletedItemsWithDrive.length,
+        file: chunk?.[chunk.length - 1] || null,
+      });
+
+      console.log(`🗑️ Deleted batch (${processed}/${deletedItemsWithDrive.length})`);
+    } catch (err) {
+      console.error(`❌ Error deleting batch:`, err);
     }
+
+    // small delay to avoid server load
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+}
 
     // ✅ Save latest snapshot
     saveTracker(currentSnapshot);
@@ -1365,9 +1411,9 @@ ipcMain.handle('getAppConfig', async (event) => {
     const drive = getMappedDriveLetter();
     const config = {
         vhdx_name: VHDX_NAME,
-        drivePath: drive + '\Centris-Drive',
-        driveCustDomPath: drive + '\Centris-Drive',
-        userName: 'Prince',
+        drivePath: drive + '\\' + syncData.config_data.centris_drive,
+        driveCustDomPath: drive +  '\\' + syncData.config_data.centris_drive,
+        userName: syncData.user_data.user_name,
         version: app.getVersion(),
         vhdx_path : VHDX_PATH
     };
@@ -1514,7 +1560,7 @@ function addDriveLetter(drive, filePath) {
 process.on('exit', () => {
     try { 
       // clearSession();
-       //unmountVHDX(); 
+        unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);

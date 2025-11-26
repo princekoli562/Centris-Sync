@@ -6,6 +6,8 @@ let visibleCount = 0;
 let totalItems = 0;
 let loadedItems = 0;
 let isLoading = false;
+let history = [];
+let currentIndex = -1;
 
 let currentView = "grid";
 
@@ -144,7 +146,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     $("#openDrive").addClass("active");
 
     // 🔹 Optionally trigger loadFiles for the default directory
-    await loadFiles(currentDir);
+   
+    history = [currentDir];
+    currentIndex = 0;    
+    await initFirstPath(currentDir);
+    console.log(history);
+    await loadDriveItems(currentDir);
+
+    //await loadFiles(currentDir,true);
     
     $(document).on("click",".tab",function(e) {
         const tab = $(this).data('tab');
@@ -265,7 +274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load the initial directory (triggered by your “Open Drive” button)
     $(document).on("click", "#openDrive", async function (e) {
         e.preventDefault();
-        await loadFiles(currentDir);
+        await loadFiles(currentDir,true);
     });
 
     // 🔹 Scroll listener for lazy loading
@@ -306,7 +315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentMenu = null;
             currentBtn = null;
         }
-
+        console.log(loadedItems + ' = ' +  totalItems);
         const nearBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 50;
         if (nearBottom && loadedItems < totalItems) {
             await loadFiles(currentDir, false);
@@ -386,9 +395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     root_path: folderPath
                 })
             });
-            console.log(mappedDrive);
             const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive);
-            console.log('prince');
             console.log(newSnapshot['snapshot']);
             const saveShots  = await window.electronAPI.saveTracker(newSnapshot['snapshot']);
 
@@ -479,6 +486,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    $(document).on("click", "#back-btn", async function (e) {
+        console.log('back - ' + currentIndex);
+        if (currentIndex > 0) {
+            currentIndex--;
+            loadDriveItems(history[currentIndex], true);
+        }
+        console.log(history);
+    });
+
+    $(document).on("click", "#forward-btn", async function (e) {
+        console.log('next - ' + currentIndex);
+        if (currentIndex < history.length - 1) {
+            currentIndex++;
+            loadDriveItems(history[currentIndex], true);
+        }
+        console.log(history);
+    });
+
+
     $("#grid-view").on("click",async function() {
         currentView = "grid";
         $("#file-list").empty();
@@ -525,7 +551,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         await triggerSync(syncData,true);
 
-        btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> Sync Drive');
+        btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> 🔄 Sync Drive');
     });
 
     $(document).on('click', '.file-menu-btn', function (e) {
@@ -670,11 +696,23 @@ async function loadFiles(dirPath, reset = false) {
     if (isLoading) return;
     isLoading = true;
 
+    const targetDir = reset ? dirPath : currentDir;
+
+    if (!targetDir || targetDir.trim() === "") {
+        console.error("INVALID DIRECTORY PATH", targetDir);
+        isLoading = false;
+        return;
+    }
+
+    // Only when user opens a new folder — update currentDir
     if (reset) {
         loadedItems = 0;
-        currentDir = dirPath;
+        currentDir = targetDir;   // <== Correct place
         $("#file-list").empty();
+        $("#breadcrumb").html(buildBreadcrumb(currentDir));
     }
+
+    await loadDriveItems(targetDir);
 
     const local_stored = localStorage.getItem("customer_data");
        
@@ -693,8 +731,8 @@ async function loadFiles(dirPath, reset = false) {
     await tick(); // give browser a frame to render loader
 
     try {
-        console.log(`Loading files from: ${dirPath} (offset ${loadedItems})`);
-        const result = await window.electronAPI.listRecurFiles(dirPath, loadedItems, BATCH_SIZE);
+        console.log(`Loading files from: ${targetDir} (offset ${loadedItems})`);
+        const result = await window.electronAPI.listRecurFiles(targetDir, loadedItems, BATCH_SIZE);
 
         if (result.error) {
             $("#file-list").html(`<p style="color:red">${result.error}</p>`);
@@ -703,7 +741,9 @@ async function loadFiles(dirPath, reset = false) {
 
         totalItems = result.total;
         currentDir = result.currentPath;
-        $("#breadcrumb").html(buildBreadcrumb(result.currentPath));
+        // if (reset) {
+        //     $("#breadcrumb").html(buildBreadcrumb(currentDir));
+        // }
 
          const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
             method: 'POST',
@@ -960,6 +1000,61 @@ function renderTree(containerSelector, files) {
 
     // hide all subfolders initially
     container.find('ul').hide();
+}
+
+function updateNavButtons() {
+    document.getElementById("back-btn").disabled = currentIndex <= 0;
+    document.getElementById("forward-btn").disabled = currentIndex >= history.length - 1;
+}
+
+async function loadDriveItems111(path, fromHistory = false) {
+    if (!path) {
+        console.error("INVALID DIRECTORY PATH");
+        return;
+    }
+
+    await loadFiles(path, true);
+
+    currentDir = path;
+
+    if (!fromHistory) {
+        history = history.slice(0, currentIndex + 1); // Remove future history
+        history.push(path);
+        currentIndex = history.length - 1;
+    }
+
+    updateNavButtons();
+}
+
+async function loadDriveItems(path, fromHistory = false) {
+    if (!path) return;
+
+    currentDir = path;
+
+    // LOAD DIRECTORY
+    await loadFiles(path, true);
+
+    if (!fromHistory) {
+
+        // Remove future history positions
+        history = history.slice(0, currentIndex + 1);
+
+        // 🚫 Prevent duplicates
+        if (history[history.length - 1] !== path) {
+            history.push(path);
+            currentIndex = history.length - 1;
+        }
+    }
+
+    updateNavButtons();
+}
+
+async function initFirstPath(path) {
+    if (!path) return;
+
+    history.push(path);
+    currentIndex = 0;
+    currentDir = path;
 }
 
 function renderFileList1(container, files) {

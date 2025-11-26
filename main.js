@@ -277,23 +277,8 @@ function loadSession() {
     return {}; // default empty session
 }
 
-// async function getDirectorySnapshot(dir) {
-//     const snapshot = {};
-//     const entries = fs.readdirSync(dir, { withFileTypes: true });
-//     for (const entry of entries) {
-//         const fullPath = path.join(dir, entry.name);
-//         const stats = fs.statSync(fullPath);
-//         if (entry.isDirectory()) {
-//         Object.assign(snapshot, await getDirectorySnapshot(fullPath));
-//         } else {
-//         const hash = await hashFile(fullPath); // stream-based hashing
-//         snapshot[fullPath] = { size: stats.size, mtime: stats.mtimeMs, hash };
-//         }
-//     }
-//     return snapshot;
-// }
 
-async function getDirectorySnapshot(dir) {
+async function getDirectorySnapshot11(dir) {
   const snapshot = {};
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -321,6 +306,83 @@ async function getDirectorySnapshot(dir) {
   return snapshot;
 }
 
+async function getDirectorySnapshotold(dir, oldSnap = {}) {
+    const snapshot = {};
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const key = normalizePath(fullPath);
+        const stats = fs.statSync(fullPath);
+
+        if (entry.isDirectory()) {
+            snapshot[key] = {
+                type: "folder",
+                mtime: stats.mtimeMs,
+            };
+
+            Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap));
+        } 
+        else {
+            let prev = oldSnap[key];
+            let hash = prev?.hash || null;
+
+            if (!prev || prev.mtime !== stats.mtimeMs) {
+                // NEW or MODIFIED FILE
+                hash = await hashFile(fullPath);
+            }
+
+            snapshot[key] = {
+                type: "file",
+                size: stats.size,
+                mtime: stats.mtimeMs,
+                hash,
+            };
+        }
+    }
+
+    return snapshot;
+}
+
+async function getDirectorySnapshot(dir, oldSnap = {}) {
+    const snapshot = {};
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const key = normalizePath(fullPath);
+        const stats = fs.statSync(fullPath);
+
+        if (entry.isDirectory()) {
+            snapshot[key] = {
+                type: "folder",
+                mtime: stats.mtimeMs,
+            };
+
+            Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap));
+        } 
+        else {
+            // 🟢 NEW HASH LOGIC (as you requested)
+            let prev = oldSnap[key];
+            let hash = prev?.hash || null;
+
+            if (!prev || prev.mtime !== stats.mtimeMs) {
+                hash = await hashFile(fullPath);
+            }
+
+            snapshot[key] = {
+                type: "file",
+                size: stats.size,
+                mtime: stats.mtimeMs,
+                hash,
+            };
+        }
+    }
+
+    return snapshot;
+}
+
+
 
 
 function hashFile(filePath) {
@@ -331,6 +393,14 @@ function hashFile(filePath) {
     stream.on('end', () => resolve(hash.digest('hex')));
     stream.on('error', reject);
   });
+}
+
+function removeDeleted(oldSnap, newSnap) {
+    for (let key in oldSnap) {
+        if (!newSnap[key]) {
+            // deleted entry → handle delete logic
+        }
+    }
 }
 
 
@@ -350,19 +420,7 @@ function saveTracker(snapshot) {
     fs.writeFileSync(trackerPath, JSON.stringify(snapshot, null, 2));
 }
 
-function findNewOrChangedFilesOld(current, previous) {
-    const changed = [];
-    for (const file in current) {
-        if (!previous[file] ||
-            previous[file].mtime !== current[file].mtime ||
-            previous[file].hash !== current[file].hash) {
-            changed.push(file);
-        }
-    }
-    return changed;
-}
-
-function findNewOrChangedFiles(current, previous) {
+function findNewOrChangedFilesOLd(current, previous) {
     const changed = [];
 
     for (const file in current) {
@@ -381,6 +439,45 @@ function findNewOrChangedFiles(current, previous) {
 
     return changed;
 }
+
+function findNewOrChangedFiles(current, previous) {
+    const changed = [];
+
+    for (const file in current) {
+        const key = normalizePath(file);
+
+        const curr = current[key];
+        const prev = previous[key];
+
+        // NEW file/directory
+        if (!prev) {
+            changed.push(key);
+            continue;
+        }
+
+        // DIRECTORY: check only mtime
+        if (curr.type === "folder") {
+            if (curr.mtime !== prev.mtime) {
+                changed.push(key);
+            }
+            continue;
+        }
+
+        // FILE: check mtime first (fast)
+        if (curr.mtime !== prev.mtime) {
+            changed.push(key);
+            continue;
+        }
+
+        // Rare case: same mtime but different hash (timestamp preserved)
+        if (curr.hash !== prev.hash) {
+            changed.push(key);
+        }
+    }
+
+    return changed;
+}
+
 
 function findNewOrChangedItems(current, previous) {
   const changed = [];
@@ -948,24 +1045,6 @@ ipcMain.handle('get-sync-data', async () => {
   return syncData;
 });
 
-
-// ipcMain.handle('auto-sync', async (event, args) => {
-//     try {
-//         console.log("Auto sync triggered...");
-//         const result = await autoSync(args);
-
-//         // Optional: send status updates to renderer
-//         const win = BrowserWindow.getFocusedWindow();
-//         win.webContents.send('sync-status', 'Auto sync complete.');
-
-//         return { success: true, message: "Auto sync completed", data: result };
-//     } catch (error) {
-//         console.error("Auto sync failed:", error);
-//         return { success: false, message: error.message };
-//     }
-// });
-
-
 ipcMain.handle('auto-sync', async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
   console.log("Auto sync triggered...");
@@ -981,10 +1060,11 @@ ipcMain.handle('auto-sync', async (event, args) => {
       syncData.domain_data.domain_name + '\\' + syncData.user_data.user_name + '\\';
 
     const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
-
+    console.log('AAAA');
     const previousSnapshot = loadTracker();
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath);
-
+     console.log('BBBB');
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath,previousSnapshot);
+    console.log('CCCC');
     const user_id = syncData.user_data.id;
 
     //const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
@@ -992,6 +1072,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
 
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
     .map(file => file.replace(/\\/g, '/'));
+    console.log('DDDD');
 
     // 🔹 Find deleted files/folders
     // const deletedItems = Object.keys(previousSnapshot).filter(
@@ -1001,6 +1082,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
     const deletedItems = Object.keys(previousSnapshot).filter(
       oldPath => !currentSnapshot[oldPath]
     ).map(file => file.replace(/\\/g, '/'));
+      console.log('EEEE');
 
     if (changedItems.length === 0 && deletedItems.length === 0) {
       console.log("✅ No new, modified, or deleted files found to sync.");
@@ -1076,46 +1158,46 @@ ipcMain.handle('auto-sync', async (event, args) => {
     // }
 
     if (deletedItemsWithDrive.length > 0) {
-  let processed = 0;
-  const chunkSize = 50;
+        let processed = 0;
+        const chunkSize = 50;
 
-  console.log(`🗑️ Deleting ${deletedItemsWithDrive.length} items from server...`);
+        console.log(`🗑️ Deleting ${deletedItemsWithDrive.length} items from server...`);
 
-  for (let i = 0; i < deletedItemsWithDrive.length; i += chunkSize) {
-    const chunk = deletedItemsWithDrive.slice(i, i + chunkSize);
+        for (let i = 0; i < deletedItemsWithDrive.length; i += chunkSize) {
+            const chunk = deletedItemsWithDrive.slice(i, i + chunkSize);
 
-    try {
-      const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_id,
-          domain_id,
-          user_id,
-          root_path: mappedDrivePath,
-          deleted_items: chunk,
-        }),
-      });
+            try {
+                const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                    customer_id,
+                    domain_id,
+                    user_id,
+                    root_path: mappedDrivePath,
+                    deleted_items: chunk,
+                    }),
+                });
 
-      await res.json();
-      processed += chunk.length;
+                await res.json();
+                processed += chunk.length;
 
-      // Send progress for UI
-      event.sender.send('delete-progress', {
-        done: processed,
-        total: deletedItemsWithDrive.length,
-        file: chunk?.[chunk.length - 1] || null,
-      });
+                // Send progress for UI
+                event.sender.send('delete-progress', {
+                    done: processed,
+                    total: deletedItemsWithDrive.length,
+                    file: chunk?.[chunk.length - 1] || null,
+                });
 
-      console.log(`🗑️ Deleted batch (${processed}/${deletedItemsWithDrive.length})`);
-    } catch (err) {
-      console.error(`❌ Error deleting batch:`, err);
+                console.log(`🗑️ Deleted batch (${processed}/${deletedItemsWithDrive.length})`);
+            } catch (err) {
+                console.error(`❌ Error deleting batch:`, err);
+            }
+
+            // small delay to avoid server load
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
     }
-
-    // small delay to avoid server load
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-}
 
     // ✅ Save latest snapshot
     saveTracker(currentSnapshot);
@@ -1505,9 +1587,9 @@ ipcMain.handle('check-session', () => {
     return sessionData;
 });
 
-ipcMain.handle("get-directory-snapshot", async (event, dir) => {
+ipcMain.handle("get-directory-snapshot", async (event, dir,oldSnapshot = {}) => {
     try {
-        const snapshot = await getDirectorySnapshot(dir);
+        const snapshot = await getDirectorySnapshot(dir,oldSnapshot);
         return { success: true, snapshot };
     } catch (error) {
         console.error("Error generating directory snapshot:", error);
@@ -1560,7 +1642,7 @@ function addDriveLetter(drive, filePath) {
 process.on('exit', () => {
     try { 
       // clearSession();
-        unmountVHDX(); 
+      //  unmountVHDX(); 
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);

@@ -147,8 +147,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 🔹 Optionally trigger loadFiles for the default directory
    
-    history = [currentDir];
-    currentIndex = 0;    
+    // history = [currentDir];
+    // currentIndex = 0;    
     await initFirstPath(currentDir);
     console.log(history);
     await loadDriveItems(currentDir);
@@ -294,6 +294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 🔹 Breadcrumb navigation
     $(document).on("click", ".crumb", async function () {
         const path = $(this).data("path");
+        if(path == '#') return;
         await loadFiles(path, true);
     });
 
@@ -496,7 +497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     $(document).on("click", "#forward-btn", async function (e) {
-        console.log('next - ' + currentIndex);
+        console.log('next - ' + currentIndex + (history.length - 1));
         if (currentIndex < history.length - 1) {
             currentIndex++;
             loadDriveItems(history[currentIndex], true);
@@ -705,14 +706,58 @@ async function loadFiles(dirPath, reset = false) {
     }
 
     // Only when user opens a new folder — update currentDir
+    // if (reset) {
+    //     loadedItems = 0;
+    //     currentDir = targetDir;   // <== Correct place
+    //     $("#file-list").empty();
+    //     $("#breadcrumb").html(buildBreadcrumb(currentDir));
+    // }
+
     if (reset) {
+        // BUILD HISTORY
+        // if (currentIndex === -1) {
+        //     history = [targetDir];
+        //     currentIndex = 0;
+        // } else if (history[currentIndex] !== targetDir) {
+        //     // Remove forward history if navigating to new folder
+        //     history = history.slice(0, currentIndex + 1);
+
+        //     history.push(targetDir);
+        //     currentIndex++;
+        // }
+
+        if (currentIndex === -1) {
+            history = [targetDir];
+            currentIndex = 0;
+
+        } else if (history[currentIndex] !== targetDir) {
+
+            // Prevent adding duplicates anywhere in history
+            const alreadyExists = history.includes(targetDir);
+            if (!alreadyExists) {
+
+                // Remove forward history (browser style)
+                history = history.slice(0, currentIndex + 1);
+
+                history.push(targetDir);
+                currentIndex++;
+            } else {
+                // If duplicate exists, jump to that index instead
+                currentIndex = history.indexOf(targetDir);
+            }
+        }
+
+        updateNavButtons();
+
+        console.log("HISTORY UPDATE:", history, "Index:", currentIndex);
+
         loadedItems = 0;
-        currentDir = targetDir;   // <== Correct place
+        currentDir = targetDir;
         $("#file-list").empty();
         $("#breadcrumb").html(buildBreadcrumb(currentDir));
     }
 
-    await loadDriveItems(targetDir);
+    //await loadDriveItems(targetDir);
 
     const local_stored = localStorage.getItem("customer_data");
        
@@ -951,10 +996,23 @@ function getFileIcon(fileName, isDirectory) {
 }
 
 
+// function buildBreadcrumb(fullPath) {
+//     const parts = fullPath.split(/[\\/]+/).filter(Boolean);
+//     return parts.map((p, i) => {
+//         const subPath = parts.slice(0, i + 1).join("\\") + "\\";
+//         return `<span class="crumb" data-path="${subPath}">${p}</span>`;
+//     }).join(" › ");
+// }
+
 function buildBreadcrumb(fullPath) {
     const parts = fullPath.split(/[\\/]+/).filter(Boolean);
+
     return parts.map((p, i) => {
-        const subPath = parts.slice(0, i + 1).join("\\") + "\\";
+        // For first breadcrumb → data-path="#"
+        const subPath = i === 0 
+            ? "#" 
+            : parts.slice(0, i + 1).join("\\") + "\\";
+
         return `<span class="crumb" data-path="${subPath}">${p}</span>`;
     }).join(" › ");
 }
@@ -1003,27 +1061,21 @@ function renderTree(containerSelector, files) {
 }
 
 function updateNavButtons() {
-    document.getElementById("back-btn").disabled = currentIndex <= 0;
-    document.getElementById("forward-btn").disabled = currentIndex >= history.length - 1;
-}
+    const backBtn = document.getElementById("back-btn");
+    const forwardBtn = document.getElementById("forward-btn");
 
-async function loadDriveItems111(path, fromHistory = false) {
-    if (!path) {
-        console.error("INVALID DIRECTORY PATH");
+    // Nothing in history → disable both
+    if (history.length === 0 || currentIndex === -1) {
+        backBtn.disabled = true;
+        forwardBtn.disabled = true;
         return;
     }
 
-    await loadFiles(path, true);
+    // Back is disabled if already at first item
+    backBtn.disabled = currentIndex <= 0;
 
-    currentDir = path;
-
-    if (!fromHistory) {
-        history = history.slice(0, currentIndex + 1); // Remove future history
-        history.push(path);
-        currentIndex = history.length - 1;
-    }
-
-    updateNavButtons();
+    // Forward disabled if at last item
+    forwardBtn.disabled = currentIndex >= history.length - 1;
 }
 
 async function loadDriveItems(path, fromHistory = false) {

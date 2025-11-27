@@ -47,7 +47,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDirectorySnapshot: (dir, oldSnapshot = {}) => ipcRenderer.invoke("get-directory-snapshot", dir, oldSnapshot),
     saveTracker: (dir) => ipcRenderer.invoke("save-tracker", dir), 
     onSyncProgress: (callback) => ipcRenderer.on('sync-progress', (event, data) => callback(data)),
+   // onSyncProgress: (callback) => ipcRenderer.on('delete-progress', (event, data) => callback(data)),
     onSyncStatus: (callback) => ipcRenderer.on('sync-status', callback),
+    onUploadProgressStart: (cb) => ipcRenderer.on("upload-progress-start", (_, data) => cb(data)),
+    onUploadProgress: (cb) => ipcRenderer.on("upload-progress", (_, data) => cb(data)),
+    onUploadComplete: (cb) => ipcRenderer.on("upload-progress-complete", cb),
+    onUploadHide: (cb) => ipcRenderer.on("upload-progress-hide", cb),
+
+    onDeleteProgressStart: (cb) => ipcRenderer.on("delete-progress-start", (_, data) => cb(data)),
+    onDeleteProgress: (cb) => ipcRenderer.on("delete-progress", (_, data) => cb(data)),
+    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", cb),
+    onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

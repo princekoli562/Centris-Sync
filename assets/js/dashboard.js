@@ -106,6 +106,52 @@ window.electronAPI.onSyncStatus((_event, statusMsg) => {
     }
 });
 
+window.electronAPI.onUploadProgressStart(({ total }) => {
+    progressContainer.style.display = "block";
+    progressBar.value = 0;
+    progressLabel.textContent = `Uploading... 0% (0/${total})`;
+});
+
+// Update progress
+window.electronAPI.onUploadProgress(({ done, total, file }) => {
+  const percent = Math.round((done / total) * 100);
+
+  progressBar.value = percent;
+  progressLabel.textContent = `Uploading... ${percent}% (${done}/${total})`;
+
+  if (file) console.log("Uploading:", file);
+});
+
+// On complete → 100%
+window.electronAPI.onUploadComplete(() => {
+  progressLabel.textContent = "✅ Upload complete!";
+});
+
+// Auto hide after 1 min
+window.electronAPI.onUploadHide(() => {
+  progressContainer.style.display = "none";
+});
+
+window.electronAPI.onDeleteProgressStart(({ total }) => {
+  progressContainer.style.display = "block";
+  progressBar.value = 0;
+  progressLabel.textContent = `Deleting... 0% (0/${total})`;
+});
+
+window.electronAPI.onDeleteProgress(({ done, total, file }) => {
+  const percent = Math.round((done / total) * 100);
+
+  progressBar.value = percent;
+  progressLabel.textContent = `Deleting... ${percent}% (${done}/${total})`;
+
+  if (file) console.log("Deleting:", file);
+});
+
+window.electronAPI.onDeleteComplete(() => {
+  progressLabel.textContent = "🗑️ Delete complete!";
+});
+
+
 // Apply initial class
 $("#file-list").addClass("grid-view");
 

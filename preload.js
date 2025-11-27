@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     //getDirectorySnapshot: (dir) => ipcRenderer.invoke("get-directory-snapshot", dir),   
     getDirectorySnapshot: (dir, oldSnapshot = {}) => ipcRenderer.invoke("get-directory-snapshot", dir, oldSnapshot),
     saveTracker: (dir) => ipcRenderer.invoke("save-tracker", dir), 
+    loadTracker: () => ipcRenderer.invoke("load-tracker"),
     onSyncProgress: (callback) => ipcRenderer.on('sync-progress', (event, data) => callback(data)),
    // onSyncProgress: (callback) => ipcRenderer.on('delete-progress', (event, data) => callback(data)),
     onSyncStatus: (callback) => ipcRenderer.on('sync-status', callback),
@@ -58,6 +59,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDeleteProgress: (cb) => ipcRenderer.on("delete-progress", (_, data) => cb(data)),
     onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", cb),
     onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
+    scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
+    createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
+    uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

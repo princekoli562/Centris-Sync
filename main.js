@@ -1005,6 +1005,93 @@ ipcMain.handle('get-sync-data', async () => {
   return syncData;
 });
 
+ipcMain.handle("scanFolder", async (event, folderPath) => {
+    const files = [];
+
+    function readRecursive(dir) {
+        const items = fs.readdirSync(dir);
+        for (const item of items) {
+            const full = path.join(dir, item);
+            if (fs.lstatSync(full).isDirectory()) {
+                readRecursive(full);
+            } else {
+                files.push(full);
+            }
+        }
+    }
+
+    readRecursive(folderPath);
+
+    return { success: true, files };
+});
+
+function ensureDirSync(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+ipcMain.handle('uploadChunkToDrive', async (event, chunk = [], mappedDrive, sourceRoot) => {
+  try {
+    if (!Array.isArray(chunk) || chunk.length === 0) {
+      return { success: true, copied: 0 };
+    }
+    if (!mappedDrive || !sourceRoot) {
+      throw new Error('Missing mappedDrive or sourceRoot');
+    }
+
+    const rootFolderName = path.basename(sourceRoot);
+    const destRoot = path.join(mappedDrive, rootFolderName);
+
+    let copied = 0;
+
+    for (const fullPath of chunk) {
+      // ensure file exists
+      if (!fs.existsSync(fullPath)) {
+        console.warn('Source file not found, skipping:', fullPath);
+        continue;
+      }
+
+      // compute relative path inside sourceRoot
+      let rel = path.relative(sourceRoot, fullPath); // e.g. "sub/folder/file.txt"
+      // On Windows ensure forward/backslash consistency
+      rel = rel.split(path.sep).join(path.sep);
+
+      const destFullPath = path.join(destRoot, rel);
+      const destDir = path.dirname(destFullPath);
+      ensureDirSync(destDir);
+
+      // copy the file (synchronous ensures order; you can change to async if desired)
+      fs.copyFileSync(fullPath, destFullPath);
+      copied++;
+    }
+
+    return { success: true, copied };
+  } catch (err) {
+    console.error('uploadChunkToDrive error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Create the root folder inside mapped drive
+ipcMain.handle('createFolderInDrive', async (event, sourceFolderPath, mappedDrive) => {
+  try {
+    if (!sourceFolderPath || !mappedDrive) {
+      throw new Error('Missing parameters');
+    }
+
+    const rootFolderName = path.basename(sourceFolderPath);
+    const destRoot = path.join(mappedDrive, rootFolderName);
+
+    ensureDirSync(destRoot);
+
+    return { success: true, destRoot };
+  } catch (err) {
+    console.error('createFolderInDrive error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 // ipcMain.handle('auto-sync-1', async (event, args) => {
 //   const { customer_id, domain_id, apiUrl, syncData } = args;
 //   console.log("Auto sync triggered...");
@@ -1221,7 +1308,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
             total: changedItemsWithDrive.length
         });
         let processed = 0;
-        const chunkSize = 50;
+        const chunkSize = 200;
 
         for (let i = 0; i < changedItemsWithDrive.length; i += chunkSize) {
             const chunk = changedItemsWithDrive.slice(i, i + chunkSize);
@@ -1260,7 +1347,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
         // Auto hide UI bar after 1 minute
         setTimeout(() => {
             event.sender.send("upload-progress-hide");
-        }, 60000);
+        }, 6000);
     }
 
     if (deletedItemsWithDrive.length > 0) {
@@ -1271,7 +1358,7 @@ ipcMain.handle('auto-sync', async (event, args) => {
             total: deletedItemsWithDrive.length
         });
         let processed = 0;
-        const chunkSize = 50;
+        const chunkSize = 200;
 
         for (let i = 0; i < deletedItemsWithDrive.length; i += chunkSize) {
             const chunk = deletedItemsWithDrive.slice(i, i + chunkSize);
@@ -1513,21 +1600,30 @@ ipcMain.handle('dialog:openFolder', async () => {
     return res.filePaths[0];
 });
 
-ipcMain.handle('dialog:openFolders', async () => {
-  let folders = [];
+// ipcMain.handle('dialog:openFolders', async () => {
+//   let folders = [];
 
-  while (true) {
+//   while (true) {
+//     const res = await dialog.showOpenDialog({
+//       title: 'Select a Folder (Cancel when done)',
+//       properties: ['openDirectory','multiSelections']
+//     });
+
+//     if (res.canceled || res.filePaths.length === 0) break;
+
+//     folders.push(res.filePaths[0]);
+//   }
+
+//   return folders.length > 0 ? folders : null;
+// });
+
+ipcMain.handle("dialog:openFolders", async () => {
     const res = await dialog.showOpenDialog({
-      title: 'Select a Folder (Cancel when done)',
-      properties: ['openDirectory','multiSelections']
+        title: "Select folders",
+        properties: ["openDirectory", "multiSelections"]
     });
 
-    if (res.canceled || res.filePaths.length === 0) break;
-
-    folders.push(res.filePaths[0]);
-  }
-
-  return folders.length > 0 ? folders : null;
+    return res.canceled ? null : res.filePaths;
 });
 
 ipcMain.handle('dialog:openFile', async () => {
@@ -1713,6 +1809,10 @@ ipcMain.handle("get-directory-snapshot", async (event, dir,oldSnapshot = {}) => 
 ipcMain.handle('save-tracker', async (event, snapshot) => {
     saveTracker(snapshot);
     return { success: true };
+});
+
+ipcMain.handle("load-tracker", () => {
+    return loadTracker();
 });
 
 

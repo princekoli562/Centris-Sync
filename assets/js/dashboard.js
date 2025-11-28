@@ -8,6 +8,7 @@ let loadedItems = 0;
 let isLoading = false;
 let history = [];
 let currentIndex = -1;
+window.stopSync = true;
 
 let currentView = "grid";
 
@@ -207,6 +208,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         $(this).addClass('active');
         $('.tab-content').removeClass('active');
         $('#' + tab).addClass('active');
+    });
+
+    document.getElementById("stopSyncBtn").addEventListener("click", () => {
+       // window.electronAPI.stopSync();
+        window.electronAPI.hardStop();
     });
 
       // --- Local Files ---

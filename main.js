@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain,dialog, Tray, Menu } = require('electron');
 const path = require("path");
 const fs = require('fs');
 const crypto = require('crypto');
+const FormData = require('form-data'); 
 
 //console.log(process.env.NODE_ENV);
 // if (process.env.NODE_ENV === "development") {
@@ -39,6 +40,7 @@ const crypto = require('crypto');
 //   }
 // }
 ///
+
 if (process.env.NODE_ENV === "development") {
   try {
     const path = require("path");
@@ -82,6 +84,7 @@ let syncCustomerId = null;
 let syncDomainId = null;
 let syncConfigData = null;
 let redirectingToLogin = false;
+//global.isSyncCancelled = false;
 
 let syncData = {
   customer_data: null,
@@ -375,19 +378,19 @@ function loadTracker() {
 
 
 
-function saveTracker_1(snapshot) {
+function saveTracker(snapshot) {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     fs.writeFileSync(trackerPath, JSON.stringify(snapshot, null, 2));
 }
 
-function saveTracker(data) {
-    try {
-        fs.writeFileSync(trackerPath, JSON.stringify(data), { encoding: "utf-8" });
-        fs.fsyncSync(fs.openSync(trackerPath, "r+")); // forces flush
-    } catch (e) {
-        console.error("Error saving tracker:", e);
-    }
-}
+// function saveTracker(data) {
+//     try {
+//         fs.writeFileSync(trackerPath, JSON.stringify(data), { encoding: "utf-8" });
+//         fs.fsyncSync(fs.openSync(trackerPath, "r+")); // forces flush
+//     } catch (e) {
+//         console.error("Error saving tracker:", e);
+//     }
+// }
 
 function findNewOrChangedFilesOLd(current, previous) {
     const changed = [];
@@ -943,6 +946,21 @@ function unmountVHDX() {
 }
 
 app.whenReady().then(() => {
+  //  win = new BrowserWindow({
+  //       width: 800,
+  //       height: 600,
+  //       webPreferences: {
+  //           preload: path.join(__dirname, 'preload.js'),
+  //           contextIsolation: true,
+  //           enableRemoteModule: false,
+  //           nodeIntegration: true // ❗ keep false for security
+  //       },
+  //       icon: path.join(__dirname, 'assets/images/favicon.ico')
+  //   });
+  // win.webContents.openDevTools({ mode: 'detach' });
+
+  //   // open main process debug window
+  //   win.webContents.debugger.attach('1.1');
     const savedSession = loadSession();
 
     if (savedSession) {
@@ -1566,7 +1584,7 @@ ipcMain.handle('auto-sync-2', async (event, args) => {
     }
 });
 
-ipcMain.handle('auto-sync-3', async (event, args) => {
+ipcMain.handle('auto-sync', async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
   try {
@@ -1611,6 +1629,11 @@ ipcMain.handle('auto-sync-3', async (event, args) => {
       const uploadChunks = chunkArray(changedItemsWithDrive, 200);
 
       for (const chunk of uploadChunks) {
+        // if (global.isSyncCancelled) {
+        //   console.log("⛔ Upload Cancelled");
+        //   return { success: false, message: "Sync stopped by user" };
+        // }
+        // if (window.stopSync) break;
         await fetch(`${apiUrl}/api/syncChangedItems`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1658,6 +1681,11 @@ ipcMain.handle('auto-sync-3', async (event, args) => {
       const deleteChunks = chunkArray(deletedItemsWithDrive, 200);
 
       for (const chunk of deleteChunks) {
+        // if (global.isSyncCancelled) {
+        //   console.log("⛔ Delete Cancelled");
+        //   return { success: false, message: "Sync stopped by user" };
+        // }
+
         await fetch(`${apiUrl}/api/deleteSyncedItems`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1708,7 +1736,193 @@ ipcMain.handle('auto-sync-3', async (event, args) => {
   }
 });
 
-ipcMain.handle('auto-sync', async (event, args) => {
+ipcMain.handle('auto-sync-p', async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+  try {
+    const driveLetter = getMappedDriveLetter(); // e.g. 'D:'
+    const mappedDrivePath = path.join(driveLetter + path.sep, syncData.config_data.centris_drive) + path.sep;
+    const previousSnapshot = loadTracker() || {};
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+    const changedPaths = findNewOrChangedFiles(currentSnapshot, previousSnapshot); // returns array of windows paths (no drive letter or with)
+    const deletedPaths = Object.keys(previousSnapshot).filter(old => !currentSnapshot[old]);
+
+    if ((!changedPaths || changedPaths.length === 0) && (!deletedPaths || deletedPaths.length === 0)) {
+      return { success: true, message: 'No changes' };
+    }
+
+    // Build metadata list (include directories as metadata so server creates folder entries)
+    const metaList = changedPaths.map(p => {
+      // ensure absolute full path
+      const full = p.startsWith(driveLetter) ? p : path.join(mappedDrivePath, p);
+      const m = fileMetadata(full, mappedDrivePath);
+      return { fullPath: full, ...m };
+    });
+
+    // Batch size: tune for your network/server (50-200 files). Smaller easier on memory.
+    const BATCH_SIZE = 80;
+    const batches = chunkArray(metaList, BATCH_SIZE);
+
+    // progress reporting totals
+    event.sender.send("upload-progress-start", { total: metaList.length });
+
+    let processed = 0;
+    for (const batch of batches) {
+      // Upload batch
+      await streamUploadChunk(apiUrl, '/api/syncChangedItems', batch, mappedDrivePath, customer_id, domain_id, syncData.user_data.id);
+
+      // update snapshot immediately for uploaded files
+      batch.forEach(item => {
+        const clean = item.relative_path.replace(/\\/g, '/');
+        // store mtime, or use Date.now()
+        currentSnapshot[clean] = { mtime: item.mtime || Date.now() };
+      });
+      saveTracker(currentSnapshot);
+
+      processed += batch.length;
+      event.sender.send("upload-progress", {
+        done: processed,
+        total: metaList.length,
+        file: batch[batch.length - 1]?.relative_path ?? null
+      });
+
+      // small delay to avoid hammering server
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    event.sender.send("upload-progress-complete");
+    setTimeout(() => event.sender.send("upload-progress-hide"), 4000);
+
+    // DELETES: send all deletedItems in chunks as JSON (no file streams)
+    if (deletedPaths.length > 0) {
+      event.sender.send("delete-progress-start", { total: deletedPaths.length });
+      const deleteBatches = chunkArray(deletedPaths, 300);
+      let delProcessed = 0;
+      for (const delBatch of deleteBatches) {
+        const payload = {
+          customer_id,
+          domain_id,
+          user_id: syncData.user_data.id,
+          root_path: mappedDrivePath.replace(/\\/g, '/'),
+          deleted_items: delBatch.map(d => d.replace(/\\/g, '/'))
+        };
+        const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`Delete API failed ${res.status}`);
+        // update snapshot: remove
+        delBatch.forEach(item => {
+          const key = item.replace(/\\/g, '/');
+          delete currentSnapshot[key];
+        });
+        saveTracker(currentSnapshot);
+
+        delProcessed += delBatch.length;
+        event.sender.send("delete-progress", {
+          done: delProcessed,
+          total: deletedPaths.length,
+          file: delBatch[delBatch.length - 1] ?? null
+        });
+
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      event.sender.send("delete-progress-complete");
+      setTimeout(() => event.sender.send("delete-progress-hide"), 40000);
+    }
+
+    const win = BrowserWindow.getFocusedWindow();
+    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
+
+    return { success: true, message: 'Sync completed successfully' };
+
+  } catch (e) {
+    console.error('auto-sync error', e);
+    return { success: false, message: e.message || String(e) };
+  }
+});
+
+
+function fileMetadata(fullPath, rootPath) {
+  const stat = fs.statSync(fullPath);
+  return {
+    relative_path: path.relative(rootPath, fullPath).replace(/\\/g, '/'),
+    is_folder: stat.isDirectory(),
+    mtime: stat.mtimeMs,
+    size: stat.isFile() ? stat.size : null
+  };
+}
+
+async function streamUploadChunk(apiUrl, endpoint, metaList, rootPath, customerId, domainId, userId) {
+  // metaList contains objects:
+  // { fullPath, relative_path, is_folder, mtime, size }
+  const form = new FormData();
+
+  // Attach JSON metadata for this batch
+  form.append('meta', JSON.stringify({
+    root_path: rootPath.replace(/\\/g, '/'),
+    customer_id: customerId,
+    domain_id: domainId,
+    user_id: userId,
+    items: metaList.map(m => ({
+      relative_path: m.relative_path,
+      is_folder: m.is_folder,
+      mtime: m.mtime,
+      size: m.size
+    }))
+  }));
+
+  // Append each file as stream (only for non-folders)
+  metaList.forEach((m, idx) => {
+    if (!m.is_folder) {
+      // stream - keep field name unique `files[]`
+      form.append('files[]', fs.createReadStream(m.fullPath), {
+        filename: path.basename(m.fullPath),
+        knownLength: m.size
+      });
+    }
+  });
+
+  const headers = form.getHeaders();
+  // node-fetch needs content-length otherwise may hang for large posts
+  if (form.getLengthSync) {
+    try {
+      headers['Content-Length'] = form.getLengthSync();
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const res = await fetch(`${apiUrl}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: form
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+ipcMain.on("stop-sync", () => {
+    console.log("🔥 STOP REQUEST RECEIVED");
+    global.isSyncCancelled = true;
+});
+
+ipcMain.on("hard-stop", () => {
+    console.log("💀 Hard stop called. Killing sync task.");
+    global.isSyncCancelled = true;
+
+    // force kill long timers
+    clearInterval(global.syncTimer);
+    clearTimeout(global.syncTimeout);
+});
+
+ipcMain.handle('auto-sync-final', async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
   // helper: normalize keys used inside the snapshot (no drive letter, forward slashes)
@@ -2444,6 +2658,7 @@ function addDriveLetter(drive, filePath) {
 // });
 
 process.on('exit', () => {
+  
     try { 
       // clearSession();
       //  unmountVHDX(); 

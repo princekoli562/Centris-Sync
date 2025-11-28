@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
     createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
     uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),
+     stopSync: () => ipcRenderer.send("stop-sync"), on: (channel, func) => ipcRenderer.on(channel, func),
+      hardStop: () => ipcRenderer.send("hard-stop")
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

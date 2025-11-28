@@ -375,9 +375,18 @@ function loadTracker() {
 
 
 
-function saveTracker(snapshot) {
+function saveTracker_1(snapshot) {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     fs.writeFileSync(trackerPath, JSON.stringify(snapshot, null, 2));
+}
+
+function saveTracker(data) {
+    try {
+        fs.writeFileSync(trackerPath, JSON.stringify(data), { encoding: "utf-8" });
+        fs.fsyncSync(fs.openSync(trackerPath, "r+")); // forces flush
+    } catch (e) {
+        console.error("Error saving tracker:", e);
+    }
 }
 
 function findNewOrChangedFilesOLd(current, previous) {
@@ -1263,21 +1272,24 @@ ipcMain.handle('createFolderInDrive', async (event, sourceFolderPath, mappedDriv
 //   }
 // });
 
-ipcMain.handle('auto-sync', async (event, args) => {
+ipcMain.handle('auto-sync-1', async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
   try {
     const drive_letter = getMappedDriveLetter();
 
     const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
-
+    console.log('AAAA');
     const previousSnapshot = loadTracker();
     const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
 
     const user_id = syncData.user_data.id;
+    console.log('BBBB');
 
     const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
       .map(file => file.replace(/\\/g, '/'));
+
+      console.log('CCCC');
 
     const deletedItems = Object.keys(previousSnapshot)
       .filter(oldPath => !currentSnapshot[oldPath])
@@ -1286,10 +1298,13 @@ ipcMain.handle('auto-sync', async (event, args) => {
     const changedItemsWithDrive = changedItems.map(
       file => addDriveLetter(drive_letter, file)
     );
+    console.log('DDDD');
 
     const deletedItemsWithDrive = deletedItems.map(
       file => addDriveLetter(drive_letter, file)
     );
+
+    console.log('EEEE');
 
     if (changedItems.length === 0 && deletedItems.length === 0) {
       console.log("✅ No new, modified, or deleted files found to sync.");
@@ -1414,6 +1429,582 @@ ipcMain.handle('auto-sync', async (event, args) => {
     return { success: false, message: error.message };
   }
 });
+
+ipcMain.handle('auto-sync-2', async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  try {
+        const drive_letter = getMappedDriveLetter();
+        const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
+
+        const previousSnapshot = loadTracker();
+        const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+
+        const user_id = syncData.user_data.id;
+
+        const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
+        .map(f => f.replace(/\\/g, "/"));
+
+        const deletedItems = Object.keys(previousSnapshot)
+        .filter(old => !currentSnapshot[old])
+        .map(f => f.replace(/\\/g, "/"));
+
+        const changedItemsWithDrive = changedItems.map(f => addDriveLetter(drive_letter, f));
+        const deletedItemsWithDrive = deletedItems.map(f => addDriveLetter(drive_letter, f));
+
+        if (changedItems.length === 0 && deletedItems.length === 0) {
+        return { success: true, message: "No changes" };
+        }
+
+        // -------------------------------------
+        // 📤 CHANGED FILES UPLOAD (chunked)
+        // -------------------------------------
+        if (changedItemsWithDrive.length > 0) {
+        event.sender.send("upload-progress-start", {
+            total: changedItemsWithDrive.length
+        });
+
+        let processed = 0;
+        const uploadChunks = chunkArray(changedItemsWithDrive, 200);
+
+        for (const chunk of uploadChunks) {
+            await fetch(`${apiUrl}/api/syncChangedItems`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                customer_id,
+                domain_id,
+                user_id,
+                root_path: mappedDrivePath,
+                changed_items: chunk,
+            }),
+            });
+
+            processed += chunk.length;
+
+            event.sender.send("upload-progress", {
+            done: processed,
+            total: changedItemsWithDrive.length,
+            file: chunk?.[chunk.length - 1] ?? null,
+            });
+
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        event.sender.send("upload-progress-complete");
+        setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
+        }
+
+        // -------------------------------------
+        // 🗑️ DELETED FILES SYNC (chunked)
+        // -------------------------------------
+        if (deletedItemsWithDrive.length > 0) {
+        event.sender.send("delete-progress-start", {
+            total: deletedItemsWithDrive.length
+        });
+
+        let processed = 0;
+        const deleteChunks = chunkArray(deletedItemsWithDrive, 200);
+
+        for (const chunk of deleteChunks) {
+            await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                customer_id,
+                domain_id,
+                user_id,
+                root_path: mappedDrivePath,
+                deleted_items: chunk,
+            }),
+            });
+
+            processed += chunk.length;
+
+            event.sender.send("delete-progress", {
+            done: processed,
+            total: deletedItemsWithDrive.length,
+            file: chunk?.[chunk.length - 1] ?? null,
+            });
+
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        event.sender.send("delete-progress-complete");
+        setTimeout(() => event.sender.send("delete-progress-hide"), 60000);
+        }
+
+        // ---------------------------------------------------
+        // 🧩 CHUNKED SNAPSHOT SAVE (new/modified items)
+        // ---------------------------------------------------
+        const snapshotChunks = chunkArray(Object.entries(currentSnapshot), 2000);
+
+        for (const chunk of snapshotChunks) {
+        const obj = Object.fromEntries(chunk);
+        saveTrackerChunk(obj);
+        }
+
+        // ---------------------------------------------------
+        // 🗑️ CHUNK DELETE FROM SNAPSHOT
+        // ---------------------------------------------------
+        const deleteSnapChunks = chunkArray(deletedItems, 2000);
+
+        for (const chunk of deleteSnapChunks) {
+        removeDeletedChunk(chunk);
+        }
+
+        // FINAL MERGE & SAVE
+        saveTracker(loadTracker());
+
+        const win = BrowserWindow.getFocusedWindow();
+        if (win) win.webContents.send('sync-status', 'Auto sync complete.');
+
+        return { success: true, message: "Sync completed successfully" };
+
+    } catch (error) {
+        return { success: false, message: error.message };
+    }
+});
+
+ipcMain.handle('auto-sync-3', async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  try {
+    const drive_letter = getMappedDriveLetter();
+    const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
+
+    const previousSnapshot = loadTracker();
+    console.log('AAAA');
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+    console.log('BBBB');
+    const user_id = syncData.user_data.id;
+
+    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
+      .map(f => f.replace(/\\/g, "/"));
+
+    console.log('CCCC');
+
+    const deletedItems = Object.keys(previousSnapshot)
+      .filter(old => !currentSnapshot[old])
+      .map(f => f.replace(/\\/g, "/"));
+
+    const changedItemsWithDrive = changedItems.map(f => addDriveLetter(drive_letter, f));
+    const deletedItemsWithDrive = deletedItems.map(f => addDriveLetter(drive_letter, f));
+
+    console.log('DDDD');
+
+    if (changedItems.length === 0 && deletedItems.length === 0) {
+      return { success: true, message: "No changes" };
+    }
+
+    console.log('EEEE');
+
+    // -------------------------------------
+    // 📤 CHANGED FILES UPLOAD (chunked)
+    // -------------------------------------
+    if (changedItemsWithDrive.length > 0) {
+      event.sender.send("upload-progress-start", {
+        total: changedItemsWithDrive.length
+      });
+
+      let processed = 0;
+      const uploadChunks = chunkArray(changedItemsWithDrive, 200);
+
+      for (const chunk of uploadChunks) {
+        await fetch(`${apiUrl}/api/syncChangedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            root_path: mappedDrivePath,
+            changed_items: chunk,
+          }),
+        });
+
+        // 🔥 Update snapshot immediately
+        chunk.forEach(item => {
+          const cleanPath = item.replace(`${drive_letter}/`, "").replace(/\\/g, "/");
+          currentSnapshot[cleanPath] = { mtime: Date.now() };
+        });
+
+        saveTracker(currentSnapshot); // 🔥 Save after each chunk
+
+        processed += chunk.length;
+
+        event.sender.send("upload-progress", {
+          done: processed,
+          total: changedItemsWithDrive.length,
+          file: chunk?.[chunk.length - 1] ?? null,
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      event.sender.send("upload-progress-complete");
+      setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
+    }
+
+    // -------------------------------------
+    // 🗑️ DELETED FILES SYNC (chunked)
+    // -------------------------------------
+    if (deletedItemsWithDrive.length > 0) {
+      event.sender.send("delete-progress-start", {
+        total: deletedItemsWithDrive.length
+      });
+
+      let processed = 0;
+      const deleteChunks = chunkArray(deletedItemsWithDrive, 200);
+
+      for (const chunk of deleteChunks) {
+        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            root_path: mappedDrivePath,
+            deleted_items: chunk,
+          }),
+        });
+
+        // 🔥 Remove from snapshot immediately
+        chunk.forEach(item => {
+          const cleanPath = item.replace(`${drive_letter}/`, "").replace(/\\/g, "/");
+          delete currentSnapshot[cleanPath];
+        });
+
+        saveTracker(currentSnapshot); // 🔥 Save after each chunk
+
+        processed += chunk.length;
+
+        event.sender.send("delete-progress", {
+          done: processed,
+          total: deletedItemsWithDrive.length,
+          file: chunk?.[chunk.length - 1] ?? null,
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      event.sender.send("delete-progress-complete");
+      setTimeout(() => event.sender.send("delete-progress-hide"), 60000);
+    }
+
+    // -------------------------------------
+    // Snapshot is already updated inside loops
+    // No final saveTracker() needed
+    // -------------------------------------
+
+    const win = BrowserWindow.getFocusedWindow();
+    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('auto-sync', async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  // helper: normalize keys used inside the snapshot (no drive letter, forward slashes)
+  const normalizeKey = (p) => {
+    if (!p) return p;
+    // remove drive letter like "E:\" or "E:/" or "E:"
+    p = p.replace(/^[A-Za-z]:[\\/]?/, "");
+    // remove leading slashes/backslashes
+    p = p.replace(/^[\\/]+/, "");
+    // unify to forward slashes
+    return p.replace(/\\/g, "/");
+  };
+
+  // helper: save a chunk of keys into persistent tracker efficiently if helpers exist
+  const persistAddChunk = (keys, sourceSnapshot, previousSnapshot) => {
+    // If you have saveTrackerChunk implementation (from earlier code), use it for better perf.
+    // Otherwise, fall back to saveTracker(previousSnapshot) after merge.
+    if (typeof saveTrackerChunk === "function") {
+      // build object of only these keys and values from sourceSnapshot
+      const obj = {};
+      keys.forEach(k => {
+        if (sourceSnapshot[k] !== undefined) obj[k] = sourceSnapshot[k];
+      });
+      try { saveTrackerChunk(obj); } catch (e) {
+        // fallback
+        Object.assign(previousSnapshot, obj);
+        saveTracker(previousSnapshot);
+      }
+    } else {
+      // merge and save full snapshot
+      keys.forEach(k => {
+        if (sourceSnapshot[k] !== undefined) previousSnapshot[k] = sourceSnapshot[k];
+      });
+      saveTracker(previousSnapshot);
+    }
+  };
+
+  // helper: remove a chunk of keys from persistent tracker
+  const persistRemoveChunk = (keys, previousSnapshot) => {
+    if (typeof removeDeletedChunk === "function") {
+      try {
+        removeDeletedChunk(keys);
+      } catch (e) {
+        // fallback
+        keys.forEach(k => delete previousSnapshot[k]);
+        saveTracker(previousSnapshot);
+      }
+    } else {
+      keys.forEach(k => delete previousSnapshot[k]);
+      saveTracker(previousSnapshot);
+    }
+  };
+
+  try {
+    const drive_letter = getMappedDriveLetter(); // e.g. "E:" or "E:\"
+    const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
+
+    // load persistent tracker (previously synced state)
+    let previousSnapshot = loadTracker() || {};
+    console.log('loadTracker keys:', Object.keys(previousSnapshot).length);
+
+    // build current snapshot from filesystem
+    console.log('scanning directory for current snapshot...');
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+    console.log('currentSnapshot keys:', Object.keys(currentSnapshot).length);
+
+    const user_id = syncData.user_data.id;
+
+    // normalize snapshot keys for consistent comparison (no drive letter, forward slashes)
+    const normPrevKeys = Object.keys(previousSnapshot).reduce((acc, k) => {
+      acc[normalizeKey(k)] = previousSnapshot[k];
+      return acc;
+    }, {});
+    const normCurrKeys = Object.keys(currentSnapshot).reduce((acc, k) => {
+      acc[normalizeKey(k)] = currentSnapshot[k];
+      return acc;
+    }, {});
+
+    // Rebuild snapshots in normalized-key form for this run
+    previousSnapshot = normPrevKeys;
+    // We want currentSnapshotNormalized to contain actual metadata from original currentSnapshot
+    const currentSnapshotNormalized = {};
+    Object.keys(currentSnapshot).forEach(k => {
+      currentSnapshotNormalized[normalizeKey(k)] = currentSnapshot[k];
+    });
+
+    // Determine changed (present in current but new or changed vs previous)
+    const changedItems = findNewOrChangedFiles(currentSnapshotNormalized, previousSnapshot)
+      .map(f => f.replace(/\\/g, "/"));
+
+    // Determine deleted (present in previous but missing in current)
+    const deletedItems = Object.keys(previousSnapshot)
+      .filter(old => !currentSnapshotNormalized[old])
+      .map(f => f.replace(/\\/g, "/"));
+
+    // Add drive letter back for API upload if server expects full path
+    const addDriveIfNeeded = (key) => {
+      // If addDriveLetter function exists and used previously, use it; else prefix
+      if (typeof addDriveLetter === "function") return addDriveLetter(drive_letter, key);
+      // ensure drive_letter ends with colon (E:) and slash
+      let dl = drive_letter;
+      if (!dl.endsWith(":")) dl = dl.replace(/[\\/]+$/,"");
+      // produce something like "E:/path/to/file"
+      return `${dl}/${key}`.replace(/\\/g, "/");
+    };
+
+    const changedItemsWithDrive = changedItems.map(f => addDriveIfNeeded(f));
+    const deletedItemsWithDrive = deletedItems.map(f => addDriveIfNeeded(f));
+
+    console.log('changed count:', changedItems.length, 'deleted count:', deletedItems.length);
+
+    if (changedItems.length === 0 && deletedItems.length === 0) {
+      return { success: true, message: "No changes" };
+    }
+
+    // ---------------------------------------------------
+    // UPLOAD CHANGED FILES (chunked) - persist previousSnapshot after each successful chunk
+    // ---------------------------------------------------
+    if (changedItemsWithDrive.length > 0) {
+      event.sender.send("upload-progress-start", { total: changedItemsWithDrive.length });
+
+      let processed = 0;
+      const uploadChunks = chunkArray(changedItemsWithDrive, 200); // chunk size configurable
+
+      for (const chunkWithDrive of uploadChunks) {
+        // convert chunkWithDrive to normalized keys used in snapshot (remove drive)
+        const chunkKeys = chunkWithDrive.map(p => normalizeKey(String(p).replace(/^([A-Za-z]:)?[\\\/]?/, "")));
+
+        try {
+          const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              customer_id,
+              domain_id,
+              user_id,
+              root_path: mappedDrivePath,
+              changed_items: chunkWithDrive,
+            }),
+          });
+
+          if (!res.ok) {
+            // server returned error -> stop and return partial state (previousSnapshot remains persisted up to last chunk)
+            const text = await res.text().catch(() => null);
+            console.error('syncChangedItems failed', res.status, text);
+            return { success: false, message: `Upload chunk failed: ${res.status}` };
+          }
+
+          // ✅ On success: merge only these chunkKeys from currentSnapshotNormalized -> previousSnapshot
+          persistAddChunk(chunkKeys, currentSnapshotNormalized, previousSnapshot);
+
+          processed += chunkKeys.length;
+          event.sender.send("upload-progress", {
+            done: processed,
+            total: changedItemsWithDrive.length,
+            file: chunkWithDrive?.[chunkWithDrive.length - 1] ?? null,
+          });
+
+        } catch (err) {
+          console.error('fetch error while uploading changed chunk', err);
+          return { success: false, message: `Network/upload error: ${err.message}` };
+        }
+
+        // small throttle so server isn't hammered; adjust/remove as needed
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      event.sender.send("upload-progress-complete");
+      setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
+    }
+
+    // ---------------------------------------------------
+    // DELETE REMOTE FILES (chunked) - persist removal after each successful chunk
+    // ---------------------------------------------------
+    if (deletedItemsWithDrive.length > 0) {
+      event.sender.send("delete-progress-start", { total: deletedItemsWithDrive.length });
+
+      let processed = 0;
+      const deleteChunks = chunkArray(deletedItemsWithDrive, 200);
+
+      for (const chunkWithDrive of deleteChunks) {
+        const chunkKeys = chunkWithDrive.map(p => normalizeKey(String(p).replace(/^([A-Za-z]:)?[\\\/]?/, "")));
+
+        try {
+          const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              customer_id,
+              domain_id,
+              user_id,
+              root_path: mappedDrivePath,
+              deleted_items: chunkWithDrive,
+            }),
+          });
+
+          if (!res.ok) {
+            const text = await res.text().catch(() => null);
+            console.error('deleteSyncedItems failed', res.status, text);
+            return { success: false, message: `Delete chunk failed: ${res.status}` };
+          }
+
+          // ✅ On success: remove these keys from previousSnapshot and persist
+          persistRemoveChunk(chunkKeys, previousSnapshot);
+
+          processed += chunkKeys.length;
+          event.sender.send("delete-progress", {
+            done: processed,
+            total: deletedItemsWithDrive.length,
+            file: chunkWithDrive?.[chunkWithDrive.length - 1] ?? null,
+          });
+
+        } catch (err) {
+          console.error('fetch error while deleting chunk', err);
+          return { success: false, message: `Network/delete error: ${err.message}` };
+        }
+
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      event.sender.send("delete-progress-complete");
+      setTimeout(() => event.sender.send("delete-progress-hide"), 60000);
+    }
+
+    // Final status message
+    const win = BrowserWindow.getFocusedWindow();
+    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (error) {
+    console.error('auto-sync error:', error);
+    return { success: false, message: error.message || String(error) };
+  }
+});
+
+
+
+function chunkArray(arr, size) {
+  const res = [];
+  for (let i = 0; i < arr.length; i += size) {
+    res.push(arr.slice(i, i + size));
+  }
+  return res;
+}
+
+function saveTrackerChunk_1(snapshotChunk) {
+  try {
+    const tracker = loadTracker() || {};
+
+    for (const [key, value] of Object.entries(snapshotChunk)) {
+      tracker[key] = value;
+    }
+
+    saveTracker(tracker);
+    return true;
+
+  } catch (err) {
+    console.error("Error saving snapshot chunk:", err);
+    return false;
+  }
+}
+
+function saveTrackerChunk(obj) {
+    let tracker = loadTracker();
+    tracker = { ...tracker, ...obj };
+
+    fs.writeFileSync(trackerPath, JSON.stringify(tracker), "utf-8");
+    fs.fsyncSync(fs.openSync(trackerPath, "r+"));
+}
+
+function removeDeletedChunk(keys) {
+    let tracker = loadTracker();
+
+    keys.forEach(k => delete tracker[k]);
+
+    fs.writeFileSync(trackerPath, JSON.stringify(tracker), "utf-8");
+    fs.fsyncSync(fs.openSync(trackerPath, "r+"));
+}
+
+function removeDeletedChunk_1(deletedPaths) {
+  try {
+    const tracker = loadTracker() || {};
+
+    for (const d of deletedPaths) {
+      delete tracker[d];
+    }
+
+    saveTracker(tracker);
+    return true;
+
+  } catch (err) {
+    console.error("Error deleting snapshot chunk:", err);
+    return false;
+  }
+}
 
 
 // ipcRenderer.on('sync-progress', (event, data = {}) => {

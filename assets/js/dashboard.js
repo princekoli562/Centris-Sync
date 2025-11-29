@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
-    //startAutoSync(syncData);
+    startAutoSync(syncData);
 
     let currentDir = config.drivePath;
     let local_stored = localStorage.getItem("customer_data");
@@ -210,10 +210,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         $('#' + tab).addClass('active');
     });
 
-    document.getElementById("stopSyncBtn").addEventListener("click", () => {
-       // window.electronAPI.stopSync();
-        window.electronAPI.hardStop();
-    });
+    // document.getElementById("stopSyncBtn").addEventListener("click", () => {
+    //    // window.electronAPI.stopSync();
+    //     window.electronAPI.hardStop();
+    // });
 
       // --- Local Files ---
     

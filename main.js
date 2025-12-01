@@ -1334,7 +1334,7 @@ ipcMain.handle('auto-sync-n', async (event, args) => {
   }
 });
 
-ipcMain.handle("auto-sync", async (event, args) => {
+ipcMain.handle("auto-sync-working", async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
   try {
@@ -1480,6 +1480,348 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
   } catch (error) {
     return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle("auto-sync-s", async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  const centrisFolder = syncData.config_data.centris_drive;
+
+  // 🔧 Removes "Centris-Drive/" prefix from any path
+  function stripCentrisPrefix(relPath) {
+    if (!relPath) return relPath;
+
+    relPath = relPath.replace(/\\/g, "/");  // normalize
+
+    const folder = centrisFolder.replace(/\\/g, "/").toLowerCase();
+
+    // Case 1 -> Starts with "Centris-Drive/"
+    if (relPath.toLowerCase().startsWith(folder + "/")) {
+      return relPath.substring(folder.length + 1);
+    }
+
+    // Case 2 -> Starts with "/Centris-Drive/"
+    if (relPath.toLowerCase().startsWith("/" + folder + "/")) {
+      return relPath.substring(folder.length + 2);
+    }
+
+    return relPath;
+  }
+
+  try {
+    const drive_letter = getMappedDriveLetter();
+    const mappedDrivePath = `${drive_letter}\\${centrisFolder}\\`;
+
+    console.log("[MAIN] ROOT:", mappedDrivePath);
+
+    const previousSnapshot = loadTracker();
+    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+    const user_id = syncData.user_data.id;
+
+    let changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
+    let deletedItems = Object.keys(previousSnapshot).filter(p => !currentSnapshot[p]);
+
+    // Normalize both
+    changedItems = changedItems.map(p => stripCentrisPrefix(p));
+    deletedItems = deletedItems.map(p => stripCentrisPrefix(p));
+
+    // Remove blanks created after stripping
+    changedItems = changedItems.filter(p => p.trim() !== "");
+    deletedItems = deletedItems.filter(p => p.trim() !== "");
+
+    if (changedItems.length === 0 && deletedItems.length === 0) {
+      return { success: true, message: "No changes" };
+    }
+
+    // -----------------------------------------
+    // UPLOAD CHANGED
+    // -----------------------------------------
+    if (changedItems.length > 0) {
+      const uploadChunks = chunkArray(changedItems, 80);
+      event.sender.send("upload-progress-start", { total: changedItems.length });
+
+      let processed = 0;
+
+      for (const paths of uploadChunks) {
+        const payloadItems = await Promise.all(
+          paths.map(async relPath => {
+            const safePath = stripCentrisPrefix(relPath);
+
+            // FINAL PROTECTION — NEVER ALLOW CENTRIS PREFIX
+            if (safePath.toLowerCase().startsWith(centrisFolder.toLowerCase())) {
+              throw new Error("❌ RelPath still contains Centris-Drive prefix: " + safePath);
+            }
+
+            const localFullPath = path.join(mappedDrivePath, safePath);
+            console.log("[MAIN] Uploading →", localFullPath);
+
+            const fileContent = await fs.promises.readFile(localFullPath, { encoding: "base64" });
+
+            return {
+              path: safePath,
+              content: fileContent,
+              size: currentSnapshot[relPath]?.size || 0,
+              mtime: currentSnapshot[relPath]?.mtime || 0
+            };
+          })
+        );
+
+        await fetch(`${apiUrl}/api/syncChangedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            changed_items: payloadItems
+          })
+        });
+
+        processed += paths.length;
+        saveTracker(currentSnapshot);
+
+        event.sender.send("upload-progress", {
+          done: processed,
+          total: changedItems.length
+        });
+
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      event.sender.send("upload-progress-complete");
+    }
+
+    // -----------------------------------------
+    // DELETED ITEMS
+    // -----------------------------------------
+    if (deletedItems.length > 0) {
+      const deleteChunks = chunkArray(deletedItems, 80);
+
+      event.sender.send("delete-progress-start", { total: deletedItems.length });
+
+      let processed = 0;
+
+      for (const chunk of deleteChunks) {
+        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            paths: chunk
+          })
+        });
+
+        chunk.forEach(p => delete currentSnapshot[p]);
+        saveTracker(currentSnapshot);
+
+        processed += chunk.length;
+
+        event.sender.send("delete-progress", {
+          done: processed,
+          total: deletedItems.length
+        });
+
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      event.sender.send("delete-progress-complete");
+    }
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (err) {
+    console.error("AUTO-SYNC ERROR:", err);
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle("auto-sync", async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  const centrisFolder = syncData.config_data.centris_drive; // e.g. "Centris-Drive"
+
+  // ------------------------------------------------------------
+  // Remove all repeated Centris-Drive prefixes
+  // ------------------------------------------------------------
+  function stripCentrisPrefix(relPath) {
+    if (!relPath) return relPath;
+
+    relPath = relPath.replace(/\\/g, "/").trim();
+    const folder = centrisFolder.replace(/\\/g, "/");
+
+    while (relPath.toLowerCase().startsWith(folder.toLowerCase() + "/")) {
+      relPath = relPath.substring(folder.length + 1);
+    }
+
+    return relPath;
+  }
+
+  // ------------------------------------------------------------
+  // Normalize snapshot key (remove base folder + extra prefixes)
+  // ------------------------------------------------------------
+  function normalizeSnapshotPath(fullPath, baseFolder) {
+    let rel = fullPath.replace(/\\/g, "/");
+    baseFolder = baseFolder.replace(/\\/g, "/");
+
+    if (rel.toLowerCase().startsWith(baseFolder.toLowerCase())) {
+      rel = rel.substring(baseFolder.length);
+    }
+
+    return stripCentrisPrefix(rel);
+  }
+
+  // ------------------------------------------------------------
+  // CORRECT FILE/FOLDER DETECTION (VERY IMPORTANT)
+  // ------------------------------------------------------------
+  function getFileType(fullPath) {
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) return "dir";
+      if (stat.isFile()) return "file";
+      return "unknown";
+    } catch {
+      return "missing"; // deleted or inaccessible
+    }
+  }
+
+  try {
+    // ------------------------------------------------------------
+    // Mapped folder path
+    // ------------------------------------------------------------
+    const drive_letter = getMappedDriveLetter();
+    const mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+
+    // Load tracker
+    const previousSnapshot = loadTracker();
+
+    // Scan local directory
+    const rawSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+
+    // Build normalized snapshot
+    let currentSnapshot = {};
+    for (const rawKey in rawSnapshot) {
+      const cleanKey = normalizeSnapshotPath(rawKey, mappedDrivePath);
+      currentSnapshot[cleanKey] = rawSnapshot[rawKey];
+    }
+
+    const user_id = syncData.user_data.id;
+
+    // ------------------------------------------------------------
+    // Compute changed/deleted
+    // ------------------------------------------------------------
+    let changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot).map(stripCentrisPrefix);
+    let deletedItems = Object.keys(previousSnapshot).filter(p => !currentSnapshot[p]).map(stripCentrisPrefix);
+
+    changedItems = changedItems.filter(Boolean);
+    deletedItems = deletedItems.filter(Boolean);
+
+    if (changedItems.length === 0 && deletedItems.length === 0) {
+      return { success: true, message: "No changes" };
+    }
+
+    // ------------------------------------------------------------
+    // UPLOAD CHANGED ITEMS
+    // ------------------------------------------------------------
+    if (changedItems.length > 0) {
+      const uploadChunks = chunkArray(changedItems, 50);
+
+      event.sender.send("upload-progress-start", { total: changedItems.length });
+
+      let processed = 0;
+
+      for (const paths of uploadChunks) {
+        const payloadItems = await Promise.all(
+          paths.map(async relPath => {
+
+            const cleanPath = stripCentrisPrefix(relPath);
+            const fullLocalPath = path.join(mappedDrivePath, cleanPath);
+
+            const type = getFileType(fullLocalPath);
+
+            let is_dir = type === "dir";
+            let content = null;
+
+            if (type === "file") {
+              content = await fs.promises.readFile(fullLocalPath, "base64");
+            }
+
+            return {
+              path: cleanPath,
+              is_dir,
+              content,
+              size: currentSnapshot[cleanPath]?.size || 0,
+              mtime: currentSnapshot[cleanPath]?.mtime || 0
+            };
+          })
+        );
+
+        await fetch(`${apiUrl}/api/syncChangedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            changed_items: payloadItems
+          })
+        });
+
+        processed += paths.length;
+
+        event.sender.send("upload-progress", {
+          done: processed,
+          total: changedItems.length
+        });
+      }
+
+      event.sender.send("upload-progress-complete");
+    }
+
+    // ------------------------------------------------------------
+    // DELETE ITEMS
+    // ------------------------------------------------------------
+    if (deletedItems.length > 0) {
+    const delChunks = chunkArray(deletedItems, 50);
+
+    event.sender.send("delete-progress-start", { total: deletedItems.length });
+
+    let processed = 0;
+
+    for (const chunk of delChunks) {
+      await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id,
+          domain_id,
+          user_id,
+          deleted_items: chunk,      // <-- must match API
+          root_path: mappedDrivePath // <-- full mapped drive path from Electron
+        })
+      });
+
+      processed += chunk.length;
+
+      event.sender.send("delete-progress", {
+        done: processed,
+        total: deletedItems.length
+      });
+    }
+
+    event.sender.send("delete-progress-complete");
+  }
+
+    // SAVE TRACKER LAST
+    saveTracker(currentSnapshot);
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (err) {
+    console.error("AUTO-SYNC ERROR:", err);
+    return { success: false, message: err.message };
   }
 });
 

@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return await fs.promises.readFile(filePath, { encoding: "base64" });
     },
     basename: (fullPath) => ipcRenderer.invoke("basename", fullPath),
+    copyFile: (src, dest) => ipcRenderer.invoke("copy-file", src, dest),
+    readFileBase64: (p) => ipcRenderer.invoke("read-base64", p),
     
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });

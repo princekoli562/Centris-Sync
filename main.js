@@ -1434,6 +1434,17 @@ ipcMain.handle("auto-sync", async (event, args) => {
   }
 });
 
+ipcMain.handle("copy-file", async (e, src, dest) => {
+    const fs = require("fs/promises");
+    await fs.copyFile(src, dest);
+    return true;
+});
+
+ipcMain.handle("read-base64", async (e, p) => {
+    const fs = require("fs/promises");
+    return await fs.readFile(p, { encoding: "base64" });
+});
+
 function fileMetadata(fullPath, rootPath) {
   const stat = fs.statSync(fullPath);
   return {

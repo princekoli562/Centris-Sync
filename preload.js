@@ -60,10 +60,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", cb),
     onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
     scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
-    createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
+    //createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
+      createFolderInDrive: (relPath, mappedDrive) => ipcRenderer.invoke("createFolderInDrive", relPath, mappedDrive),
+    // NEW: Copy file into mapped drive
+    copyFileToDrive: (source, relPath, mappedDrive) => ipcRenderer.invoke("copyFileToDrive", source, relPath, mappedDrive),
     uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),
-     stopSync: () => ipcRenderer.send("stop-sync"), on: (channel, func) => ipcRenderer.on(channel, func),
-      hardStop: () => ipcRenderer.send("hard-stop")
+    stopSync: () => ipcRenderer.send("stop-sync"), on: (channel, func) => ipcRenderer.on(channel, func),
+    hardStop: () => ipcRenderer.send("hard-stop"),
+    pathRelative: (from, to) => path.relative(from, to),
+    fileStat: (filePath) => fs.statSync(filePath),
+     readFileBase64: async (filePath) => {
+        return await fs.promises.readFile(filePath, { encoding: "base64" });
+    },
+    basename: (fullPath) => ipcRenderer.invoke("basename", fullPath),
+    
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

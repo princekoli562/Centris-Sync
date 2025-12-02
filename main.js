@@ -282,37 +282,7 @@ function loadSession() {
     return {}; // default empty session
 }
 
-
-async function getDirectorySnapshot11(dir) {
-  const snapshot = {};
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    const stats = fs.statSync(fullPath);
-
-    if (entry.isDirectory()) {
-      snapshot[normalizePath(fullPath)] = {
-        type: "folder",
-        mtime: stats.mtimeMs,
-      };
-      Object.assign(snapshot, await getDirectorySnapshot(fullPath));
-    } else {
-      const hash = await hashFile(fullPath);
-      snapshot[normalizePath(fullPath)] = {
-        type: "file",
-        size: stats.size,
-        mtime: stats.mtimeMs,
-        hash,
-      };
-    }
-  }
-
-  return snapshot;
-}
-
-
-async function getDirectorySnapshot(dir, oldSnap = {}) {
+async function getDirectorySnapshotold(dir, oldSnap = {}) {
     const snapshot = {};
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -327,7 +297,7 @@ async function getDirectorySnapshot(dir, oldSnap = {}) {
                 mtime: stats.mtimeMs,
             };
 
-            Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap));
+            Object.assign(snapshot, await getDirectorySnapshotold(fullPath, oldSnap));
         } 
         else {
             // 🟢 NEW HASH LOGIC (as you requested)
@@ -524,7 +494,7 @@ function findNewOrChangedFilesOLd(current, previous) {
     return changed;
 }
 
-function findNewOrChangedFiles(current, previous) {
+function findNewOrChangedFilesAbsolute(current, previous) {
     const changed = [];
 
     for (const file in current) {
@@ -554,6 +524,73 @@ function findNewOrChangedFiles(current, previous) {
         }
 
         // Rare case: same mtime but different hash (timestamp preserved)
+        if (curr.hash !== prev.hash) {
+            changed.push(key);
+        }
+    }
+
+    return changed;
+}
+
+async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
+    const snapshot = {};
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relPath = normalizePath(path.relative(baseDir, fullPath));
+        const stats = fs.statSync(fullPath);
+
+        if (entry.isDirectory()) {
+            snapshot[relPath] = {
+                type: "folder",
+                mtime: stats.mtimeMs,
+            };
+
+            Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap, baseDir));
+        } 
+        else {
+            let prev = oldSnap[relPath];
+            let hash = prev?.hash || null;
+
+            if (!prev || prev.mtime !== stats.mtimeMs) {
+                hash = await hashFile(fullPath);
+            }
+
+            snapshot[relPath] = {
+                type: "file",
+                size: stats.size,
+                mtime: stats.mtimeMs,
+                hash,
+            };
+        }
+    }
+
+    return snapshot;
+}
+
+function findNewOrChangedFiles(current, previous) {
+    const changed = [];
+
+    for (const key in current) {
+        const curr = current[key];
+        const prev = previous[key];
+
+        if (!prev) {
+            changed.push(key);
+            continue;
+        }
+
+        if (curr.type === "folder") {
+            if (curr.mtime !== prev.mtime) changed.push(key);
+            continue;
+        }
+
+        if (curr.mtime !== prev.mtime) {
+            changed.push(key);
+            continue;
+        }
+
         if (curr.hash !== prev.hash) {
             changed.push(key);
         }
@@ -1095,25 +1132,25 @@ ipcMain.handle('get-sync-data', async () => {
   return syncData;
 });
 
-ipcMain.handle("scanFolder", async (event, folderPath) => {
-    const files = [];
+// ipcMain.handle("scanFolder", async (event, folderPath) => {
+//     const files = [];
 
-    function readRecursive(dir) {
-        const items = fs.readdirSync(dir);
-        for (const item of items) {
-            const full = path.join(dir, item);
-            if (fs.lstatSync(full).isDirectory()) {
-                readRecursive(full);
-            } else {
-                files.push(full);
-            }
-        }
-    }
+//     function readRecursive(dir) {
+//         const items = fs.readdirSync(dir);
+//         for (const item of items) {
+//             const full = path.join(dir, item);
+//             if (fs.lstatSync(full).isDirectory()) {
+//                 readRecursive(full);
+//             } else {
+//                 files.push(full);
+//             }
+//         }
+//     }
 
-    readRecursive(folderPath);
+//     readRecursive(folderPath);
 
-    return { success: true, files };
-});
+//     return { success: true, files };
+// });
 
 function ensureDirSync(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -1182,469 +1219,29 @@ ipcMain.handle('createFolderInDrive', async (event, sourceFolderPath, mappedDriv
   }
 });
 
-ipcMain.handle('auto-sync-n', async (event, args) => {
-  const { customer_id, domain_id, apiUrl, syncData } = args;
-
-  try {
-    const drive_letter = getMappedDriveLetter();
-    const mappedDrivePath = drive_letter + '\\' + syncData.config_data.centris_drive + '\\';
-
-    const previousSnapshot = loadTracker();
-    console.log('AAAA');
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
-    console.log('BBBB');
-    const user_id = syncData.user_data.id;
-
-    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
-      .map(f => f.replace(/\\/g, "/"));
-
-    console.log('CCCC');
-
-    const deletedItems = Object.keys(previousSnapshot)
-      .filter(old => !currentSnapshot[old])
-      .map(f => f.replace(/\\/g, "/"));
-
-    const changedItemsWithDrive = changedItems.map(f => addDriveLetter(drive_letter, f));
-    const deletedItemsWithDrive = deletedItems.map(f => addDriveLetter(drive_letter, f));
-
-    console.log('DDDD');
-
-    if (changedItems.length === 0 && deletedItems.length === 0) {
-      return { success: true, message: "No changes" };
-    }
-
-    console.log('EEEE');
-
-    // -------------------------------------
-    // 📤 CHANGED FILES UPLOAD (chunked)
-    // -------------------------------------
-    if (changedItemsWithDrive.length > 0) {
-      event.sender.send("upload-progress-start", {
-        total: changedItemsWithDrive.length
-      });
-
-      let processed = 0;
-      const uploadChunks = chunkArray(changedItemsWithDrive, 200);
-
-      for (const chunk of uploadChunks) {
-        // if (global.isSyncCancelled) {
-        //   console.log("⛔ Upload Cancelled");
-        //   return { success: false, message: "Sync stopped by user" };
-        // }
-        // if (window.stopSync) break;
-        await fetch(`${apiUrl}/api/syncChangedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            user_id,
-            root_path: mappedDrivePath,
-            changed_items: chunk,
-          }),
-        });
-
-        // 🔥 Update snapshot immediately
-        chunk.forEach(item => {
-          const cleanPath = item.replace(`${drive_letter}/`, "").replace(/\\/g, "/");
-          currentSnapshot[cleanPath] = { mtime: Date.now() };
-        });
-
-        saveTracker(currentSnapshot); // 🔥 Save after each chunk
-
-        processed += chunk.length;
-
-        event.sender.send("upload-progress", {
-          done: processed,
-          total: changedItemsWithDrive.length,
-          file: chunk?.[chunk.length - 1] ?? null,
-        });
-
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      event.sender.send("upload-progress-complete");
-      setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
-    }
-
-    // -------------------------------------
-    // 🗑️ DELETED FILES SYNC (chunked)
-    // -------------------------------------
-    if (deletedItemsWithDrive.length > 0) {
-      event.sender.send("delete-progress-start", {
-        total: deletedItemsWithDrive.length
-      });
-
-      let processed = 0;
-      const deleteChunks = chunkArray(deletedItemsWithDrive, 200);
-
-      for (const chunk of deleteChunks) {
-        // if (global.isSyncCancelled) {
-        //   console.log("⛔ Delete Cancelled");
-        //   return { success: false, message: "Sync stopped by user" };
-        // }
-
-        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            user_id,
-            root_path: mappedDrivePath,
-            deleted_items: chunk,
-          }),
-        });
-
-        // 🔥 Remove from snapshot immediately
-        chunk.forEach(item => {
-          const cleanPath = item.replace(`${drive_letter}/`, "").replace(/\\/g, "/");
-          delete currentSnapshot[cleanPath];
-        });
-
-        saveTracker(currentSnapshot); // 🔥 Save after each chunk
-
-        processed += chunk.length;
-
-        event.sender.send("delete-progress", {
-          done: processed,
-          total: deletedItemsWithDrive.length,
-          file: chunk?.[chunk.length - 1] ?? null,
-        });
-
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      event.sender.send("delete-progress-complete");
-      setTimeout(() => event.sender.send("delete-progress-hide"), 60000);
-    }
-
-    // -------------------------------------
-    // Snapshot is already updated inside loops
-    // No final saveTracker() needed
-    // -------------------------------------
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
-
-    return { success: true, message: "Sync completed successfully" };
-
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
+ipcMain.handle("basename", async (event, fullPath) => {
+    return path.basename(fullPath);
 });
 
-ipcMain.handle("auto-sync-working", async (event, args) => {
-  const { customer_id, domain_id, apiUrl, syncData } = args;
+ipcMain.handle("copyFileToDrive", async (event, src, relPath, mappedDrive) => {
+    const finalPath = path.join(mappedDrive, relPath);
 
-  try {
-    const drive_letter = getMappedDriveLetter();
-    const mappedDrivePath = `${drive_letter}\\${syncData.config_data.centris_drive}\\`;
+    const folderOnly = path.dirname(finalPath);
+    fs.mkdirSync(folderOnly, { recursive: true });
 
-    const previousSnapshot = loadTracker();
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
-    const user_id = syncData.user_data.id;
+    await fs.promises.copyFile(src, finalPath);
 
-    // -----------------------------------------
-    // FIND CHANGED ITEMS
-    // -----------------------------------------
-    const changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot)
-      .map(f => f.replace(/\\/g, "/"));
-
-    // FIND DELETED ITEMS
-    const deletedItems = Object.keys(previousSnapshot)
-      .filter(oldPath => !currentSnapshot[oldPath])
-      .map(f => f.replace(/\\/g, "/"));
-
-    const changedItemsWithDrive = changedItems.map(f => addDriveLetter(drive_letter, f));
-    const deletedItemsWithDrive = deletedItems.map(f => addDriveLetter(drive_letter, f));
-
-    // No changes → return early
-    if (changedItems.length === 0 && deletedItems.length === 0) {
-      return { success: true, message: "No changes" };
-    }
-
-    // -----------------------------------------
-    // 📤 UPLOAD CHANGED FILES (chunked)
-    // -----------------------------------------
-    if (changedItemsWithDrive.length > 0) {
-      event.sender.send("upload-progress-start", {
-        total: changedItemsWithDrive.length
-      });
-
-      let processed = 0;
-      const uploadChunks = chunkArray(changedItemsWithDrive, 200);
-
-      for (const chunk of uploadChunks) {
-
-        // API CALL
-        await fetch(`${apiUrl}/api/syncChangedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            user_id,
-            root_path: mappedDrivePath,
-            changed_items: chunk,
-          }),
-        });
-
-        // 🟢 UPDATE TRACKER SNAPSHOT (metadata preserved)
-        chunk.forEach(item => {
-          const cleanPath = item
-            .replace(`${drive_letter}\\`, "")
-            .replace(`${drive_letter}/`, "")
-            .replace(/\\/g, "/");
-
-          // Keep original metadata, only update mtime
-          if (currentSnapshot[cleanPath]) {
-            currentSnapshot[cleanPath].mtime = Date.now();
-          }
-        });
-
-        saveTracker(currentSnapshot); // Save tracker after every chunk
-
-        processed += chunk.length;
-
-        event.sender.send("upload-progress", {
-          done: processed,
-          total: changedItemsWithDrive.length,
-          file: chunk?.[chunk.length - 1] ?? null,
-        });
-
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      event.sender.send("upload-progress-complete");
-      setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
-    }
-
-    // -----------------------------------------
-    // 🗑️ SYNC DELETED ITEMS (chunked)
-    // -----------------------------------------
-    if (deletedItemsWithDrive.length > 0) {
-      event.sender.send("delete-progress-start", {
-        total: deletedItemsWithDrive.length
-      });
-
-      let processed = 0;
-      const deleteChunks = chunkArray(deletedItemsWithDrive, 200);
-
-      for (const chunk of deleteChunks) {
-
-        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            user_id,
-            root_path: mappedDrivePath,
-            deleted_items: chunk,
-          }),
-        });
-
-        // 🟢 REMOVE FROM TRACKER SNAPSHOT
-        chunk.forEach(item => {
-          const cleanPath = item
-            .replace(`${drive_letter}\\`, "")
-            .replace(`${drive_letter}/`, "")
-            .replace(/\\/g, "/");
-
-          delete currentSnapshot[cleanPath];
-        });
-
-        saveTracker(currentSnapshot);
-
-        processed += chunk.length;
-
-        event.sender.send("delete-progress", {
-          done: processed,
-          total: deletedItemsWithDrive.length,
-          file: chunk?.[chunk.length - 1] ?? null,
-        });
-
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      event.sender.send("delete-progress-complete");
-      setTimeout(() => event.sender.send("delete-progress-hide"), 60000);
-    }
-
-    // Notify UI
-    const win = BrowserWindow.getFocusedWindow();
-    if (win) win.webContents.send("sync-status", "Auto sync complete.");
-
-    return { success: true, message: "Sync completed successfully" };
-
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
+    return { success: true };
 });
 
-ipcMain.handle("auto-sync-s", async (event, args) => {
-  const { customer_id, domain_id, apiUrl, syncData } = args;
-
-  const centrisFolder = syncData.config_data.centris_drive;
-
-  // 🔧 Removes "Centris-Drive/" prefix from any path
-  function stripCentrisPrefix(relPath) {
-    if (!relPath) return relPath;
-
-    relPath = relPath.replace(/\\/g, "/");  // normalize
-
-    const folder = centrisFolder.replace(/\\/g, "/").toLowerCase();
-
-    // Case 1 -> Starts with "Centris-Drive/"
-    if (relPath.toLowerCase().startsWith(folder + "/")) {
-      return relPath.substring(folder.length + 1);
-    }
-
-    // Case 2 -> Starts with "/Centris-Drive/"
-    if (relPath.toLowerCase().startsWith("/" + folder + "/")) {
-      return relPath.substring(folder.length + 2);
-    }
-
-    return relPath;
-  }
-
-  try {
-    const drive_letter = getMappedDriveLetter();
-    const mappedDrivePath = `${drive_letter}\\${centrisFolder}\\`;
-
-    console.log("[MAIN] ROOT:", mappedDrivePath);
-
-    const previousSnapshot = loadTracker();
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
-    const user_id = syncData.user_data.id;
-
-    let changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
-    let deletedItems = Object.keys(previousSnapshot).filter(p => !currentSnapshot[p]);
-
-    // Normalize both
-    changedItems = changedItems.map(p => stripCentrisPrefix(p));
-    deletedItems = deletedItems.map(p => stripCentrisPrefix(p));
-
-    // Remove blanks created after stripping
-    changedItems = changedItems.filter(p => p.trim() !== "");
-    deletedItems = deletedItems.filter(p => p.trim() !== "");
-
-    if (changedItems.length === 0 && deletedItems.length === 0) {
-      return { success: true, message: "No changes" };
-    }
-
-    // -----------------------------------------
-    // UPLOAD CHANGED
-    // -----------------------------------------
-    if (changedItems.length > 0) {
-      const uploadChunks = chunkArray(changedItems, 80);
-      event.sender.send("upload-progress-start", { total: changedItems.length });
-
-      let processed = 0;
-
-      for (const paths of uploadChunks) {
-        const payloadItems = await Promise.all(
-          paths.map(async relPath => {
-            const safePath = stripCentrisPrefix(relPath);
-
-            // FINAL PROTECTION — NEVER ALLOW CENTRIS PREFIX
-            if (safePath.toLowerCase().startsWith(centrisFolder.toLowerCase())) {
-              throw new Error("❌ RelPath still contains Centris-Drive prefix: " + safePath);
-            }
-
-            const localFullPath = path.join(mappedDrivePath, safePath);
-            console.log("[MAIN] Uploading →", localFullPath);
-
-            const fileContent = await fs.promises.readFile(localFullPath, { encoding: "base64" });
-
-            return {
-              path: safePath,
-              content: fileContent,
-              size: currentSnapshot[relPath]?.size || 0,
-              mtime: currentSnapshot[relPath]?.mtime || 0
-            };
-          })
-        );
-
-        await fetch(`${apiUrl}/api/syncChangedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            user_id,
-            changed_items: payloadItems
-          })
-        });
-
-        processed += paths.length;
-        saveTracker(currentSnapshot);
-
-        event.sender.send("upload-progress", {
-          done: processed,
-          total: changedItems.length
-        });
-
-        await new Promise(r => setTimeout(r, 150));
-      }
-
-      event.sender.send("upload-progress-complete");
-    }
-
-    // -----------------------------------------
-    // DELETED ITEMS
-    // -----------------------------------------
-    if (deletedItems.length > 0) {
-      const deleteChunks = chunkArray(deletedItems, 80);
-
-      event.sender.send("delete-progress-start", { total: deletedItems.length });
-
-      let processed = 0;
-
-      for (const chunk of deleteChunks) {
-        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customer_id,
-            domain_id,
-            user_id,
-            paths: chunk
-          })
-        });
-
-        chunk.forEach(p => delete currentSnapshot[p]);
-        saveTracker(currentSnapshot);
-
-        processed += chunk.length;
-
-        event.sender.send("delete-progress", {
-          done: processed,
-          total: deletedItems.length
-        });
-
-        await new Promise(r => setTimeout(r, 150));
-      }
-
-      event.sender.send("delete-progress-complete");
-    }
-
-    return { success: true, message: "Sync completed successfully" };
-
-  } catch (err) {
-    console.error("AUTO-SYNC ERROR:", err);
-    return { success: false, message: err.message };
-  }
-});
 
 ipcMain.handle("auto-sync", async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
-  const centrisFolder = syncData.config_data.centris_drive; // e.g. "Centris-Drive"
+  const centrisFolder = syncData.config_data.centris_drive; // ex: Centris-Drive
 
   // ------------------------------------------------------------
-  // Remove all repeated Centris-Drive prefixes
+  // Strip repeated Centris-Drive prefixes
   // ------------------------------------------------------------
   function stripCentrisPrefix(relPath) {
     if (!relPath) return relPath;
@@ -1660,7 +1257,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
   }
 
   // ------------------------------------------------------------
-  // Normalize snapshot key (remove base folder + extra prefixes)
+  // Normalize snapshot keys
   // ------------------------------------------------------------
   function normalizeSnapshotPath(fullPath, baseFolder) {
     let rel = fullPath.replace(/\\/g, "/");
@@ -1674,7 +1271,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
   }
 
   // ------------------------------------------------------------
-  // CORRECT FILE/FOLDER DETECTION (VERY IMPORTANT)
+  // File/Folder detection
   // ------------------------------------------------------------
   function getFileType(fullPath) {
     try {
@@ -1683,24 +1280,30 @@ ipcMain.handle("auto-sync", async (event, args) => {
       if (stat.isFile()) return "file";
       return "unknown";
     } catch {
-      return "missing"; // deleted or inaccessible
+      return "missing";
     }
   }
 
   try {
     // ------------------------------------------------------------
-    // Mapped folder path
+    // Mapped folder path (true final path)
     // ------------------------------------------------------------
     const drive_letter = getMappedDriveLetter();
     const mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
 
-    // Load tracker
+    // Load old tracker
     const previousSnapshot = loadTracker();
 
-    // Scan local directory
+    // Scan directory
     const rawSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
 
-    // Build normalized snapshot
+    let normalizedPrevious = {};
+    for (const key in previousSnapshot) {
+      const cleaned = normalizeSnapshotPath(key, mappedDrivePath);
+      normalizedPrevious[cleaned] = previousSnapshot[key];
+    }
+
+    // Create normalized snapshot keys
     let currentSnapshot = {};
     for (const rawKey in rawSnapshot) {
       const cleanKey = normalizeSnapshotPath(rawKey, mappedDrivePath);
@@ -1710,10 +1313,11 @@ ipcMain.handle("auto-sync", async (event, args) => {
     const user_id = syncData.user_data.id;
 
     // ------------------------------------------------------------
-    // Compute changed/deleted
+    // DIFF (NO MORE strip AGAIN — FIX)
     // ------------------------------------------------------------
-    let changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot).map(stripCentrisPrefix);
-    let deletedItems = Object.keys(previousSnapshot).filter(p => !currentSnapshot[p]).map(stripCentrisPrefix);
+    let changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
+    //let deletedItems = Object.keys(previousSnapshot).filter(p => !currentSnapshot[p]);
+    let deletedItems = Object.keys(normalizedPrevious).filter(p => !currentSnapshot[p]);
 
     changedItems = changedItems.filter(Boolean);
     deletedItems = deletedItems.filter(Boolean);
@@ -1723,7 +1327,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     }
 
     // ------------------------------------------------------------
-    // UPLOAD CHANGED ITEMS
+    // UPLOAD CHANGED FILES
     // ------------------------------------------------------------
     if (changedItems.length > 0) {
       const uploadChunks = chunkArray(changedItems, 50);
@@ -1732,12 +1336,16 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
       let processed = 0;
 
-      for (const paths of uploadChunks) {
-        const payloadItems = await Promise.all(
-          paths.map(async relPath => {
+      for (const chunkPaths of uploadChunks) {
 
-            const cleanPath = stripCentrisPrefix(relPath);
-            const fullLocalPath = path.join(mappedDrivePath, cleanPath);
+        const payloadItems = await Promise.all(
+          chunkPaths.map(async relPath => {
+            // *** STOP REMOVING PREFIX AGAIN ***
+            const cleanPath = relPath;
+
+            const fullLocalPath = path
+              .join(mappedDrivePath, cleanPath)
+              .replace(/\\/g, "/");
 
             const type = getFileType(fullLocalPath);
 
@@ -1769,7 +1377,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
           })
         });
 
-        processed += paths.length;
+        processed += chunkPaths.length;
 
         event.sender.send("upload-progress", {
           done: processed,
@@ -1784,37 +1392,38 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // DELETE ITEMS
     // ------------------------------------------------------------
     if (deletedItems.length > 0) {
-    const delChunks = chunkArray(deletedItems, 50);
+      const delChunks = chunkArray(deletedItems, 50);
 
-    event.sender.send("delete-progress-start", { total: deletedItems.length });
+      event.sender.send("delete-progress-start", { total: deletedItems.length });
 
-    let processed = 0;
+      let processed = 0;
 
-    for (const chunk of delChunks) {
-      await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_id,
-          domain_id,
-          user_id,
-          deleted_items: chunk,      // <-- must match API
-          root_path: mappedDrivePath // <-- full mapped drive path from Electron
-        })
-      });
+      for (const chunk of delChunks) {
 
-      processed += chunk.length;
+        await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            deleted_items: chunk,
+            root_path: mappedDrivePath
+          })
+        });
 
-      event.sender.send("delete-progress", {
-        done: processed,
-        total: deletedItems.length
-      });
+        processed += chunk.length;
+
+        event.sender.send("delete-progress", {
+          done: processed,
+          total: deletedItems.length
+        });
+      }
+
+      event.sender.send("delete-progress-complete");
     }
 
-    event.sender.send("delete-progress-complete");
-  }
-
-    // SAVE TRACKER LAST
+    // SAVE TRACKER
     saveTracker(currentSnapshot);
 
     return { success: true, message: "Sync completed successfully" };
@@ -1824,115 +1433,6 @@ ipcMain.handle("auto-sync", async (event, args) => {
     return { success: false, message: err.message };
   }
 });
-
-
-ipcMain.handle('auto-sync-p', async (event, args) => {
-  const { customer_id, domain_id, apiUrl, syncData } = args;
-  try {
-    const driveLetter = getMappedDriveLetter(); // e.g. 'D:'
-    const mappedDrivePath = path.join(driveLetter + path.sep, syncData.config_data.centris_drive) + path.sep;
-    const previousSnapshot = loadTracker() || {};
-    const currentSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
-    const changedPaths = findNewOrChangedFiles(currentSnapshot, previousSnapshot); // returns array of windows paths (no drive letter or with)
-    const deletedPaths = Object.keys(previousSnapshot).filter(old => !currentSnapshot[old]);
-
-    if ((!changedPaths || changedPaths.length === 0) && (!deletedPaths || deletedPaths.length === 0)) {
-      return { success: true, message: 'No changes' };
-    }
-
-    // Build metadata list (include directories as metadata so server creates folder entries)
-    const metaList = changedPaths.map(p => {
-      // ensure absolute full path
-      const full = p.startsWith(driveLetter) ? p : path.join(mappedDrivePath, p);
-      const m = fileMetadata(full, mappedDrivePath);
-      return { fullPath: full, ...m };
-    });
-
-    // Batch size: tune for your network/server (50-200 files). Smaller easier on memory.
-    const BATCH_SIZE = 80;
-    const batches = chunkArray(metaList, BATCH_SIZE);
-
-    // progress reporting totals
-    event.sender.send("upload-progress-start", { total: metaList.length });
-
-    let processed = 0;
-    for (const batch of batches) {
-      // Upload batch
-      await streamUploadChunk(apiUrl, '/api/syncChangedItems', batch, mappedDrivePath, customer_id, domain_id, syncData.user_data.id);
-
-      // update snapshot immediately for uploaded files
-      batch.forEach(item => {
-        const clean = item.relative_path.replace(/\\/g, '/');
-        // store mtime, or use Date.now()
-        currentSnapshot[clean] = { mtime: item.mtime || Date.now() };
-      });
-      saveTracker(currentSnapshot);
-
-      processed += batch.length;
-      event.sender.send("upload-progress", {
-        done: processed,
-        total: metaList.length,
-        file: batch[batch.length - 1]?.relative_path ?? null
-      });
-
-      // small delay to avoid hammering server
-      await new Promise(r => setTimeout(r, 150));
-    }
-
-    event.sender.send("upload-progress-complete");
-    setTimeout(() => event.sender.send("upload-progress-hide"), 4000);
-
-    // DELETES: send all deletedItems in chunks as JSON (no file streams)
-    if (deletedPaths.length > 0) {
-      event.sender.send("delete-progress-start", { total: deletedPaths.length });
-      const deleteBatches = chunkArray(deletedPaths, 300);
-      let delProcessed = 0;
-      for (const delBatch of deleteBatches) {
-        const payload = {
-          customer_id,
-          domain_id,
-          user_id: syncData.user_data.id,
-          root_path: mappedDrivePath.replace(/\\/g, '/'),
-          deleted_items: delBatch.map(d => d.replace(/\\/g, '/'))
-        };
-        const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) throw new Error(`Delete API failed ${res.status}`);
-        // update snapshot: remove
-        delBatch.forEach(item => {
-          const key = item.replace(/\\/g, '/');
-          delete currentSnapshot[key];
-        });
-        saveTracker(currentSnapshot);
-
-        delProcessed += delBatch.length;
-        event.sender.send("delete-progress", {
-          done: delProcessed,
-          total: deletedPaths.length,
-          file: delBatch[delBatch.length - 1] ?? null
-        });
-
-        await new Promise(r => setTimeout(r, 150));
-      }
-
-      event.sender.send("delete-progress-complete");
-      setTimeout(() => event.sender.send("delete-progress-hide"), 40000);
-    }
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (win) win.webContents.send('sync-status', 'Auto sync complete.');
-
-    return { success: true, message: 'Sync completed successfully' };
-
-  } catch (e) {
-    console.error('auto-sync error', e);
-    return { success: false, message: e.message || String(e) };
-  }
-});
-
 
 function fileMetadata(fullPath, rootPath) {
   const stat = fs.statSync(fullPath);
@@ -2487,6 +1987,34 @@ ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, 
     }
 });
 
+ipcMain.handle("scanFolder", async (event, folderPath) => {
+    const files = [];
+    const folders = [];
+
+    function scan(dir) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+
+            if (entry.isDirectory()) {
+                folders.push(full);
+                scan(full);
+            } else {
+                files.push(full);
+            }
+        }
+    }
+
+    scan(folderPath);
+
+    return {
+        files,
+        folders
+    };
+});
+
+
 
 // Open folder via dialog and return folder path
 ipcMain.handle('dialog:openFolder', async () => {
@@ -2494,23 +2022,6 @@ ipcMain.handle('dialog:openFolder', async () => {
     if (res.canceled || res.filePaths.length === 0) return null;
     return res.filePaths[0];
 });
-
-// ipcMain.handle('dialog:openFolders', async () => {
-//   let folders = [];
-
-//   while (true) {
-//     const res = await dialog.showOpenDialog({
-//       title: 'Select a Folder (Cancel when done)',
-//       properties: ['openDirectory','multiSelections']
-//     });
-
-//     if (res.canceled || res.filePaths.length === 0) break;
-
-//     folders.push(res.filePaths[0]);
-//   }
-
-//   return folders.length > 0 ? folders : null;
-// });
 
 ipcMain.handle("dialog:openFolders", async () => {
     const res = await dialog.showOpenDialog({

@@ -466,96 +466,237 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // $(document).on("click", "#uploadFolderOption", async function () {
+    //     try {
+    //          if (isSyncing) {
+    //             showValidation("⚠️ Sync already in progress, skipping...", "warning");
+    //             return;
+    //         }
+
+    //         $(".upload-menu").removeClass("show");
+
+    //         // ===============================
+    //         // 1. SELECT MULTIPLE FOLDERS
+    //         // ===============================
+    //         let folderPaths = await window.electronAPI.openFolders();
+    //         if (!folderPaths || folderPaths.length === 0) {
+    //             showValidation("No folder selected.", "info");
+    //             return;
+    //         }
+
+    //         // ===============================
+    //         // 2. GET MAPPED DRIVE
+    //         // ===============================
+    //         let mappedDrive;
+    //         const crumbs = document.querySelectorAll("#breadcrumb .crumb");
+    //         mappedDrive = crumbs.length > 0 
+    //             ? crumbs[crumbs.length - 1].getAttribute("data-path")
+    //             : await window.electronAPI.getMappedDrive();
+
+    //         if (!confirm(`Upload ${folderPaths.length} folder(s) to ${mappedDrive}?`)) return;
+
+    //         // ===============================
+    //         // 3. PROCESS EACH SELECTED FOLDER
+    //         // ===============================
+    //         for (const folderPath of folderPaths) {
+
+    //             showValidation(`Scanning folder: ${folderPath}`, "info", 0);
+
+    //             // Scan recursively
+    //             const scanResult = await window.electronAPI.scanFolder(folderPath);
+    //             const fileList = scanResult.files;
+
+    //             if (!fileList || fileList.length === 0) {
+    //                 showValidation(`Folder empty: ${folderPath}`, "info");
+    //                 continue;
+    //             }
+
+    //             // Create folder inside mapped drive
+    //             await window.electronAPI.createFolderInDrive(folderPath, mappedDrive);
+
+    //             // ===============================
+    //             // 4. CHUNK FILES
+    //             // ===============================
+    //             const chunkSize = 50;
+    //             const chunks = [];
+    //             for (let i = 0; i < fileList.length; i += chunkSize) {
+    //                 chunks.push(fileList.slice(i, i + chunkSize));
+    //             }
+
+    //             // ===============================
+    //             // 5. UPLOAD EACH CHUNK
+    //             // ===============================
+    //             let uploadedCount = 0;
+
+    //             for (const chunk of chunks) {
+
+    //                 const uploadResult = await window.electronAPI.uploadChunkToDrive(
+    //                     chunk,
+    //                     mappedDrive,
+    //                     folderPath  // keep folder structure
+    //                 );
+
+    //                 if (!uploadResult.success) {
+    //                     showValidation("Error uploading files: " + uploadResult.error, "error");
+    //                     break;
+    //                 }
+
+    //                 uploadedCount += chunk.length;
+
+    //                 showValidation(
+    //                     `Uploaded ${uploadedCount}/${fileList.length} files from ${folderPath}`,
+    //                     "info", 0
+    //                 );
+
+    //                 await wait(200);
+    //             }
+
+    //             showValidation(`Upload complete for: ${folderPath}`, "success");
+
+    //             // ===============================
+    //             // 6. SYNC THIS FOLDER TO SERVER
+    //             // ===============================
+    //             await fetch(`${apiUrl}/api/sync-folders-and-files`, {
+    //                 method: "POST",
+    //                 headers: { "Content-Type": "application/json" },
+    //                 body: JSON.stringify({
+    //                     customer_id: customer_data.id,
+    //                     domain_id: domain_data.id,
+    //                     user_id: user_data.id,
+    //                     root_path: folderPath
+    //                 })
+    //             });
+    //         }
+
+    //         // ===============================
+    //         // 7. REFRESH VIEW + TRACKER UPDATE
+    //         // ===============================
+    //         loadFiles(mappedDrive, true);
+    //         await wait(1000);
+
+    //         const oldSnapshot = await window.electronAPI.loadTracker();
+    //         const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
+    //         await window.electronAPI.saveTracker(newSnapshot.snapshot);
+
+    //         showValidation("All selected folders uploaded & synced successfully!", "success");
+
+    //     } catch (err) {
+    //         console.error(err);
+    //         showValidation("Error: " + err.message, "error");
+    //     }
+    // });
+
+
     $(document).on("click", "#uploadFolderOption", async function () {
-        try {
-             if (isSyncing) {
-                showValidation("⚠️ Sync already in progress, skipping...", "warning");
-                return;
+    try {
+        if (isSyncing) {
+            showValidation("⚠️ Sync already in progress, skipping...", "warning");
+            return;
+        }
+
+        $(".upload-menu").removeClass("show");
+
+        // ===============================
+        // 1. SELECT MULTIPLE FOLDERS
+        // ===============================
+        let folderPaths = await window.electronAPI.openFolders();
+        if (!folderPaths || folderPaths.length === 0) {
+            showValidation("No folder selected.", "info");
+            return;
+        }
+
+        // ===============================
+        // 2. GET MAPPED DRIVE
+        // ===============================
+        let mappedDrive;
+        const crumbs = document.querySelectorAll("#breadcrumb .crumb");
+
+        mappedDrive = crumbs.length > 0
+            ? crumbs[crumbs.length - 1].getAttribute("data-path")
+            : await window.electronAPI.getMappedDrive();
+
+        if (!confirm(`Upload ${folderPaths.length} folder(s) to ${mappedDrive}?`)) return;
+
+        // ===============================
+        // 3. PROCESS EACH SELECTED FOLDER
+        // ===============================
+        for (const folderPath of folderPaths) {
+
+            showValidation(`Scanning folder: ${folderPath}`, "info", 0);
+
+            const scanResult = await window.electronAPI.scanFolder(folderPath);
+            const fileList = scanResult.files || [];
+            const folderList = scanResult.folders || [];
+
+            if (fileList.length === 0 && folderList.length === 0) {
+                showValidation(`Folder empty: ${folderPath}`, "info");
+                continue;
             }
 
-            $(".upload-menu").removeClass("show");
+            // Root target folder name
+            const rootName = await window.electronAPI.basename(folderPath);
+
+            await window.electronAPI.createFolderInDrive(rootName, mappedDrive);
+
+            // Collect changed items
+            const changedItems = [];
 
             // ===============================
-            // 1. SELECT MULTIPLE FOLDERS
+            // 3A. CREATE ALL SUB-FOLDERS
             // ===============================
-            let folderPaths = await window.electronAPI.openFolders();
-            if (!folderPaths || folderPaths.length === 0) {
-                showValidation("No folder selected.", "info");
-                return;
+            for (const folder of folderList) {
+                const rel = await window.electronAPI.pathRelative(folderPath, folder);
+                const cleanRel = rootName + "/" + rel;
+
+                await window.electronAPI.createFolderInDrive(cleanRel, mappedDrive);
+
+                changedItems.push({
+                    path: cleanRel,
+                    is_dir: true,
+                    content: null,
+                    size: 0,
+                    mtime: Date.now()
+                });
             }
 
             // ===============================
-            // 2. GET MAPPED DRIVE
+            // 3B. FILES WITH CONTENT BYTES
             // ===============================
-            let mappedDrive;
-            const crumbs = document.querySelectorAll("#breadcrumb .crumb");
-            mappedDrive = crumbs.length > 0 
-                ? crumbs[crumbs.length - 1].getAttribute("data-path")
-                : await window.electronAPI.getMappedDrive();
+            for (const fullFile of fileList) {
 
-            if (!confirm(`Upload ${folderPaths.length} folder(s) to ${mappedDrive}?`)) return;
+                const rel = await window.electronAPI.pathRelative(folderPath, fullFile);
+                const cleanRel = rootName + "/" + rel;
 
-            // ===============================
-            // 3. PROCESS EACH SELECTED FOLDER
-            // ===============================
-            for (const folderPath of folderPaths) {
+                const stats = await window.electronAPI.fileStat(fullFile);
+                const content = await window.electronAPI.readFileBase64(fullFile);
 
-                showValidation(`Scanning folder: ${folderPath}`, "info", 0);
-
-                // Scan recursively
-                const scanResult = await window.electronAPI.scanFolder(folderPath);
-                const fileList = scanResult.files;
-
-                if (!fileList || fileList.length === 0) {
-                    showValidation(`Folder empty: ${folderPath}`, "info");
-                    continue;
+                // ensure parent folders created
+                const parent = cleanRel.substring(0, cleanRel.lastIndexOf("/"));
+                if (parent) {
+                    await window.electronAPI.createFolderInDrive(parent, mappedDrive);
                 }
 
-                // Create folder inside mapped drive
-                await window.electronAPI.createFolderInDrive(folderPath, mappedDrive);
+                // copy file to mapped drive
+                await window.electronAPI.copyFileToDrive(fullFile, cleanRel, mappedDrive);
 
-                // ===============================
-                // 4. CHUNK FILES
-                // ===============================
-                const chunkSize = 50;
-                const chunks = [];
-                for (let i = 0; i < fileList.length; i += chunkSize) {
-                    chunks.push(fileList.slice(i, i + chunkSize));
-                }
+                changedItems.push({
+                    path: cleanRel,
+                    is_dir: false,
+                    content,
+                    size: stats.size,
+                    mtime: stats.mtimeMs
+                });
+            }
 
-                // ===============================
-                // 5. UPLOAD EACH CHUNK
-                // ===============================
-                let uploadedCount = 0;
+            // ===============================
+            // 4. CHUNK UPLOAD
+            // ===============================
+            const chunkSize = 50;
+            let uploaded = 0;
 
-                for (const chunk of chunks) {
+            for (let i = 0; i < changedItems.length; i += chunkSize) {
+                const chunk = changedItems.slice(i, i + chunkSize);
 
-                    const uploadResult = await window.electronAPI.uploadChunkToDrive(
-                        chunk,
-                        mappedDrive,
-                        folderPath  // keep folder structure
-                    );
-
-                    if (!uploadResult.success) {
-                        showValidation("Error uploading files: " + uploadResult.error, "error");
-                        break;
-                    }
-
-                    uploadedCount += chunk.length;
-
-                    showValidation(
-                        `Uploaded ${uploadedCount}/${fileList.length} files from ${folderPath}`,
-                        "info", 0
-                    );
-
-                    await wait(200);
-                }
-
-                showValidation(`Upload complete for: ${folderPath}`, "success");
-
-                // ===============================
-                // 6. SYNC THIS FOLDER TO SERVER
-                // ===============================
                 await fetch(`${apiUrl}/api/sync-folders-and-files`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -563,42 +704,46 @@ document.addEventListener('DOMContentLoaded', async () => {
                         customer_id: customer_data.id,
                         domain_id: domain_data.id,
                         user_id: user_data.id,
-                        root_path: folderPath
+
+                        root_path: mappedDrive,
+                        changed_items: chunk
                     })
                 });
+
+                uploaded += chunk.length;
+
+                showValidation(
+                    `Uploaded ${uploaded}/${changedItems.length} items from ${folderPath}`,
+                    "info", 0
+                );
+
+                await wait(200);
             }
 
-            // ===============================
-            // 7. REFRESH VIEW + TRACKER UPDATE
-            // ===============================
-            loadFiles(mappedDrive, true);
-            await wait(1000);
-
-            const oldSnapshot = await window.electronAPI.loadTracker();
-            const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
-            await window.electronAPI.saveTracker(newSnapshot.snapshot);
-
-            showValidation("All selected folders uploaded & synced successfully!", "success");
-
-        } catch (err) {
-            console.error(err);
-            showValidation("Error: " + err.message, "error");
+            showValidation(`Upload complete for: ${folderPath}`, "success");
         }
-    });
+
+        // ===============================
+        // 7. REFRESH VIEW + TRACKER UPDATE
+        // ===============================
+        loadFiles(mappedDrive, true);
+        await wait(1000);
+
+        const oldSnapshot = await window.electronAPI.loadTracker();
+        const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
+        await window.electronAPI.saveTracker(newSnapshot.snapshot);
+
+        showValidation("All selected folders uploaded & synced successfully!", "success");
+
+    } catch (err) {
+        console.error(err);
+        showValidation("Error: " + err.message, "error");
+    }
+});
 
 
 
-    // document.getElementById('grid-view').addEventListener('click', function() {
-    //     this.classList.add('active');
-    //     document.getElementById('list-view').classList.remove('active');
-    //     // your logic to switch to grid view
-    // });
 
-    // document.getElementById('list-view').addEventListener('click', function() {
-    //     this.classList.add('active');
-    //     document.getElementById('grid-view').classList.remove('active');
-    //     // your logic to switch to list view
-    // });
     
 
     $(document).on("click", "#uploadFileOption", async function () {

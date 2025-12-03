@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
     scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
     //createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
-      createFolderInDrive: (relPath, mappedDrive) => ipcRenderer.invoke("createFolderInDrive", relPath, mappedDrive),
+    createFolderInDrive: (relPath, mappedDrive) => ipcRenderer.invoke("createFolderInDrive", relPath, mappedDrive),
     // NEW: Copy file into mapped drive
     copyFileToDrive: (source, relPath, mappedDrive) => ipcRenderer.invoke("copyFileToDrive", source, relPath, mappedDrive),
     uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),
@@ -75,7 +75,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     basename: (fullPath) => ipcRenderer.invoke("basename", fullPath),
     copyFile: (src, dest) => ipcRenderer.invoke("copy-file", src, dest),
     readFileBase64: (p) => ipcRenderer.invoke("read-base64", p),
-    
+    downloadPendingFiles: (args) => ipcRenderer.invoke("download-pending-files",args),
+    onDownloadProgressStart: (fn) => ipcRenderer.on("download-progress-start", (e, d) => fn(d)),
+    onDownloadProgress: (fn) => ipcRenderer.on("download-progress", (e, d) => fn(d)),
+    onDownloadComplete: (fn) => ipcRenderer.on("download-complete", fn),
+    onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)    
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

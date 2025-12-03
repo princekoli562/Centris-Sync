@@ -152,6 +152,38 @@ window.electronAPI.onDeleteComplete(() => {
   progressLabel.textContent = "🗑️ Delete complete!";
 });
 
+window.electronAPI.onDeleteHide(() => {
+  progressContainer.style.display = "none";
+});
+
+
+window.electronAPI.onDownloadProgress(({ done, total, file }) => {
+    
+    const percent = Math.round((done / total) * 100);
+
+    progressBar.value = percent;
+    progressLabel.textContent = `Downloading... ${percent}% (${done}/${total})`;
+
+    if (file) console.log("Downloading:", file);
+});
+
+window.electronAPI.onDownloadProgressStart(({ total }) => {
+    progressContainer.style.display = "block";
+    progressBar.value = 0;
+    progressLabel.textContent = `Downloading... 0% (0/${total})`;
+});
+
+
+// Complete
+window.electronAPI.onDownloadComplete(() => {
+    progressLabel.textContent = "✅ Download complete!";
+});
+
+// Auto hide
+window.electronAPI.onDownloadHide(() => {
+    progressContainer.style.display  = "none";
+});
+
 
 // Apply initial class
 $("#file-list").addClass("grid-view");
@@ -948,7 +980,7 @@ async function triggerSync(syncData,manual = false) {
             customer_id: customer_data.id,
             domain_id: domain_data.id,
             apiUrl: apiUrl,
-            syncData: syncData
+            syncData: syncData,
         });
 
         console.log(result.message);

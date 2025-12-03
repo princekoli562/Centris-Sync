@@ -661,6 +661,17 @@ async function autoSync({ customer_id, domain_id, apiUrl, syncData }) {
 //     return data.pending;
 // }
 
+
+function normalizeServerPath(location) {
+    const parts = location.replace(/\\/g, "/").split("/");
+
+    const index = parts.findIndex(p => p.includes("_") && /\d/.test(p));
+
+    if (index === -1) return parts.slice(-2).join("/");
+
+    return parts.slice(index).join("/");
+}
+
 async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
     const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
         method: "POST",
@@ -674,9 +685,8 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
 
     const raw = await res.text();
 
-    console.log("🔥🔥 RAW API RESPONSE 🔥🔥");
-    console.log(raw);        // ← copy-paste this output for me
-    console.log("🔥🔥 END 🔥🔥");
+    console.log("🔥 RAW RESPONSE 🔥");
+    console.log(raw);
 
     return JSON.parse(raw).pending;
 }
@@ -1263,25 +1273,24 @@ ipcMain.handle("download-pending-files", async (event, args) => {
 //     return true;
 // }
 
+function cleanSegment(s) {
+    return s.replace(/^[:\\/]+|[:\\/]+$/g, ""); // remove leading/trailing slashes or colon
+}
+
 async function downloadPendingFilesLogic(event, args) {
-    const { customer_id, domain_id, apiUrl, syncData } = args;
+    const { apiUrl, syncData } = args;
 
-    console.log("⏬ Download Logic Started with args:", args);
-
-    // Fetch pending items
     const pending = await downloadServerPending(args);
-
-    console.log("Pending items:", pending.length);
-
     if (!Array.isArray(pending) || pending.length === 0) {
         event.sender.send("download-complete");
         return true;
     }
 
-    const driveLetter = getMappedDriveLetter();
-    const mappedDrivePath = path
-        .join(driveLetter + ":", syncData.config_data.centris_drive)
-        .replace(/\\/g, "/") + "/";
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    // FINAL CORRECT MAPPED DRIVE PATH
+    const mappedDrivePath = path.join(drive + ":", baseFolder); 
 
     const totalFiles = pending.length;
     let completedFiles = 0;
@@ -1290,42 +1299,28 @@ async function downloadPendingFilesLogic(event, args) {
 
     for (const item of pending) {
         try {
-            const fullLocalPath = path
-                .join(mappedDrivePath, item.location)
-                .replace(/\\/g, "/");
+            const cleanLocation = normalizeServerPath(item.location);
+            const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
 
-            event.sender.send("download-progress", {
-                done: completedFiles,
-                total: totalFiles,
-                file: item.location,
-                filePercent: 0
-            });
+            const fileDir = path.dirname(fullLocalPath);
+            if (!fs.existsSync(fileDir)) {
+                fs.mkdirSync(fileDir, { recursive: true });
+            }
 
-            // Folder
             if (item.type === "folder") {
                 if (!fs.existsSync(fullLocalPath)) {
                     fs.mkdirSync(fullLocalPath, { recursive: true });
                 }
-            }
-
-            // File
-            else {
-                const fileDir = path.dirname(fullLocalPath);
-                if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
-
-                const binary = Buffer.from(item.content, "base64");
-                const totalSize = binary.length;
-                const chunkSize = 1024 * 256;
-
-                let written = 0;
+            } else {
                 const fileStream = fs.createWriteStream(fullLocalPath);
+                let chunkIndex = 0;
 
-                while (written < totalSize) {
-                    const chunk = binary.slice(written, written + chunkSize);
-                    fileStream.write(chunk);
-                    written += chunk.length;
+                for (const chunk of item.chunks) {
+                    const binaryChunk = Buffer.from(chunk, "base64");
+                    fileStream.write(binaryChunk);
 
-                    const filePercent = Math.floor((written / totalSize) * 100);
+                    chunkIndex++;
+                    const filePercent = Math.floor((chunkIndex / item.chunks.length) * 100);
 
                     event.sender.send("download-progress", {
                         done: completedFiles,
@@ -1338,10 +1333,16 @@ async function downloadPendingFilesLogic(event, args) {
                 fileStream.end();
             }
 
-            updateSaveTracker(item.location, item);
+            updateSaveTracker(cleanLocation, item);
+
+            await fetch(`${apiUrl}/api/mark-downloaded`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: item.id })
+            });
+
 
             completedFiles++;
-
             event.sender.send("download-progress", {
                 done: completedFiles,
                 total: totalFiles,
@@ -1350,28 +1351,20 @@ async function downloadPendingFilesLogic(event, args) {
             });
 
         } catch (err) {
-            console.log("Download error for", item.location, err);
-
-            event.sender.send("download-progress", {
-                done: completedFiles,
-                total: totalFiles,
-                file: item.location,
-                filePercent: 0,
-                error: err.message
-            });
+            console.log("Download error:", item.location, err);
         }
     }
 
     event.sender.send("download-complete");
-
-    setTimeout(() => {
-        event.sender.send("download-hide");
-    }, 6000);
+    setTimeout(() => event.sender.send("download-hide"), 6000);
 
     return true;
 }
 
+
+
 async function updateSaveTracker(location, item) {
+    const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     let tracker = loadTracker();
     let hash = await hashFile(location);
 

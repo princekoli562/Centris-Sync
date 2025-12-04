@@ -9,39 +9,7 @@ const https = require("https");
 const http = require("http");
 
 //console.log(process.env.NODE_ENV);
-// if (process.env.NODE_ENV === "development") {
-//   try {
-//     // 👇 Detect electron binary properly (Windows-friendly)
-//     let electronBinary = path.join(
-//       __dirname,
-//       "node_modules",
-//       ".bin",
-//       "electron.cmd"
-//     );
 
-//     // Fallback if .cmd doesn't exist (Linux/macOS case)
-//     if (!fs.existsSync(electronBinary)) {
-//       electronBinary = path.join(
-//         __dirname,
-//         "node_modules",
-//         ".bin",
-//         "electron"
-//       );
-//     }
-
-//     // Load electron-reload
-//     require("electron-reload")(__dirname, {
-//       electron: electronBinary,
-//       //hardResetMethod: "exit",
-//       hardResetMethod: "reload",
-//     });
-
-//     console.log("🔁 Electron auto-reload enabled (Windows Dev Mode)");
-//   } catch (err) {
-//     console.warn("⚠️ Electron reload not active:", err.message);
-//   }
-// }
-///
 
 if (process.env.NODE_ENV === "development") {
   try {
@@ -70,6 +38,22 @@ if (process.env.NODE_ENV === "development") {
     console.warn("⚠️ Electron reload not active:", err.message);
   }
 }
+
+// if (process.env.NODE_ENV === "development") {
+//   try {
+//     const path = require("path");
+//     require("electron-reload")(__dirname, {
+//       electron: path.join(__dirname, "node_modules", "electron", "dist", "electron.exe"),
+//       usePolling: true,
+//       awaitWriteFinish: true,
+//       ignored: /node_modules|[\/\\]\./
+//     });
+
+//     console.log("🔄 electron-reload running");
+//   } catch (err) {
+//     console.warn("⚠ electron-reload failed:", err.message);
+//   }
+// }
 
 const os = require('os');
 const { execSync, exec,spawn } = require('child_process');
@@ -448,8 +432,6 @@ function removeDeleted(oldSnap, newSnap) {
     }
 }
 
-
-
 function loadTracker() {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     if (fs.existsSync(trackerPath)) {
@@ -466,64 +448,42 @@ function saveTracker(snapshot) {
 }
 
 
+// async function getDirectorySnapshotPrince(dir, oldSnap = {}, baseDir = dir) {
+//     const snapshot = {};
+//     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-function findNewOrChangedFilesOLd(current, previous) {
-    const changed = [];
+//     for (const entry of entries) {
+//         const fullPath = path.join(dir, entry.name);
+//         const relPath = normalizePath(path.relative(baseDir, fullPath));
+//         const stats = fs.statSync(fullPath);
 
-    for (const file in current) {
-        const norm = normalizePath(file);
+//         if (entry.isDirectory()) {
+//             snapshot[relPath] = {
+//                 type: "folder",
+//                 mtime: stats.mtimeMs,
+//             };
 
-        const prevItem = previous[norm];
-        const currItem = current[file];
+//             Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap, baseDir));
+//         } 
+//         else {
+//             let prev = oldSnap[relPath];
+//             let hash = prev?.hash || null;
 
-        if (!prevItem ||
-            prevItem.mtime !== currItem.mtime ||
-            prevItem.hash !== currItem.hash) 
-        {
-            changed.push(norm);
-        }
-    }
+//             if (!prev || prev.mtime !== stats.mtimeMs) {
+//                 hash = await hashFile(fullPath);
+//             }
 
-    return changed;
-}
+//             snapshot[relPath] = {
+//                 type: "file",
+//                 size: stats.size,
+//                 mtime: stats.mtimeMs,
+//                 hash,
+//             };
+//         }
+//     }
 
-function findNewOrChangedFilesAbsolute(current, previous) {
-    const changed = [];
-
-    for (const file in current) {
-        const key = normalizePath(file);
-
-        const curr = current[key];
-        const prev = previous[key];
-
-        // NEW file/directory
-        if (!prev) {
-            changed.push(key);
-            continue;
-        }
-
-        // DIRECTORY: check only mtime
-        if (curr.type === "folder") {
-            if (curr.mtime !== prev.mtime) {
-                changed.push(key);
-            }
-            continue;
-        }
-
-        // FILE: check mtime first (fast)
-        if (curr.mtime !== prev.mtime) {
-            changed.push(key);
-            continue;
-        }
-
-        // Rare case: same mtime but different hash (timestamp preserved)
-        if (curr.hash !== prev.hash) {
-            changed.push(key);
-        }
-    }
-
-    return changed;
-}
+//     return snapshot;
+// }
 
 async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
     const snapshot = {};
@@ -534,6 +494,8 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
         const relPath = normalizePath(path.relative(baseDir, fullPath));
         const stats = fs.statSync(fullPath);
 
+        if (!relPath) continue;
+
         if (entry.isDirectory()) {
             snapshot[relPath] = {
                 type: "folder",
@@ -541,8 +503,7 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
             };
 
             Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap, baseDir));
-        } 
-        else {
+        } else {
             let prev = oldSnap[relPath];
             let hash = prev?.hash || null;
 
@@ -562,7 +523,8 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
     return snapshot;
 }
 
-function findNewOrChangedFiles(current, previous) {
+
+function findNewOrChangedFilesPrince(current, previous) {
     const changed = [];
 
     for (const key in current) {
@@ -591,6 +553,31 @@ function findNewOrChangedFiles(current, previous) {
 
     return changed;
 }
+
+function findNewOrChangedFiles(current, previous) {
+    const changed = [];
+
+    for (const key in current) {
+        const curr = current[key];
+        const prev = previous[key];
+
+        if (!prev) {
+            changed.push(key);
+            continue;
+        }
+
+        if (curr.mtime !== prev.mtime) {
+            changed.push(key);
+            continue;
+        }
+        if (curr.hash !== prev.hash) {
+            changed.push(key);
+        }
+    }
+
+    return changed;
+}
+
 
 
 function findNewOrChangedItems(current, previous) {
@@ -646,22 +633,6 @@ async function autoSync({ customer_id, domain_id, apiUrl, syncData }) {
   }
 }
 
-// async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
-//     const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
-//       method: "POST",
-//       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({
-//         customer_id: customer_id,
-//         domain_id: domain_id,
-//         user_id: syncData.user_data.id
-//       }),
-//     });
-
-//     const data = await res.json();
-//     return data.pending;
-// }
-
-
 function normalizeServerPath(location) {
     const parts = location.replace(/\\/g, "/").split("/");
 
@@ -690,6 +661,21 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
 
     return JSON.parse(raw).pending;
 }
+
+// async function downloadServerPending(apiUrl, syncData, customer_id, domain_id, limit = 50) {
+//     const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify({
+//             customer_id,
+//             domain_id,
+//             user_id: syncData.user_data.id,
+//             limit
+//         }),
+//     });
+
+//     return await res.json();
+// }
 
 
 function createTestFolderDocumentpath() {
@@ -1176,109 +1162,12 @@ ipcMain.handle("download-pending-files", async (event, args) => {
     return await downloadPendingFilesLogic(event, args);
 });
 
-
-// async function downloadPendingFilesLogic(event, args) {
-   
-//     const { customer_id, domain_id, apiUrl, syncData } = args;
-     
-//     // ✔ Get pending from server using args
-//     const pending = await downloadServerPending(args);
-
-//     const driveLetter = getMappedDriveLetter();
-//     const mappedDrivePath = driveLetter + "\\" + syncData.config_data.centris_drive + "\\";
-
-//     const totalFiles = pending.length;
-//     let completedFiles = 0;
-
-//     // 🔹 Start event
-//     event.sender.send("download-progress-start", { total: totalFiles });
-
-//     for (const item of pending) {
-
-//         const fullLocalPath = path.join(mappedDrivePath, item.location);
-//         console.log(fullLocalPath);
-//         // 🔹 Initial progress for current file
-//         event.sender.send("download-progress", {
-//             done: completedFiles,
-//             total: totalFiles,
-//             file: item.location,
-//             filePercent: 0
-//         });
-
-//         // -------------------------------------------------
-//         // 📁 Process folder
-//         // -------------------------------------------------
-//         if (item.type === "folder") {
-//             if (!fs.existsSync(fullLocalPath)) {
-//                 fs.mkdirSync(fullLocalPath, { recursive: true });
-//             }
-//         } 
-        
-//         // -------------------------------------------------
-//         // 📄 Process file in chunks
-//         // -------------------------------------------------
-//         else {
-//             const fileDir = path.dirname(fullLocalPath);
-//             if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
-
-//             const binary = Buffer.from(item.content, "base64");
-//             const chunkSize = 1024 * 256;  // 256KB
-//             let written = 0;
-//             const totalSize = binary.length;
-
-//             const fileStream = fs.createWriteStream(fullLocalPath);
-
-//             while (written < totalSize) {
-//                 const chunk = binary.slice(written, written + chunkSize);
-//                 fileStream.write(chunk);
-//                 written += chunk.length;
-
-//                 const filePercent = Math.floor((written / totalSize) * 100);
-
-//                 event.sender.send("download-progress", {
-//                     done: completedFiles,
-//                     total: totalFiles,
-//                     file: item.location,
-//                     filePercent
-//                 });
-//             }
-
-//             fileStream.end();
-//         }
-
-//         // -------------------------------------------------
-//         // 📝 Update local tracker
-//         // -------------------------------------------------
-//         updateSaveTracker(item.location, item);
-
-//         // ✔ Mark file completed
-//         completedFiles++;
-
-//         event.sender.send("download-progress", {
-//             done: completedFiles,
-//             total: totalFiles,
-//             file: item.location,
-//             filePercent: 100
-//         });
-//     }
-
-//     // 🔹 Completed all downloads
-//     event.sender.send("download-complete");
-
-//     // 🔹 Hide UI after 6 seconds
-//     setTimeout(() => {
-//         event.sender.send("download-hide");
-//     }, 6000);
-
-//     return true;
-// }
-
 function cleanSegment(s) {
     return s.replace(/^[:\\/]+|[:\\/]+$/g, ""); // remove leading/trailing slashes or colon
 }
 
-async function downloadPendingFilesLogic(event, args) {
-    const { apiUrl, syncData } = args;
+async function downloadPendingFilesLogicPrince(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData} = args;
 
     const pending = await downloadServerPending(args);
     if (!Array.isArray(pending) || pending.length === 0) {
@@ -1333,7 +1222,7 @@ async function downloadPendingFilesLogic(event, args) {
                 fileStream.end();
             }
 
-            updateSaveTracker(cleanLocation, item);
+            await updateSaveTracker(fullLocalPath,cleanLocation, item);
 
             await fetch(`${apiUrl}/api/mark-downloaded`, {
                 method: "POST",
@@ -1361,22 +1250,159 @@ async function downloadPendingFilesLogic(event, args) {
     return true;
 }
 
+async function downloadPendingFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData } = args;
 
+    const pending = await downloadServerPending(args);
+    if (!Array.isArray(pending) || pending.length === 0) {
+        event.sender.send("download-complete");
+        return true;
+    }
 
-async function updateSaveTracker(location, item) {
-    const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
-    let tracker = loadTracker();
-    let hash = await hashFile(location);
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const mappedDrivePath = path.join(drive + ":", baseFolder);
 
-    tracker[location] = {
-       type: item.type,
-        size: item.size,
-        mtime: Date.now(),   // server-side MTime
-        hash: hash
-    };
+    const totalFiles = pending.length;
+    let completedFiles = 0;
 
-    fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
+    event.sender.send("download-progress-start", { total: totalFiles });
+
+    for (const item of pending) {
+        try {
+            const cleanLocation = normalizeServerPath(item.location);
+            const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
+
+            // Ensure directory exists
+            const fileDir = path.dirname(fullLocalPath);
+            if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
+
+            if (item.type === "file") {
+
+                const fileStream = fs.createWriteStream(fullLocalPath);
+
+                for (const chunk of item.chunks) {
+                    const binaryChunk = Buffer.from(chunk, "base64");
+                    fileStream.write(binaryChunk);
+                }
+
+                fileStream.end();
+
+                // 🔥🔥 wait for file to finish writing before tracker update
+                await new Promise(resolve => fileStream.on("finish", resolve));
+
+                // now update tracker
+                await updateSaveTracker(fullLocalPath, cleanLocation, item);
+            }
+            else {
+                // folder case
+                if (!fs.existsSync(fullLocalPath)) {
+                    fs.mkdirSync(fullLocalPath, { recursive: true });
+                }
+                await updateSaveTracker(fullLocalPath, cleanLocation, item);
+            }
+
+            // Mark downloaded on server safely
+            await markDownloaded(apiUrl, item.id);
+
+            completedFiles++;
+            event.sender.send("download-progress", {
+                done: completedFiles,
+                total: totalFiles,
+                file: item.location,
+                filePercent: 100,
+            });
+
+        } catch (err) {
+            console.error("Download error:", item.location, err.message);
+        }
+    }
+
+    event.sender.send("download-complete");
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+    return true;
 }
+
+// async function downloadPendingFilesLogic(event, args) {
+//     const { apiUrl, syncData, customer_id, domain_id } = args;
+
+//     const drive = cleanSegment(getMappedDriveLetter());
+//     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+//     const mappedDrivePath = path.join(drive + ":", baseFolder);
+
+//     let totalDownloaded = 0;
+
+//     while (true) {
+//         let response = await downloadServerPending(apiUrl, syncData, customer_id, domain_id, 50);
+
+//         if (!response.pending || response.pending.length === 0) break;
+
+//         let batch = response.pending;
+
+//         event.sender.send("download-progress-start", { total: batch.length });
+
+//         let completed = 0;
+
+//         for (const item of batch) {
+//             try {
+//                 const cleanLocation = normalizeServerPath(item.location);
+//                 const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
+
+//                 const fileDir = path.dirname(fullLocalPath);
+//                 if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
+
+//                 if (item.type === "folder") {
+//                     if (!fs.existsSync(fullLocalPath)) fs.mkdirSync(fullLocalPath, { recursive: true });
+//                 } else {
+//                     const fileStream = fs.createWriteStream(fullLocalPath);
+
+//                     for (let i = 0; i < item.chunks.length; i++) {
+//                         const binaryChunk = Buffer.from(item.chunks[i], "base64");
+//                         fileStream.write(binaryChunk);
+
+//                         event.sender.send("download-progress", {
+//                             done: completed,
+//                             total: batch.length,
+//                             file: item.location,
+//                             filePercent: Math.floor(((i + 1) / item.chunks.length) * 100)
+//                         });
+//                     }
+
+//                     fileStream.end();
+//                 }
+
+//                 await updateSaveTracker(fullLocalPath, cleanLocation, item);
+
+//                 await fetch(`${apiUrl}/api/mark-downloaded`, {
+//                     method: "POST",
+//                     headers: { "Content-Type": "application/json" },
+//                     body: JSON.stringify({ id: item.id })
+//                 });
+
+//                 completed++;
+//                 totalDownloaded++;
+
+//                 event.sender.send("download-progress", {
+//                     done: completed,
+//                     total: batch.length,
+//                     file: item.location,
+//                     filePercent: 100
+//                 });
+
+//             } catch (err) {
+//                 console.log("Download error:", item.location, err);
+//             }
+//         }
+
+//         if (!response.has_more) break;
+//     }
+
+//     event.sender.send("download-complete");
+//     setTimeout(() => event.sender.send("download-hide"), 6000);
+
+//     return true;
+// }
+
 
 
 // ipcMain.handle("scanFolder", async (event, folderPath) => {
@@ -1398,6 +1424,229 @@ async function updateSaveTracker(location, item) {
 
 //     return { success: true, files };
 // });
+
+
+
+// async function updateSaveTracker(fullPath, cleanLocation, item) {
+//     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
+
+//     let tracker = loadTracker();
+
+//     const key = cleanLocation.replace(/\\/g, "/");
+//     const hash = await hashFile(fullPath);
+
+//     // Log for debugging
+//     console.log("📁 Updating key:", key);
+//     console.log("📄 Tracker path:", saveTrackerPath);
+
+//     // Fix: safe mtime update
+//     try {
+//         fs.utimesSync(fullPath, new Date(), new Date(Number(item.mtimeMs)));
+//     } catch (err) {
+//         console.warn("⚠️ utimes failed:", err.message);
+//     }
+
+//     // Update memory object
+//     tracker[key] = {
+//         type: item.type,
+//         size: item.size,
+//         mtime: Number(item.mtimeMs),
+//         hash: hash
+//     };
+
+//     // Safe write
+//     try {
+//         fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
+//         console.log("✅ Tracker updated:", key);
+//     } catch (err) {
+//         console.error("❌ Error writing tracker:", err.message);
+//     }
+// }
+
+// async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+//     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
+//     console.log("Updating tracker for:", fullPath, "key:", cleanLocation);
+//     console.log("Tracker path:", saveTrackerPath);
+
+//     // Load tracker safely
+//     let tracker = {};
+//     try {
+//         tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf-8"));
+//     } catch (err) {
+//         tracker = {};
+//     }
+
+//     // Get stats
+//     let stats;
+//     try {
+//         stats = fs.statSync(fullPath);
+//     } catch (err) {
+//         console.warn(`⚠️ File/folder missing: ${fullPath}`);
+//         return;
+//     }
+
+//     const key = cleanLocation.replace(/\\/g, "/");
+
+//     // Calculate hash if file
+//     let hash = item?.hash || null;
+//     if (stats.isFile() && (!hash || tracker[key]?.mtime !== stats.mtimeMs)) {
+//         try {
+//             hash = await hashFile(fullPath);
+//         } catch (err) {
+//             console.warn(`⚠️ Failed to hash file: ${fullPath}`, err.message);
+//         }
+//     }
+
+//     // Determine mtime
+//     const mtime = item?.mtimeMs ? Number(item.mtimeMs) : stats.mtimeMs;
+
+//     // Update local file mtime only for files
+//     if (stats.isFile()) {
+//         try {
+//             fs.utimesSync(
+//                 fullPath,
+//                 stats.atimeMs ? new Date(stats.atimeMs) : new Date(),
+//                 new Date(mtime)
+//             );
+//         } catch (err) {
+//             console.warn(`⚠️ Failed to update mtime for ${fullPath}: ${err.message}`);
+//         }
+//     }
+
+//     // Update tracker memory
+//     tracker[key] = {
+//         type: stats.isDirectory() ? "folder" : "file",
+//         size: stats.isFile() ? stats.size : 0,
+//         mtime,
+//         hash,
+//     };
+
+//     // Write tracker
+//     try {
+//         fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
+//         console.log(`✅ Tracker updated: ${key}`);
+//     } catch (err) {
+//         console.error(`❌ Failed to write tracker: ${err.message}`);
+//     }
+// }
+
+async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+    const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
+
+    // Load tracker safely
+    let tracker = {};
+    try {
+        tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf-8"));
+    } catch (err) {
+        tracker = {};
+    }
+
+    // Ensure file/folder exists
+    let stats;
+    try {
+        stats = fs.statSync(fullPath);
+    } catch (err) {
+        console.warn(`⚠️ Missing path (skip tracker): ${fullPath}`);
+        return;
+    }
+
+    const key = cleanLocation.replace(/\\/g, "/");
+
+    // ---------- FIX #1: Always trust server hash for S2C direction ----------
+    // If item.hash exists, ALWAYS use that (server and desktop must match)
+    let hash = item?.hash || null;
+
+    // ---------- FIX #2: Only compute hash when no incoming hash ----------
+    if (stats.isFile() && !hash) {
+        try {
+            hash = await hashFile(fullPath); // same function used in C2S snapshot
+        } catch (err) {
+            console.warn(`⚠️ Failed to hash file: ${fullPath}`, err.message);
+        }
+    }
+
+    // ---------- FIX #3: Proper mtime handling ----------
+    // Prefer server mtime for S2C, otherwise local stat value
+    const mtime = item?.mtimeMs ? Number(item.mtimeMs) : stats.mtimeMs;
+
+    // ---------- FIX #4: Update filesystem timestamps (only for files) ----------
+    if (stats.isFile()) {
+        try {
+            fs.utimesSync(
+                fullPath,
+                stats.atime,         // keep access time
+                new Date(mtime)      // update modified time
+            );
+        } catch (err) {
+            console.warn(`⚠️ Failed to set mtime: ${fullPath} : ${err.message}`);
+        }
+    }
+
+    // ---------- FIX #5: Update tracker ----------
+    tracker[key] = {
+        type: stats.isDirectory() ? "folder" : "file",
+        size: stats.isFile() ? stats.size : 0,
+        mtime,
+        hash
+    };
+
+    // ---------- FIX #6: Write JSON file safely ----------
+    try {
+        fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
+        console.log(`✅ Tracker updated → ${key}`);
+    } catch (err) {
+        console.error(`❌ Failed to write tracker JSON: ${err.message}`);
+    }
+}
+
+async function markDownloaded(apiUrl, id) {
+    const payload = JSON.stringify({ id });
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+
+            const res = await fetch(`${apiUrl}/api/mark-downloaded`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(payload)
+                },
+                body: payload,
+                signal: controller.signal
+            });
+
+            clearTimeout(timeout);
+
+            let data;
+            try {
+                data = await res.json();
+            } catch (e) {
+                console.warn("⚠️ Invalid JSON from server");
+                continue;
+            }
+
+            if (data.status === true) {
+                console.log(`✔ Marked downloaded: ${id}`);
+                return true;
+            }
+
+            console.warn(`⚠️ Server returned failure for id=${id}:`, data.message);
+
+        } catch (err) {
+            console.warn(`⚠️ Error marking downloaded attempt ${attempt} for id=${id}:`, err.message);
+        }
+
+        await new Promise(r => setTimeout(r, 500)); // wait 0.5s before retry
+    }
+
+    console.error(`❌ FAILED after retries → mark-downloaded for id=${id}`);
+    return false;
+}
+
+
+
 
 function ensureDirSync(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -1576,7 +1825,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     if (changedItems.length === 0 && deletedItems.length === 0) {
       return { success: true, message: "No changes" };
     }
-
+    //return;
     // ------------------------------------------------------------
     // UPLOAD CHANGED FILES
     // ------------------------------------------------------------
@@ -2502,6 +2751,15 @@ process.on('exit', () => {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);
     }
 });
+
+// app.on("before-quit", () => {
+//   console.log("🧹 Cleaning old instances...");
+//   try {
+//     execSync('taskkill /F /IM electron.exe');
+//   } catch (e) {
+//     console.warn("⚠ Cleanup failed");
+//   }
+// });
 
 
 app.on('window-all-closed', () => {

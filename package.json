@@ -28,7 +28,11 @@
     "allowElevation": true,
     "allowToChangeInstallationDirectory": true
   },
- "files": [
+  "asar": true,               
+  "asarUnpack": [           
+    "preload.js"
+  ],
+  "files": [
     "preload.js",
     "main.js",
     "*.html",

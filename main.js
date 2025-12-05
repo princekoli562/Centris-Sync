@@ -84,12 +84,12 @@ const isDev = !app.isPackaged;
 
 const preloadPath = isDev
     ? path.join(__dirname, "preload.js")
-    : path.join(process.resourcesPath, "app.asar", "preload.js");
+    : path.join(process.resourcesPath, "app.asar.unpacked", "preload.js");
     
 
 const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")
-    : path.join(process.resourcesPath, "app.asar" ,"assets/images/favicon.ico");
+    : path.join(process.resourcesPath, "app.asar.unpacked" ,"assets/images/favicon.ico");
 
 function sendLogToRenderer(message) {
   const win = BrowserWindow.getAllWindows()[0];
@@ -241,7 +241,7 @@ const createWindow = async () => {
     function getHtmlPath(file) {
         return isDev
             ? path.join(__dirname, file)                // Dev folder
-            : path.join(process.resourcesPath, "app.asar", file); // Packaged EXE
+            : path.join(process.resourcesPath, "app.asar.unpacked", file); // Packaged EXE
     }
 
 };
@@ -250,7 +250,7 @@ function createTray() {
   //tray = new Tray(path.join(__dirname, 'assets/images/favicon.png'));
   const trayIconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.png")                // dev
-    : path.join(process.resourcesPath,"app.asar", "assets/images/favicon.png"); 
+    : path.join(process.resourcesPath,"app.asar.unpacked", "assets/images/favicon.png"); 
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -737,7 +737,7 @@ function createTestFolder() {
     //const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
     const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")              // development
-    : path.join(process.resourcesPath,"app.asar", "assets/images/favicon.ico"); 
+    : path.join(process.resourcesPath,"app.asar.unpacked", "assets/images/favicon.ico"); 
 
     // Create desktop.ini file to assign folder icon
     const desktopIniContent = `[.ShellClassInfo]
@@ -911,7 +911,7 @@ function createSyncFolderAndDrive() {
     // 2️⃣ Optional custom icon
     try {
         //const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
-        const iconPath = isDev? path.join(__dirname, "assets/images/favicon.ico"): path.join(process.resourcesPath,"app.asar", "assets/images/favicon.ico"); 
+        const iconPath = isDev? path.join(__dirname, "assets/images/favicon.ico"): path.join(process.resourcesPath,"app.asar.unpacked", "assets/images/favicon.ico"); 
         
         const iniPath = path.join(SYNC_FOLDER, 'desktop.ini');
         if (!fs.existsSync(iniPath)) {
@@ -1033,7 +1033,7 @@ function createAndMountVHDX() {
         //const iconPath = path.join(__dirname, "assets", "images", "favicon.ico");
         const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")              // development
-    : path.join(process.resourcesPath,"app.asar", "assets/images/favicon.ico"); 
+    : path.join(process.resourcesPath,"app.asar.unpacked", "assets/images/favicon.ico"); 
 
         // Apply the drive icon
         applyDriveIcon(driveLetter, iconPath);
@@ -2396,8 +2396,8 @@ ipcMain.handle("get-base-path", () => {
         return path.join(__dirname, "..").replace(/\\/g, "/");
     }
 
-    // Production: point to app.asar content
-    return path.join(process.resourcesPath, "app.asar").replace(/\\/g, "/");
+    // Production: point to app.asar.unpacked content
+    return path.join(process.resourcesPath, "app.asar.unpacked").replace(/\\/g, "/");
 });
 
 function isHiddenWindows(filePath) {

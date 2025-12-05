@@ -11,33 +11,33 @@ const http = require("http");
 //console.log(process.env.NODE_ENV);
 
 
-if (process.env.NODE_ENV === "development") {
-  try {
-    const path = require("path");
-    const fs = require("fs");
+// if (process.env.NODE_ENV === "development") {
+//   try {
+//     const path = require("path");
+//     const fs = require("fs");
 
-    // Absolute path to Electron executable
-    const electronBinary = path.join(__dirname, "node_modules", "electron", "dist", "electron.exe");
-    const mainPath = path.join(__dirname, "main.js");
+//     // Absolute path to Electron executable
+//     const electronBinary = path.join(__dirname, "node_modules", "electron", "dist", "electron.exe");
+//     const mainPath = path.join(__dirname, "main.js");
 
-    if (!fs.existsSync(electronBinary)) {
-      throw new Error(`Electron binary not found at ${electronBinary}`);
-    }
+//     if (!fs.existsSync(electronBinary)) {
+//       throw new Error(`Electron binary not found at ${electronBinary}`);
+//     }
 
-    require("electron-reload")(mainPath, {
-      electron: electronBinary,   // 🔥 must point to .exe
-      usePolling: true,           // required for VHDX/mapped drives
-      awaitWriteFinish: true,
-      forceHardReset: true,
-      hardResetMethod: "reload",
-      ignored: /node_modules|[\/\\]\./,
-    });
+//     require("electron-reload")(mainPath, {
+//       electron: electronBinary,   // 🔥 must point to .exe
+//       usePolling: true,           // required for VHDX/mapped drives
+//       awaitWriteFinish: true,
+//       forceHardReset: true,
+//       hardResetMethod: "reload",
+//       ignored: /node_modules|[\/\\]\./,
+//     });
 
-    console.log("✅ electron-reload enabled (polling mode)");
-  } catch (err) {
-    console.warn("⚠️ Electron reload not active:", err.message);
-  }
-}
+//     console.log("✅ electron-reload enabled (polling mode)");
+//   } catch (err) {
+//     console.warn("⚠️ Electron reload not active:", err.message);
+//   }
+// }
 
 // if (process.env.NODE_ENV === "development") {
 //   try {
@@ -80,6 +80,16 @@ let syncData = {
   apiUrl: null,
 };
 
+const isDev = !app.isPackaged;
+
+const preloadPath = isDev
+    ? path.join(__dirname, "preload.js")
+    : path.join(process.resourcesPath, "app", "preload.js");
+
+const iconPath = isDev
+    ? path.join(__dirname, "assets/images/favicon.ico")
+    : path.join(process.resourcesPath, "assets/images/favicon.ico");
+
 function sendLogToRenderer(message) {
   const win = BrowserWindow.getAllWindows()[0];
   if (win && win.webContents) {
@@ -104,16 +114,30 @@ const createWindow = async () => {
     //     win.show();
     //     return;
     // }
-    win = new BrowserWindow({
+    // win = new BrowserWindow({
+    //     width: 800,
+    //     height: 600,
+    //     webPreferences: {
+    //         preload: path.join(__dirname, 'preload.js'),
+    //         contextIsolation: true,
+    //         enableRemoteModule: false,
+    //         nodeIntegration: false // ❗ keep false for security
+    //     },
+    //     icon: path.join(__dirname, 'assets/images/favicon.ico')
+    // });
+
+    
+
+    const win = new BrowserWindow({
         width: 800,
         height: 600,
         webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
+            preload: preloadPath,
             contextIsolation: true,
             enableRemoteModule: false,
-            nodeIntegration: false // ❗ keep false for security
+            nodeIntegration: false
         },
-        icon: path.join(__dirname, 'assets/images/favicon.ico')
+        icon: iconPath
     });
 
     // ✅ Use local session checker instead of win.electronAPI
@@ -121,12 +145,10 @@ const createWindow = async () => {
     console.log(sessionActive);
     if (sessionActive) {
         console.log("✅ Session active, redirecting to home...");
-        //await win.loadFile('home.html');
-        await win.loadFile(path.join(__dirname, 'home.html'));
+        await win.loadFile(getHtmlPath("home.html"));
     } else {
         console.log("🔒 Session expired or not logged in");
-        //await win.loadFile('index.html');
-        await win.loadFile(path.join(__dirname, 'index.html'));
+        await win.loadFile(getHtmlPath("index.html"));
     }
 
     //✅ Handle close — minimize to tray, not quit
@@ -160,11 +182,11 @@ const createWindow = async () => {
     ipcMain.on('navigate', async (event, page) => {
       try {
           if (page === 'home') {
-              await win.loadFile(path.join(__dirname, 'home.html'));
+              await win.loadFile(getHtmlPath('home.html'));
               console.log('🏠 Home page loaded');
 
           } else if (page === 'login') {
-              await win.loadFile(path.join(__dirname, 'index.html'));
+              await win.loadFile(getHtmlPath('index.html'));
               console.log('🔑 Login page loaded');
 
           } else {
@@ -206,7 +228,7 @@ const createWindow = async () => {
             console.log("⚠️ Session expired — redirecting to login page...");
 
             try {
-                await win.loadFile(path.join(__dirname, 'index.html'));
+                await win.loadFile(getHtmlPath('index.html'));
             } catch (err) {
                 console.error("Error loading login page:", err);
             }
@@ -215,10 +237,20 @@ const createWindow = async () => {
         }
     }
 
+    function getHtmlPath(file) {
+        return isDev
+            ? path.join(__dirname, file)                // Dev folder
+            : path.join(process.resourcesPath, "app", file); // Packaged EXE
+    }
+
 };
 
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'assets/images/favicon.png'));
+  //tray = new Tray(path.join(__dirname, 'assets/images/favicon.png'));
+  const trayIconPath = isDev
+    ? path.join(__dirname, "assets/images/favicon.png")                // dev
+    : path.join(process.resourcesPath, "assets/images/favicon.png"); 
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Open Centris Drive',
@@ -701,7 +733,10 @@ function createTestFolder() {
     }
 
     // Path to your .ico icon inside the app directory
-    const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
+    //const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
+    const iconPath = isDev
+    ? path.join(__dirname, "assets/images/favicon.ico")              // development
+    : path.join(process.resourcesPath, "assets/images/favicon.ico"); 
 
     // Create desktop.ini file to assign folder icon
     const desktopIniContent = `[.ShellClassInfo]
@@ -874,7 +909,9 @@ function createSyncFolderAndDrive() {
 
     // 2️⃣ Optional custom icon
     try {
-        const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
+        //const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
+        const iconPath = isDev? path.join(__dirname, "assets/images/favicon.ico"): path.join(process.resourcesPath, "assets/images/favicon.ico"); 
+        
         const iniPath = path.join(SYNC_FOLDER, 'desktop.ini');
         if (!fs.existsSync(iniPath)) {
             const iniData = `[.ShellClassInfo]
@@ -992,7 +1029,10 @@ function createAndMountVHDX() {
         console.log(`🔤 Mounted as ${driveLetter}:\\`);
 
         // Path to your custom icon
-        const iconPath = path.join(__dirname, "assets", "images", "favicon.ico");
+        //const iconPath = path.join(__dirname, "assets", "images", "favicon.ico");
+        const iconPath = isDev
+    ? path.join(__dirname, "assets/images/favicon.ico")              // development
+    : path.join(process.resourcesPath, "assets/images/favicon.ico"); 
 
         // Apply the drive icon
         applyDriveIcon(driveLetter, iconPath);
@@ -2350,7 +2390,13 @@ ipcMain.handle('path:relative', (event, from, to) => {
 });
 
 ipcMain.handle("get-base-path", () => {
-  return path.join(__dirname, "..").replace(/\\/g, "/");
+    if (!app.isPackaged) {
+        // Development: project root
+        return path.join(__dirname, "..").replace(/\\/g, "/");
+    }
+
+    // Production: installed resources folder
+    return process.resourcesPath.replace(/\\/g, "/");
 });
 
 function isHiddenWindows(filePath) {

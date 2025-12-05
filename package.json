@@ -28,7 +28,11 @@
     "allowElevation": true,
     "allowToChangeInstallationDirectory": true
   },
-  "files": [
+ "files": [
+    "preload.js",
+    "main.js",
+    "*.html",
+    "assets/**/*",
     "**/*",
     "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
     "!**/node_modules/.bin",

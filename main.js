@@ -1147,10 +1147,16 @@ app.whenReady().then(() => {
     //
 	createWindow();
 	//const folderPath = createSyncFolderAndDrive();
-    if (!isAdmin()) {
-        relaunchAsAdmin();
-    } else {
+    // if (!isAdmin()) {
+    //     relaunchAsAdmin();
+    // } else {
+    //     createAndMountVHDX();
+    // }
+
+    if (isAdmin()) {
         createAndMountVHDX();
+    } else {
+        console.warn("⚠️ Admin privileges required to mount VHDX. Continuing without it.");
     }
 
     // 🔄 Auto sync every 5 minutes

@@ -448,43 +448,6 @@ function saveTracker(snapshot) {
 }
 
 
-// async function getDirectorySnapshotPrince(dir, oldSnap = {}, baseDir = dir) {
-//     const snapshot = {};
-//     const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-//     for (const entry of entries) {
-//         const fullPath = path.join(dir, entry.name);
-//         const relPath = normalizePath(path.relative(baseDir, fullPath));
-//         const stats = fs.statSync(fullPath);
-
-//         if (entry.isDirectory()) {
-//             snapshot[relPath] = {
-//                 type: "folder",
-//                 mtime: stats.mtimeMs,
-//             };
-
-//             Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap, baseDir));
-//         } 
-//         else {
-//             let prev = oldSnap[relPath];
-//             let hash = prev?.hash || null;
-
-//             if (!prev || prev.mtime !== stats.mtimeMs) {
-//                 hash = await hashFile(fullPath);
-//             }
-
-//             snapshot[relPath] = {
-//                 type: "file",
-//                 size: stats.size,
-//                 mtime: stats.mtimeMs,
-//                 hash,
-//             };
-//         }
-//     }
-
-//     return snapshot;
-// }
-
 async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
     const snapshot = {};
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -499,7 +462,7 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
         if (entry.isDirectory()) {
             snapshot[relPath] = {
                 type: "folder",
-                mtime: stats.mtimeMs,
+                mtime: 0,//stats.mtimeMs,
             };
 
             Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap, baseDir));
@@ -565,6 +528,9 @@ function findNewOrChangedFiles(current, previous) {
             changed.push(key);
             continue;
         }
+
+         // Skip folders from previous snapshot too
+        if (prev.type === "folder") continue;
 
         if (curr.mtime !== prev.mtime) {
             changed.push(key);
@@ -1427,109 +1393,6 @@ async function downloadPendingFilesLogic(event, args) {
 
 
 
-// async function updateSaveTracker(fullPath, cleanLocation, item) {
-//     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
-
-//     let tracker = loadTracker();
-
-//     const key = cleanLocation.replace(/\\/g, "/");
-//     const hash = await hashFile(fullPath);
-
-//     // Log for debugging
-//     console.log("📁 Updating key:", key);
-//     console.log("📄 Tracker path:", saveTrackerPath);
-
-//     // Fix: safe mtime update
-//     try {
-//         fs.utimesSync(fullPath, new Date(), new Date(Number(item.mtimeMs)));
-//     } catch (err) {
-//         console.warn("⚠️ utimes failed:", err.message);
-//     }
-
-//     // Update memory object
-//     tracker[key] = {
-//         type: item.type,
-//         size: item.size,
-//         mtime: Number(item.mtimeMs),
-//         hash: hash
-//     };
-
-//     // Safe write
-//     try {
-//         fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
-//         console.log("✅ Tracker updated:", key);
-//     } catch (err) {
-//         console.error("❌ Error writing tracker:", err.message);
-//     }
-// }
-
-// async function updateSaveTracker(fullPath, cleanLocation, item = null) {
-//     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
-//     console.log("Updating tracker for:", fullPath, "key:", cleanLocation);
-//     console.log("Tracker path:", saveTrackerPath);
-
-//     // Load tracker safely
-//     let tracker = {};
-//     try {
-//         tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf-8"));
-//     } catch (err) {
-//         tracker = {};
-//     }
-
-//     // Get stats
-//     let stats;
-//     try {
-//         stats = fs.statSync(fullPath);
-//     } catch (err) {
-//         console.warn(`⚠️ File/folder missing: ${fullPath}`);
-//         return;
-//     }
-
-//     const key = cleanLocation.replace(/\\/g, "/");
-
-//     // Calculate hash if file
-//     let hash = item?.hash || null;
-//     if (stats.isFile() && (!hash || tracker[key]?.mtime !== stats.mtimeMs)) {
-//         try {
-//             hash = await hashFile(fullPath);
-//         } catch (err) {
-//             console.warn(`⚠️ Failed to hash file: ${fullPath}`, err.message);
-//         }
-//     }
-
-//     // Determine mtime
-//     const mtime = item?.mtimeMs ? Number(item.mtimeMs) : stats.mtimeMs;
-
-//     // Update local file mtime only for files
-//     if (stats.isFile()) {
-//         try {
-//             fs.utimesSync(
-//                 fullPath,
-//                 stats.atimeMs ? new Date(stats.atimeMs) : new Date(),
-//                 new Date(mtime)
-//             );
-//         } catch (err) {
-//             console.warn(`⚠️ Failed to update mtime for ${fullPath}: ${err.message}`);
-//         }
-//     }
-
-//     // Update tracker memory
-//     tracker[key] = {
-//         type: stats.isDirectory() ? "folder" : "file",
-//         size: stats.isFile() ? stats.size : 0,
-//         mtime,
-//         hash,
-//     };
-
-//     // Write tracker
-//     try {
-//         fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
-//         console.log(`✅ Tracker updated: ${key}`);
-//     } catch (err) {
-//         console.error(`❌ Failed to write tracker: ${err.message}`);
-//     }
-// }
-
 async function updateSaveTracker(fullPath, cleanLocation, item = null) {
     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
 
@@ -1586,7 +1449,7 @@ async function updateSaveTracker(fullPath, cleanLocation, item = null) {
     tracker[key] = {
         type: stats.isDirectory() ? "folder" : "file",
         size: stats.isFile() ? stats.size : 0,
-        mtime,
+        mtime: stats.isDirectory() ? 0 : mtime,
         hash
     };
 
@@ -1811,7 +1674,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // ------------------------------------------------------------
     // DIFF (NO MORE strip AGAIN — FIX)
     // ------------------------------------------------------------
-    let changedItems = findNewOrChangedFiles(currentSnapshot, previousSnapshot);
+    let changedItems = findNewOrChangedFiles(currentSnapshot, normalizedPrevious);
     //let deletedItems = Object.keys(previousSnapshot).filter(p => !currentSnapshot[p]);
     let deletedItems = Object.keys(normalizedPrevious).filter(p => !currentSnapshot[p]);
 

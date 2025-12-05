@@ -85,10 +85,11 @@ const isDev = !app.isPackaged;
 const preloadPath = isDev
     ? path.join(__dirname, "preload.js")
     : path.join(process.resourcesPath, "app", "preload.js");
+    
 
 const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")
-    : path.join(process.resourcesPath, "assets/images/favicon.ico");
+    : path.join(process.resourcesPath, "app" ,"assets/images/favicon.ico");
 
 function sendLogToRenderer(message) {
   const win = BrowserWindow.getAllWindows()[0];
@@ -249,7 +250,7 @@ function createTray() {
   //tray = new Tray(path.join(__dirname, 'assets/images/favicon.png'));
   const trayIconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.png")                // dev
-    : path.join(process.resourcesPath, "assets/images/favicon.png"); 
+    : path.join(process.resourcesPath,"app", "assets/images/favicon.png"); 
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -736,7 +737,7 @@ function createTestFolder() {
     //const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
     const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")              // development
-    : path.join(process.resourcesPath, "assets/images/favicon.ico"); 
+    : path.join(process.resourcesPath,"app", "assets/images/favicon.ico"); 
 
     // Create desktop.ini file to assign folder icon
     const desktopIniContent = `[.ShellClassInfo]
@@ -910,7 +911,7 @@ function createSyncFolderAndDrive() {
     // 2️⃣ Optional custom icon
     try {
         //const iconPath = path.join(__dirname, 'assets', 'images', 'favicon.ico');
-        const iconPath = isDev? path.join(__dirname, "assets/images/favicon.ico"): path.join(process.resourcesPath, "assets/images/favicon.ico"); 
+        const iconPath = isDev? path.join(__dirname, "assets/images/favicon.ico"): path.join(process.resourcesPath,"app", "assets/images/favicon.ico"); 
         
         const iniPath = path.join(SYNC_FOLDER, 'desktop.ini');
         if (!fs.existsSync(iniPath)) {
@@ -1032,7 +1033,7 @@ function createAndMountVHDX() {
         //const iconPath = path.join(__dirname, "assets", "images", "favicon.ico");
         const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")              // development
-    : path.join(process.resourcesPath, "assets/images/favicon.ico"); 
+    : path.join(process.resourcesPath,"app", "assets/images/favicon.ico"); 
 
         // Apply the drive icon
         applyDriveIcon(driveLetter, iconPath);
@@ -2395,8 +2396,8 @@ ipcMain.handle("get-base-path", () => {
         return path.join(__dirname, "..").replace(/\\/g, "/");
     }
 
-    // Production: installed resources folder
-    return process.resourcesPath.replace(/\\/g, "/");
+    // Production: point to app.asar content
+    return path.join(process.resourcesPath, "app").replace(/\\/g, "/");
 });
 
 function isHiddenWindows(filePath) {

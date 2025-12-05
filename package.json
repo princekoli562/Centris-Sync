@@ -22,6 +22,10 @@
     ],
     "icon": "assets/images/favicon.ico"
   },
+   "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "assets/images/favicon.icns"
+    },
   "nsis": {
     "oneClick": false,            
     "perMachine": true,          

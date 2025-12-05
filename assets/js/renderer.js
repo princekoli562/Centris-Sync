@@ -1,6 +1,6 @@
 let secret_gen_key;
 
-window.secureAPI.getSecretKey().then((data) => {
+window.electronAPI.getSecretKey().then((data) => {
     secret_gen_key = data;
 });
 

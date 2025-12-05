@@ -1,28 +1,15 @@
-const { contextBridge, ipcRenderer } = require('electron')
-const fs = require('fs');
-const path = require('path');
+const { contextBridge, ipcRenderer } = require('electron');
+// const path = require('path');
+// const fs = require('fs');
 
-// async function listFilesRecursively(dir) {
-//     let results = [];
-//     const items = fs.readdirSync(dir, { withFileTypes: true });
-
-//     for (const item of items) {
-//         const fullPath = path.join(dir, item.name);
-//         if (item.isDirectory()) {
-//             results.push({ type: 'folder', name: item.name, path: fullPath });
-//             results = results.concat(await listFilesRecursively(fullPath));
-//         } else {
-//             results.push({ type: 'file', name: item.name, path: fullPath });
-//         }
-//     }
-//     return results;
-// }
 
 contextBridge.exposeInMainWorld('electronAPI', {
     //chooseFolder: async () => await ipcRenderer.invoke('dialog:openFolder'),
+    getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
+    getApiUrl: () => ipcRenderer.invoke('get-api-url'),
     getAppConfig: () => ipcRenderer.invoke('getAppConfig'),
-    listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),
-    //listRecurFiles: (path) => ipcRenderer.invoke('fs:list-recur-files', path),    
+    //listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),
+    listFiles: (dirPath) => ipcRenderer.invoke('fs:listFiles', dirPath),    
     listRecurFiles: (dir, offset = 0, limit = 100) => ipcRenderer.invoke('fs:list-recur-files', dir, offset, limit),
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     openFolders : () => ipcRenderer.invoke('dialog:openFolders'),
@@ -37,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveSession: (data) => ipcRenderer.send('save-session', data),
     clearSession: () => ipcRenderer.send('clear-session'),    
     loadSession: () => ipcRenderer.invoke('load-session'),
-    listFilesRecursively: (path) => ipcRenderer.invoke('fs:listFilesRecursively',path),
+    listFilesRecursively: (dir) => ipcRenderer.invoke('fs:listFilesRecursively', dir),
     onMainLog: (callback) => ipcRenderer.on('main-log', (_event, message) => callback(message)),
     autoSync: (args) => ipcRenderer.invoke("auto-sync", args),
     onSyncDataUpdated: (callback) => ipcRenderer.on('sync-data-updated', (event, data) => callback(data)),
@@ -48,7 +35,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveTracker: (dir) => ipcRenderer.invoke("save-tracker", dir), 
     loadTracker: () => ipcRenderer.invoke("load-tracker"),
     onSyncProgress: (callback) => ipcRenderer.on('sync-progress', (event, data) => callback(data)),
-   // onSyncProgress: (callback) => ipcRenderer.on('delete-progress', (event, data) => callback(data)),
     onSyncStatus: (callback) => ipcRenderer.on('sync-status', callback),
     onUploadProgressStart: (cb) => ipcRenderer.on("upload-progress-start", (_, data) => cb(data)),
     onUploadProgress: (cb) => ipcRenderer.on("upload-progress", (_, data) => cb(data)),
@@ -67,11 +53,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),
     stopSync: () => ipcRenderer.send("stop-sync"), on: (channel, func) => ipcRenderer.on(channel, func),
     hardStop: () => ipcRenderer.send("hard-stop"),
-    pathRelative: (from, to) => path.relative(from, to),
-    fileStat: (filePath) => fs.statSync(filePath),
-     readFileBase64: async (filePath) => {
-        return await fs.promises.readFile(filePath, { encoding: "base64" });
-    },
+    pathRelative: (from, to) => ipcRenderer.invoke('path:relative', from, to),
+    fileStat: (filePath) => ipcRenderer.invoke("file:stat", filePath),
+    //readFileBase64: (filePath) => ipcRenderer.invoke("file:read-base64", filePath)
     basename: (fullPath) => ipcRenderer.invoke("basename", fullPath),
     copyFile: (src, dest) => ipcRenderer.invoke("copy-file", src, dest),
     readFileBase64: (p) => ipcRenderer.invoke("read-base64", p),
@@ -96,8 +80,12 @@ contextBridge.exposeInMainWorld('versions', {
 // });
 
 contextBridge.exposeInMainWorld("appPaths", {
-  base: path.join(__dirname, "..").replace(/\\/g, "/"),
+  //base: path.join(__dirname, "..").replace(/\\/g, "/"),
+  getBase: () => ipcRenderer.invoke("get-base-path"),
+  relative: (from, to) => ipcRenderer.invoke("path:relative", from, to)
 });
+
+
 
 // expose centris keys
 contextBridge.exposeInMainWorld('secureAPI', {
@@ -112,9 +100,3 @@ contextBridge.exposeInMainWorld('secureAPI', {
         }
     }
 });
-
-// contextBridge.exposeInMainWorld('electronAPI', {
-//     chooseFolder: () => ipcRenderer.invoke('dialog:openFolder'),
-//     listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),
-//     listFilesRecursively: (dir) => listFilesRecursively(dir), 
-// });

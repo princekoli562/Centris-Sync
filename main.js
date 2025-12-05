@@ -111,7 +111,7 @@ const createWindow = async () => {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             enableRemoteModule: false,
-            nodeIntegration: true // ❗ keep false for security
+            nodeIntegration: false // ❗ keep false for security
         },
         icon: path.join(__dirname, 'assets/images/favicon.ico')
     });
@@ -121,10 +121,12 @@ const createWindow = async () => {
     console.log(sessionActive);
     if (sessionActive) {
         console.log("✅ Session active, redirecting to home...");
-        await win.loadFile('home.html');
+        //await win.loadFile('home.html');
+        await win.loadFile(path.join(__dirname, 'home.html'));
     } else {
         console.log("🔒 Session expired or not logged in");
-        await win.loadFile('index.html');
+        //await win.loadFile('index.html');
+        await win.loadFile(path.join(__dirname, 'index.html'));
     }
 
     //✅ Handle close — minimize to tray, not quit
@@ -140,19 +142,39 @@ const createWindow = async () => {
    // win.webContents.on('did-navigate', handleSessionCheck);
 
     // 🧩 Handle navigation from renderer
-    ipcMain.on('navigate', (event, page) => {
-        if (page === 'home') {
-            win.loadFile('home.html')
-                .then(() => console.log('🏠 Home page loaded'))
-                .catch(err => console.error('Error loading home page:', err));
-        } else if (page === 'login') {
-            win.loadFile('index.html')
-                .then(() => console.log('🔑 Login page loaded'))
-                .catch(err => console.error('Error loading login page:', err));
-        } else {
-            console.error('Unknown page:', page);
-        }
-    });
+    // ipcMain.on('navigate', (event, page) => {
+    //     if (page === 'home') {
+    //         //win.loadFile('home.html')
+    //         await win.loadFile(path.join(__dirname, 'home.html'))
+    //             .then(() => console.log('🏠 Home page loaded'))
+    //             .catch(err => console.error('Error loading home page:', err));
+    //     } else if (page === 'login') {
+    //         await win.loadFile(path.join(__dirname, 'index.html')
+    //             .then(() => console.log('🔑 Login page loaded'))
+    //             .catch(err => console.error('Error loading login page:', err));
+    //     } else {
+    //         console.error('Unknown page:', page);
+    //     }
+    // });
+
+    ipcMain.on('navigate', async (event, page) => {
+      try {
+          if (page === 'home') {
+              await win.loadFile(path.join(__dirname, 'home.html'));
+              console.log('🏠 Home page loaded');
+
+          } else if (page === 'login') {
+              await win.loadFile(path.join(__dirname, 'index.html'));
+              console.log('🔑 Login page loaded');
+
+          } else {
+              console.error('Unknown page:', page);
+          }
+
+      } catch (err) {
+          console.error('Error during navigation:', err);
+      }
+  });
 
     // 🧩 Save session on login from renderer
     ipcMain.on('save-session', (event, sessionData) => {
@@ -168,15 +190,31 @@ const createWindow = async () => {
         return loadSession();
     });
 
-    function handleSessionCheck() {
+  //   function handleSessionCheck() {
+  //         if (!isSessionActive() && !redirectingToLogin) {
+  //             redirectingToLogin = true; // 🔒 prevent multiple triggers
+  //             console.log("⚠️ Session expired — redirecting to login page...");
+  //             await win.loadFile(path.join(__dirname, 'index.html').then(() => {
+  //             redirectingToLogin = false; // ✅ reset once done
+  //         });
+  //     }
+  // }
+
+    async function handleSessionCheck() {
         if (!isSessionActive() && !redirectingToLogin) {
-            redirectingToLogin = true; // 🔒 prevent multiple triggers
+            redirectingToLogin = true; // prevent multiple triggers
             console.log("⚠️ Session expired — redirecting to login page...");
-            win.loadFile('index.html').then(() => {
-            redirectingToLogin = false; // ✅ reset once done
-        });
+
+            try {
+                await win.loadFile(path.join(__dirname, 'index.html'));
+            } catch (err) {
+                console.error("Error loading login page:", err);
+            }
+
+            redirectingToLogin = false; // reset after done
+        }
     }
-}
+
 };
 
 function createTray() {
@@ -1102,13 +1140,9 @@ ipcMain.handle('get-secret-key', async () => {
     return SECRET_KEY || 'This is sensitive data';
 });
 
-// Handle folder picker
-// ipcMain.handle('dialog:openFolder', async () => {
-// 	const result = await dialog.showOpenDialog(win, {
-// 		properties: ['openDirectory']
-// 	});
-// 	return result.canceled ? null : result.filePaths[0];
-// });
+ipcMain.handle('get-api-url', async () => {
+    return API_URL || '';
+});
 
 // Receive and store customer/domain IDs from renderer
 
@@ -2128,6 +2162,25 @@ ipcMain.handle('auto-sync-final', async (event, args) => {
   }
 });
 
+ipcMain.handle("file:stat", (event, filePath) => {
+    try {
+        return fs.statSync(filePath);
+    } catch (err) {
+        console.error("Error in fileStat:", err);
+        return null; // or throw err
+    }
+});
+
+// ipcMain.handle("file:read-base64", async (event, filePath) => {
+//     try {
+//         const data = await fs.promises.readFile(filePath, { encoding: "base64" });
+//         return data;
+//     } catch (err) {
+//         console.error("Error in readFileBase64:", err);
+//         return null; // or throw err
+//     }
+// });
+
 
 
 function chunkArray(arr, size) {
@@ -2170,41 +2223,83 @@ ipcMain.handle('getMappedDrive', async () => {
 });
   
   // Handle list files
-ipcMain.handle('fs:listFiles', async (event, dirPath) => {
-	if (!fs.existsSync(dirPath)) return [];
-	const walk = (dir) => {
-	  	const entries = fs.readdirSync(dir, { withFileTypes: true });
-	  	let files = [];
-	  	for (const entry of entries) {
-			const fullPath = path.join(dir, entry.name);
-			if (entry.isDirectory()) {
-			files = files.concat(walk(fullPath));
-			} else {
-			files.push(fullPath);
-			}
-	  	}
-	  	return files;
-	};
-	return walk(dirPath);
+// ipcMain.handle('fs:listFiles', async (event, dirPath) => {
+// 	if (!fs.existsSync(dirPath)) return [];
+// 	const walk = (dir) => {
+// 	  	const entries = fs.readdirSync(dir, { withFileTypes: true });
+// 	  	let files = [];
+// 	  	for (const entry of entries) {
+// 			const fullPath = path.join(dir, entry.name);
+// 			if (entry.isDirectory()) {
+// 			files = files.concat(walk(fullPath));
+// 			} else {
+// 			files.push(fullPath);
+// 			}
+// 	  	}
+// 	  	return files;
+// 	};
+// 	return walk(dirPath);
+// });
+
+ipcMain.handle('fs:listFiles', async (_event, dirPath) => {
+    if (!dirPath || !fs.existsSync(dirPath)) return [];
+
+    const walk = (dir) => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        let files = [];
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                files = files.concat(walk(fullPath));
+            } else {
+                files.push(fullPath);
+            }
+        }
+        return files;
+    };
+
+    return walk(dirPath);
 });
 
 // Recursive file listing handler
-ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
-	async function listFilesRecursively(dir) {
-	  let results = [];
-	  const items = fs.readdirSync(dir, { withFileTypes: true });
-	  for (let item of items) {
-			const fullPath = path.join(dir, item.name);
-			if (item.isDirectory()) {
-				results.push({ type: 'folder', name: item.name, path: fullPath });
-				results = results.concat(await listFilesRecursively(fullPath));
-			} else {
-				results.push({ type: 'file', name: item.name, path: fullPath });
-			}
-	  }
-	  return results;
-	}
-	return await listFilesRecursively(dir);
+// ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
+// 	async function listFilesRecursively(dir) {
+// 	  let results = [];
+// 	  const items = fs.readdirSync(dir, { withFileTypes: true });
+// 	  for (let item of items) {
+// 			const fullPath = path.join(dir, item.name);
+// 			if (item.isDirectory()) {
+// 				results.push({ type: 'folder', name: item.name, path: fullPath });
+// 				results = results.concat(await listFilesRecursively(fullPath));
+// 			} else {
+// 				results.push({ type: 'file', name: item.name, path: fullPath });
+// 			}
+// 	  }
+// 	  return results;
+// 	}
+// 	return await listFilesRecursively(dir);
+// });
+
+ipcMain.handle('fs:listFilesRecursively', async (_event, dir) => {
+    if (!dir || !fs.existsSync(dir)) return [];
+
+    async function listFilesRecursively(currentDir) {
+        let results = [];
+        const items = fs.readdirSync(currentDir, { withFileTypes: true });
+
+        for (let item of items) {
+            const fullPath = path.join(currentDir, item.name);
+            if (item.isDirectory()) {
+                results.push({ type: 'folder', name: item.name, path: fullPath });
+                results = results.concat(await listFilesRecursively(fullPath));
+            } else {
+                results.push({ type: 'file', name: item.name, path: fullPath });
+            }
+        }
+        return results;
+    }
+
+    return await listFilesRecursively(dir);
 });
 
 // ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
@@ -2250,6 +2345,14 @@ ipcMain.handle('fs:listFilesRecursively', async (event, dir) => {
 //   return await listFilesRecursively(dir);
 // });
 
+ipcMain.handle('path:relative', (event, from, to) => {
+    return path.relative(from, to);
+});
+
+ipcMain.handle("get-base-path", () => {
+  return path.join(__dirname, "..").replace(/\\/g, "/");
+});
+
 function isHiddenWindows(filePath) {
     try {
         const output = execSync(
@@ -2278,60 +2381,92 @@ function formatSize(bytes) {
 }
 
 // 🔹 IPC handler to list folder contents
-ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, limit = 1000) => {
-    try {
-        const basePath = dirPath || 'E:\\';
-        const entries = fs.readdirSync(basePath, { withFileTypes: true });
+// ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, limit = 1000) => {
+//     try {
+//         const basePath = dirPath || 'E:\\';
+//         const entries = fs.readdirSync(basePath, { withFileTypes: true });
 
-        // Filter hidden files
+//         // Filter hidden files
+//         const visibleEntries = entries.filter(entry => {
+//             const fullPath = path.join(basePath, entry.name);
+//             return !entry.name.startsWith('.') && !isHiddenWindows(fullPath);
+//         });
+
+//         // Apply pagination
+//         const paginated = visibleEntries.slice(offset, offset + limit);
+
+//         const items = await Promise.all(
+//             paginated.map(async entry => {
+//                 const fullPath = path.join(basePath, entry.name);
+//                 const stats = await fs.promises.stat(fullPath);
+
+//                 return {
+//                     name: entry.name,
+//                     path: fullPath,
+//                     isDirectory: entry.isDirectory(),
+//                     size: entry.isDirectory() ? "-" : formatSize(stats.size),
+//                     modified_date: new Date(stats.mtime).toLocaleString(),
+//                     modified_by: os.userInfo().username || "Unknown",
+//                     shared: false,
+//                 };
+//             })
+//         );
+
+//         return {
+//             currentPath: basePath,
+//             items,
+//             total: visibleEntries.length,
+//             hasMore: offset + limit < visibleEntries.length
+//         };
+        
+
+//     } catch (err) {
+//         console.error('Error reading directory:', err);
+//         return { error: err.message };
+//     }
+// });
+
+ipcMain.handle('fs:list-recur-files', async (event, dirPath = 'E:\\', offset = 0, limit = 100) => {
+    try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
         const visibleEntries = entries.filter(entry => {
-            const fullPath = path.join(basePath, entry.name);
+            const fullPath = path.join(dirPath, entry.name);
             return !entry.name.startsWith('.') && !isHiddenWindows(fullPath);
         });
 
-        // Apply pagination
         const paginated = visibleEntries.slice(offset, offset + limit);
-
-        // const items = paginated.map(entry => ({
-        //     name: entry.name,
-        //     path: path.join(basePath, entry.name),
-        //     isDirectory: entry.isDirectory(),
-        //     size: entry.isDirectory() ? "-" : formatSize(stats.size),
-        //     modified_date: new Date(stats.mtime).toLocaleString(),
-        //     modified_by: os.userInfo().username || "Unknown",
-        //     shared: false,
-        // }));
 
         const items = await Promise.all(
             paginated.map(async entry => {
-                const fullPath = path.join(basePath, entry.name);
+                const fullPath = path.join(dirPath, entry.name);
                 const stats = await fs.promises.stat(fullPath);
 
                 return {
                     name: entry.name,
                     path: fullPath,
                     isDirectory: entry.isDirectory(),
-                    size: entry.isDirectory() ? "-" : formatSize(stats.size),
+                    size: entry.isDirectory() ? '-' : formatSize(stats.size),
                     modified_date: new Date(stats.mtime).toLocaleString(),
-                    modified_by: os.userInfo().username || "Unknown",
+                    modified_by: os.userInfo().username || 'Unknown',
                     shared: false,
                 };
             })
         );
 
         return {
-            currentPath: basePath,
+            currentPath: dirPath,
             items,
             total: visibleEntries.length,
             hasMore: offset + limit < visibleEntries.length
         };
-        
 
     } catch (err) {
         console.error('Error reading directory:', err);
         return { error: err.message };
     }
 });
+
 
 ipcMain.handle("scanFolder", async (event, folderPath) => {
     const files = [];

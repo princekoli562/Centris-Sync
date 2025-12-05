@@ -29,46 +29,6 @@ if (progressContainer) {
 let isSyncing = false;
 let autoSyncInterval = null;
 
-// window.electronAPI.getSyncData().then((syncData) => {
-//   console.log("✅ Sync data:", syncData);
- 
-// }).catch((err) => {
-//   console.error("❌ Error getting sync data:", err);
-// });
-
-// customer_data = customer_data ? JSON.parse(customer_data) : null;
-// domain_data = domain_data ? JSON.parse(domain_data) : null;
-
-
-//if (customer_data && domain_data) {
-   
-    //syncData = { ...syncData, customer_name:customer_data.customer_name, domain_name: domain_data.domain_name };
-   
-    // setInterval(async () => {
-    //     if (isSyncing) {
-    //         console.log("⚠️ Sync already in progress, skipping this interval...");
-    //         return;
-    //     }
-
-    //     isSyncing = true;
-    //     console.log("🔄 Starting sync...");
-
-    //     try {
-    //         await window.electronAPI.autoSync({
-    //                 customer_id: customer_data.id,
-    //                 domain_id: domain_data.id,
-    //                 apiUrl: apiUrl,
-    //                 syncData: syncData
-
-    //         });
-    //         console.log("✅ Sync completed successfully");
-    //     } catch (err) {
-    //         console.error("❌ Sync failed:", err);
-    //     } finally {
-    //         isSyncing = false; // Always reset flag after completion
-    //     }
-    // }, 2 * 60 * 1000);
-//}
 
 window.electronAPI.onSyncProgress(({ done, total, file }) => {
   const percent = Math.round((done / total) * 100);
@@ -217,8 +177,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     var secret_gen_key = window.secret_gen_key;
     var secret_key = window.secret_key;
 
-    console.log("API URL:", apiUrl);
-    console.log("Secret key:", secret_key);
+    // console.log("API URL:", apiUrl);
+    // console.log("Secret key:", secret_key);
     
 
     $(".sidebar .btnload").removeClass("active");
@@ -1039,27 +999,7 @@ async function loadFiles(dirPath, reset = false) {
         return;
     }
 
-    // Only when user opens a new folder — update currentDir
-    // if (reset) {
-    //     loadedItems = 0;
-    //     currentDir = targetDir;   // <== Correct place
-    //     $("#file-list").empty();
-    //     $("#breadcrumb").html(buildBreadcrumb(currentDir));
-    // }
-
     if (reset) {
-        // BUILD HISTORY
-        // if (currentIndex === -1) {
-        //     history = [targetDir];
-        //     currentIndex = 0;
-        // } else if (history[currentIndex] !== targetDir) {
-        //     // Remove forward history if navigating to new folder
-        //     history = history.slice(0, currentIndex + 1);
-
-        //     history.push(targetDir);
-        //     currentIndex++;
-        // }
-
         if (currentIndex === -1) {
             history = [targetDir];
             currentIndex = 0;

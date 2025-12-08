@@ -85,6 +85,14 @@ contextBridge.exposeInMainWorld("appPaths", {
   relative: (from, to) => ipcRenderer.invoke("path:relative", from, to)
 });
 
+contextBridge.exposeInMainWorld("vhdx", {
+    create: () => ipcRenderer.invoke("create-vhdx")
+});
+
+
+// contextBridge.exposeInMainWorld("vhdx", {
+//     create: () => ipcRenderer.invoke("vhdx:create")
+// });
 
 
 // expose centris keys

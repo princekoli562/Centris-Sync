@@ -149,6 +149,7 @@ window.electronAPI.onDownloadHide(() => {
 $("#file-list").addClass("grid-view");
 
 document.addEventListener('DOMContentLoaded', async () => {
+   // await setupDrive();
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
@@ -1421,4 +1422,18 @@ function getFileIcon1(fileName, isDirectory) {
     };
     const iconFile = iconMap[ext] || "file.png";
     return `<img src='assets/icons/${iconFile}' width='28'>`;
+}
+
+async function setupDrive() {
+    console.log("⏳ Creating and mounting VHDX...");
+
+    const drivePath = await window.vhdx.create();  // IPC call to main → admin PowerShell
+
+    if (!drivePath) {
+        alert("Failed to create/mount VHDX drive.");
+        return;
+    }
+
+    console.log("✅ Drive Mounted At:", drivePath);
+    alert("Drive mounted at: " + drivePath);
 }

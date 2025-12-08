@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const FormData = require('form-data'); 
 const https = require("https");
 const http = require("http");
+//const vhdxService = require(path.join(__dirname, "assets/js/vhdx-service.js"));
+//const adminTasks  = require(path.join(__dirname, "assets/js/admin-task.js"));
 
 //console.log(process.env.NODE_ENV);
 
@@ -898,7 +900,7 @@ function getFolderSize(folderPath) {
 /* ------------------ MAIN FUNCTION ------------------ */
 function createSyncFolderAndDrive() {
     const homeDir = os.homedir();
-    const SYNC_FOLDER = path.join(homeDir, 'CentrisSync');
+    const SYNC_FOLDER = path.join(homeDir, 'Centris-Drive');
 
     // 1️⃣ Create folder if missing
     if (!fs.existsSync(SYNC_FOLDER)) {
@@ -963,6 +965,8 @@ function createSyncFolderAndDrive() {
         return null;
     }
 }
+
+
 //
 function isAdmin() {
     try {
@@ -996,6 +1000,7 @@ function createDiskpartScript(vhdxPath) {
 }
 
 
+
 function createAndMountVHDX() {
     const VHDX_PATH = path.join(homeDir, VHDX_NAME);
     console.log(`💽 Virtual disk path: ${VHDX_PATH}`);
@@ -1019,27 +1024,45 @@ function createAndMountVHDX() {
         }
     }
 
-    // 🧩 Find drive letter (most recent one assigned)
-    const output = execSync(
-        'wmic logicaldisk get name, volumename'
-    ).toString();
-
+    const output = execSync('wmic logicaldisk get name, volumename').toString();
     const match = output.match(/([A-Z]):\s+Centris-Drive/);
+
     if (match) {
         const driveLetter = match[1];
         console.log(`🔤 Mounted as ${driveLetter}:\\`);
 
+        // ✅ Create subfolder inside the mounted drive
+        const subFolder = path.join(driveLetter + ":\\", "Centris-Drive");
+        if (!fs.existsSync(subFolder)) {
+            fs.mkdirSync(subFolder, { recursive: true });
+            console.log(`📁 Subfolder created at ${subFolder}`);
+        } else {
+            console.log(`📁 Subfolder already exists at ${subFolder}`);
+        }
+
         // Path to your custom icon
-        //const iconPath = path.join(__dirname, "assets", "images", "favicon.ico");
         const iconPath = isDev
-    ? path.join(__dirname, "assets/images/favicon.ico")              // development
-    : path.join(process.resourcesPath,"app.asar", "assets/images/favicon.ico"); 
+            ? path.join(__dirname, "assets/images/favicon.ico")              // development
+            : path.join(process.resourcesPath, "app.asar", "assets/images/favicon.ico");
 
         // Apply the drive icon
         applyDriveIcon(driveLetter, iconPath);
-    } else {
-        console.warn("⚠️ Could not detect mounted drive letter.");
-    }
+
+        const autorunPath = path.join(driveLetter + ":\\", "autorun.inf");
+        const autorunContent = `[Autorun] ICON=${iconPath} Label=Centris-Drive`;
+
+        try {
+            fs.writeFileSync(autorunPath, autorunContent, "utf-8");
+            // Hide the autorun file
+            execSync(`attrib +h +s "${autorunPath}"`);
+            console.log("🎨 Drive icon applied for This PC view.");
+        } catch (err) {
+            console.warn("⚠️ Could not create autorun.inf:", err.message);
+        }
+
+        } else {
+            console.warn("⚠️ Could not detect mounted drive letter.");
+        }
 }
 
 function applyDriveIcon1(driveLetter, iconPath) {
@@ -1087,6 +1110,7 @@ function applyDriveIcon(driveLetter, iconPath) {
         console.warn(`⚠️ Could not set custom icon: ${err.message}`);
     }
 }
+
 
 function unmountVHDX() {
     const homeDir = os.homedir();
@@ -1147,17 +1171,17 @@ app.whenReady().then(() => {
     //
 	createWindow();
 	//const folderPath = createSyncFolderAndDrive();
-    // if (!isAdmin()) {
-    //     relaunchAsAdmin();
-    // } else {
-    //     createAndMountVHDX();
-    // }
-
-    if (isAdmin()) {
-        createAndMountVHDX();
+    if (!isAdmin()) {
+        relaunchAsAdmin();
     } else {
-        console.warn("⚠️ Admin privileges required to mount VHDX. Continuing without it.");
+        createAndMountVHDX();
     }
+
+    // if (isAdmin()) {
+    //     createAndMountVHDX();
+    // } else {
+    //     console.warn("⚠️ Admin privileges required to mount VHDX. Continuing without it.");
+    // }
 
     // 🔄 Auto sync every 5 minutes
     // setInterval(() => {
@@ -2755,6 +2779,16 @@ ipcMain.handle("load-tracker", () => {
     return loadTracker();
 });
 
+ipcMain.handle("create-vhdx", async () => {    
+    return await vhdxService.createVHDX();
+});
+
+ipcMain.on("user:logout", () => {
+    console.log("🔒 User logged out, unmounting VHDX...");
+    unmountVHDX();
+    killLeftoverProcesses();
+    app.quit();
+});
 
 function isHiddenWindows(filePath) {
     try {
@@ -2792,25 +2826,56 @@ function addDriveLetter(drive, filePath) {
 //     }
 // });
 
+function safeCleanup() {
+    if (isDev) {
+        console.log("🔧 Dev mode detected — skipping session cleanup and VHDX unmount.");
+        return;
+    }
+
+    console.log("🧹 Production cleanup: clearing session & unmounting VHDX...");
+
+    try {
+        clearSession();
+    } catch (e) {
+        console.warn("⚠️ Failed to clear session:", e.message);
+    }
+
+    try {
+        unmountVHDX();
+    } catch (e) {
+        console.warn("⚠️ Failed to unmount VHDX:", e.message);
+    }
+}
+
+
+function killLeftoverProcesses() {
+    try {
+        execSync('taskkill /F /IM electron.exe', { stdio: 'ignore' });
+        console.log("🧹 Leftover Electron processes killed.");
+    } catch (e) {
+        console.warn("⚠️ No leftover processes to kill.");
+    }
+}
+
 process.on('exit', () => {
   
     try { 
-      // clearSession();
-      //  unmountVHDX(); 
+        safeCleanup();
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);
     }
 });
 
-// app.on("before-quit", () => {
-//   console.log("🧹 Cleaning old instances...");
-//   try {
-//     execSync('taskkill /F /IM electron.exe');
-//   } catch (e) {
-//     console.warn("⚠ Cleanup failed");
-//   }
-// });
+app.on("before-quit", () => {
+  console.log("🧹 Cleaning old instances...");
+  try {
+    safeCleanup();
+    killLeftoverProcesses();
+  } catch (e) {
+    console.warn("⚠ Cleanup failed");
+  }
+});
 
 
 app.on('window-all-closed', () => {

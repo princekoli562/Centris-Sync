@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require('fs');
 const crypto = require('crypto');
 const FormData = require('form-data'); 
+const sudo = require("sudo-prompt");
 const https = require("https");
 const http = require("http");
 //const vhdxService = require(path.join(__dirname, "assets/js/vhdx-service.js"));
@@ -13,33 +14,33 @@ const http = require("http");
 //console.log(process.env.NODE_ENV);
 
 
-// if (process.env.NODE_ENV === "development") {
-//   try {
-//     const path = require("path");
-//     const fs = require("fs");
+if (process.env.NODE_ENV === "development") {
+  try {
+    const path = require("path");
+    const fs = require("fs");
 
-//     // Absolute path to Electron executable
-//     const electronBinary = path.join(__dirname, "node_modules", "electron", "dist", "electron.exe");
-//     const mainPath = path.join(__dirname, "main.js");
+    // Absolute path to Electron executable
+    const electronBinary = path.join(__dirname, "node_modules", "electron", "dist", "electron.exe");
+    const mainPath = path.join(__dirname, "main.js");
 
-//     if (!fs.existsSync(electronBinary)) {
-//       throw new Error(`Electron binary not found at ${electronBinary}`);
-//     }
+    if (!fs.existsSync(electronBinary)) {
+      throw new Error(`Electron binary not found at ${electronBinary}`);
+    }
 
-//     require("electron-reload")(mainPath, {
-//       electron: electronBinary,   // 🔥 must point to .exe
-//       usePolling: true,           // required for VHDX/mapped drives
-//       awaitWriteFinish: true,
-//       forceHardReset: true,
-//       hardResetMethod: "reload",
-//       ignored: /node_modules|[\/\\]\./,
-//     });
+    require("electron-reload")(mainPath, {
+      electron: electronBinary,   // 🔥 must point to .exe
+      usePolling: true,           // required for VHDX/mapped drives
+      awaitWriteFinish: true,
+      forceHardReset: true,
+      hardResetMethod: "reload",
+      ignored: /node_modules|[\/\\]\./,
+    });
 
-//     console.log("✅ electron-reload enabled (polling mode)");
-//   } catch (err) {
-//     console.warn("⚠️ Electron reload not active:", err.message);
-//   }
-// }
+    console.log("✅ electron-reload enabled (polling mode)");
+  } catch (err) {
+    console.warn("⚠️ Electron reload not active:", err.message);
+  }
+}
 
 // if (process.env.NODE_ENV === "development") {
 //   try {
@@ -781,6 +782,8 @@ function getMappedDrives() {
         const driveMap = {};
         const regex = /^([A-Z]):\\: => (.+)$/gm;
         let match;
+       
+        console.log(output);
         while ((match = regex.exec(output)) !== null) {
             const driveLetter = match[1];
             const folderPath = match[2].trim();
@@ -791,6 +794,30 @@ function getMappedDrives() {
         return {};
     }
 }
+
+function getMappedDrives1() {
+    try {
+        const output = execSync('subst').toString().trim();
+        const driveMap = {};
+
+        // Correct regex for:  E:\: => C:\Path
+        const regex = /^([A-Z]):\\: => (.+)$/gm;
+
+        let match;
+        while ((match = regex.exec(output)) !== null) {
+            
+            const driveLetter = match[1];
+            const targetPath = match[2].trim();
+            driveMap[driveLetter + ":"] = targetPath;
+        }
+
+        return driveMap;
+    } catch (err) {
+        console.warn("Failed to run subst:", err.message);
+        return {};
+    }
+}
+
 
 function getMappedDriveLetter(volumeLabel = "Centris-Drive") {
     try {
@@ -987,6 +1014,22 @@ function relaunchAsAdmin() {
     process.exit();
 }
 
+// function relaunchAsAdmin() {
+//     const options = {
+//         name: 'Centris Drive',
+//     };
+
+//     const command = `"${process.execPath}"`;
+
+//     sudo.exec(command, options, (error) => {
+//         if (error) {
+//             console.error("Failed to elevate:", error);
+//             return;
+//         }
+//         app.quit();
+//     });
+// }
+
 function createDiskpartScript(vhdxPath) {
     return `
         create vdisk file="${vhdxPath}" maximum=${VHDX_SIZE_MB} type=expandable
@@ -1064,6 +1107,112 @@ function createAndMountVHDX() {
             console.warn("⚠️ Could not detect mounted drive letter.");
         }
 }
+
+
+
+function createAndMountSUBST2() {
+    const VHDX_PATH = path.join(homeDir, "Centris-Drive");
+
+    // Ensure folder exists
+    if (!fs.existsSync(VHDX_PATH)) {
+        fs.mkdirSync(VHDX_PATH, { recursive: true });
+        console.log("📁 Base folder created:", VHDX_PATH);
+    } else {
+        console.log("📁 Base folder already exists:", VHDX_PATH);
+    }
+
+    // Get existing drives (only physical, not SUBST)
+    let driveOutput = execSync("wmic logicaldisk get name").toString();
+    driveOutput = driveOutput.replace(/\s+/g, "");
+
+    // Choose free drive letter
+    let driveLetter = null;
+    for (let letter of "DEFGHIJKLMNOPQRSTUVWXYZ") {
+        if (!driveOutput.includes(letter + ":")) {
+            driveLetter = letter;
+            break;
+        }
+    }
+
+    if (!driveLetter) {
+        throw new Error("❌ No free drive letters available.");
+    }
+
+    console.log(`🔤 Using drive letter: ${driveLetter}:\\`);
+
+    // Remove previous SUBST if exists
+    try { execSync(`subst ${driveLetter}: /d`, { stdio: "ignore" }); } catch {}
+
+    // Create SUBST mapping
+    execSync(`subst ${driveLetter}: "${VHDX_PATH}"`);
+    console.log(`🔗 Mapped ${driveLetter}: → ${VHDX_PATH}`);
+
+    return driveLetter + ":\\";
+}
+
+function createAndMountSUBST(iconPath) {
+    const baseFolder = path.join(homeDir, "Centris-Drive");
+
+    // Ensure base folder exists
+    if (!fs.existsSync(baseFolder)) {
+        fs.mkdirSync(baseFolder, { recursive: true });
+        console.log("📁 Base folder created:", baseFolder);
+    } else {
+        console.log("📁 Base folder already exists:", baseFolder);
+    }
+
+    // Collect existing drives
+    let driveOutput = "";
+    try {
+        driveOutput = execSync("wmic logicaldisk get name").toString();
+    } catch {
+        driveOutput = "";
+    }
+    driveOutput = driveOutput.replace(/\s+/g, "");
+
+    // Pick free letter
+    let driveLetter = null;
+    for (const letter of "DEFGHIJKLMNOPQRSTUVWXYZ") {
+        if (!driveOutput.includes(letter + ":")) {
+            driveLetter = letter;
+            break;
+        }
+    }
+    if (!driveLetter) throw new Error("❌ No free drive letters available.");
+
+    console.log(`🔤 Using drive letter: ${driveLetter}:\\`);
+
+    // Remove existing SUBST mapping
+    try { execSync(`subst ${driveLetter}: /d`); } catch {}
+
+    // Create new SUBST
+    execSync(`subst ${driveLetter}: "${baseFolder}"`);
+    console.log(`🔗 Mapped ${driveLetter}: → ${baseFolder}`);
+
+    // Create subfolder inside mapped drive
+    const subFolder = `${driveLetter}:\\Centris-Drive`;
+    try {
+        if (!fs.existsSync(subFolder)) {
+            fs.mkdirSync(subFolder, { recursive: true });
+            console.log("📁 Subfolder created:", subFolder);
+        } else {
+            console.log("📁 Subfolder already exists:", subFolder);
+        }
+    } catch (err) {
+        console.log("⚠️ Failed to create subfolder:", err.message);
+    }
+
+    // Apply drive icon
+    applyDriveIcon(driveLetter, iconPath);
+
+    return driveLetter + ":\\";
+}
+
+
+function unmountSUBST(driveLetter) {
+    try { execSync(`subst ${driveLetter}: /d`); } catch {}
+}
+
 
 function applyDriveIcon1(driveLetter, iconPath) {
     try {
@@ -1177,11 +1326,8 @@ app.whenReady().then(() => {
         createAndMountVHDX();
     }
 
-    // if (isAdmin()) {
-    //     createAndMountVHDX();
-    // } else {
-    //     console.warn("⚠️ Admin privileges required to mount VHDX. Continuing without it.");
-    // }
+    //createSyncFolderAndDrive();
+
 
     // 🔄 Auto sync every 5 minutes
     // setInterval(() => {

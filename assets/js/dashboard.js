@@ -154,8 +154,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
     //startAutoSync(syncData);
-
+    //await window.electronAPI.getMappedDrive();//
     let currentDir = config.drivePath;
+    //let currentDir = Object.keys(mappedDir)[0];
+    //console.log(mappedDrive);
     let local_stored = localStorage.getItem("customer_data");
 
     if(local_stored){

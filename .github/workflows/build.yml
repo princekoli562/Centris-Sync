@@ -2,33 +2,56 @@ name: Build Electron App
 
 on:
   push:
-    branches: [ "master" ]
+    branches:
+      - master
 
 jobs:
   build_windows:
+    name: Build Windows
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
-      - run: npm install
-      - run: npm run build:win
-      - uses: actions/upload-artifact@v3
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows app
+        run: npm run build
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: dist/*
-
+          
   build_mac:
+    name: Build macOS
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
-      - run: npm install
-      - run: npm run build:mac
-      - uses: actions/upload-artifact@v3
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build macOS app
+        run: npm run build:mac
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
         with:
           name: mac-build
           path: dist/*

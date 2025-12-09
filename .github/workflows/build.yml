@@ -47,8 +47,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Clear electron-builder cache
+        run: rm -rf ~/Library/Caches/electron-builder
+
       - name: Build macOS app
-        run: npm run build:mac
+      - run: npm run build:mac -- --debug
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4

@@ -3,7 +3,8 @@ name: Build Electron App
 on:
   push:
     branches:
-      -  main
+      - main
+  workflow_dispatch:
 
 jobs:
   build_windows:
@@ -30,7 +31,7 @@ jobs:
         with:
           name: windows-build
           path: dist/*
-          
+
   build_mac:
     name: Build macOS
     runs-on: macos-latest
@@ -51,7 +52,7 @@ jobs:
         run: rm -rf ~/Library/Caches/electron-builder
 
       - name: Build macOS app
-      - run: npm run build:mac -- --debug
+        run: npm run build:mac -- --debug
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4

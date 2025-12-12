@@ -520,20 +520,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // ===============================
                 // 3A. CREATE ALL SUB-FOLDERS
                 // ===============================
-                for (const folder of folderList) {
-                    const rel = await window.electronAPI.pathRelative(folderPath, folder);
-                    const cleanRel = rootName + "/" + rel;
+                // for (const folder of folderList) {
+                //     const rel = await window.electronAPI.pathRelative(folderPath, folder);
+                //     const cleanRel = rootName + "/" + rel;
 
-                    await window.electronAPI.createFolderInDrive(cleanRel, mappedDrive);
+                //     await window.electronAPI.createFolderInDrive(cleanRel, mappedDrive);
 
-                    changedItems.push({
-                        path: cleanRel,
-                        is_dir: true,
-                        content: null,
-                        size: 0,
-                        mtime: Date.now()
-                    });
-                }
+                //     changedItems.push({
+                //         path: cleanRel,
+                //         is_dir: true,
+                //         content: null,
+                //         size: 0,
+                //         mtime: Date.now()
+                //     });
+                // }
 
                 // ===============================
                 // 3B. FILES WITH CONTENT BYTES

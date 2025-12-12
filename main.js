@@ -528,7 +528,9 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
 
     for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        const relPath = normalizePath(path.relative(baseDir, fullPath));
+        let relPath = normalizePath(path.relative(baseDir, fullPath));
+        relPath = relPath.replace(/\\/g, "/");
+       console.log('mm -> ' +relPath );
         const stats = fs.statSync(fullPath);
 
         if (!relPath) continue;
@@ -1601,7 +1603,7 @@ async function deleteLocalFilesLogic(event, args) {
             // ==============================
             // 🔥 ONLY IF DELETED SUCCESSFULLY
             // ==============================
-            console.log('XXX - > ' + cleanLocation);
+            console.log('XXX - > ' + cleanLocation + ' = ' + item.id);
             if (deletedSuccessfully) {
                 console.log('JJJ - > ' + cleanLocation);
                 // Remove from tracker
@@ -1900,6 +1902,11 @@ async function removeDeletedata(apiUrl, id) {
     return false;
 }
 
+function normalizeKeytodoubleslash(key) {
+    // Convert all / or \ into double backslash \\
+    return key.replace(/[\/]+/g, "\\");
+}
+
 async function removeFromTracker(cleanLocation) {
     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
 
@@ -1910,26 +1917,30 @@ async function removeFromTracker(cleanLocation) {
         return;
     }
 
-    // Normalize input key
-    const key = normalizeKey(cleanLocation);
+    // Convert cleanLocation to tracker-style:  folder\\subfolder\\file
+    const key = normalizeKeytodoubleslash(cleanLocation);
 
-    // 🔥 Normalize existing tracker keys (fix old backslash keys)
+    // 🔥 Normalize all existing tracker keys
     const normalizedTracker = {};
     for (const oldKey in tracker) {
-        const newKey = normalizeKey(oldKey);
+        const newKey = normalizeKeytodoubleslash(oldKey);   // fixes keys with / or single \
         normalizedTracker[newKey] = tracker[oldKey];
     }
 
-    // Replace old tracker with normalized tracker
     tracker = normalizedTracker;
 
-    // Remove key
+    // 🔥 Delete key if it exists
     if (tracker[key]) {
         delete tracker[key];
+        console.log("🗑 Removed tracker entry:", key);
+    } else {
+        console.warn("⚠ Tracker entry not found:", key);
     }
 
+    // Save updated tracker
     fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
 }
+
 
 
 
@@ -2107,7 +2118,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
      // Downloaded
     console.log('AAAA');
     await deleteLocalFilesLogic(event,args);
-    return true;
+    //return true;
     await downloadPendingFilesLogic(event,args);
       console.log('BBBB');
     if (changedItems.length === 0 && deletedItems.length === 0) {

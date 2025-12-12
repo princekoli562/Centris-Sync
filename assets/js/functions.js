@@ -117,7 +117,7 @@ function showValidation(message, type = 'info', duration = 5000) {
         }, duration);
     }
 }
-
+//
 function hideValidation() {
     validationBox.className = 'validation-box';
     validationBox.textContent = '';

@@ -702,21 +702,24 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
     return JSON.parse(raw).pending;
 }
 
-// async function downloadServerPending(apiUrl, syncData, customer_id, domain_id, limit = 50) {
-//     const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         body: JSON.stringify({
-//             customer_id,
-//             domain_id,
-//             user_id: syncData.user_data.id,
-//             limit
-//         }),
-//     });
+async function getServerDeletedData({ customer_id, domain_id, apiUrl, syncData }) {
+    const res = await fetch(`${apiUrl}/api/get-delete-flush-data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id: syncData.user_data.id
+        }),
+    });
 
-//     return await res.json();
-// }
+    const raw = await res.text();
 
+    console.log("🔥 RAW RESPONSE 🔥");
+    console.log(raw);
+
+    return JSON.parse(raw).data;
+}
 
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'Centris-Drive');
@@ -1540,6 +1543,99 @@ async function downloadPendingFilesLogic(event, args) {
     return true;
 }
 
+
+async function deleteLocalFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData } = args;
+    const deleteFrom = 'local';
+
+    const deletedData = await getServerDeletedData(args);
+    if (!Array.isArray(deletedData) || deletedData.length === 0) {
+        event.sender.send("delete-progress-complete", {
+            source: deleteFrom === "server" ? "server" : "local"
+        });
+        return true;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const mappedDrivePath = path.join(drive + ":", baseFolder);
+
+    const totalFiles = deletedData.length;
+    let completedFiles = 0;
+    
+
+    event.sender.send("delete-progress-start", { total: totalFiles });
+
+    for (const item of deletedData) {
+        try {
+            const cleanLocation = normalizeServerPath(item.location);
+            const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
+            console.log(cleanLocation);
+            // ======================
+            // 🔥 LOCAL DELETE LOGIC
+            // ======================
+            let deletedSuccessfully = false;
+
+            if (item.type === "file") {
+                if (fs.existsSync(fullLocalPath)) {
+                    try {
+                        fs.unlinkSync(fullLocalPath);
+                        deletedSuccessfully = true;
+                    } catch (err) {
+                        console.error("❌ Failed to delete file:", fullLocalPath, err.message);
+                    }
+                }
+            }
+
+            else if (item.type === "folder") {
+                if (fs.existsSync(fullLocalPath)) {
+                    try {
+                        fs.rmSync(fullLocalPath, { recursive: true, force: true });
+                        deletedSuccessfully = true;
+                    } catch (err) {
+                        console.error("❌ Failed to delete folder:", fullLocalPath, err.message);
+                    }
+                }
+            }
+
+            // ==============================
+            // 🔥 ONLY IF DELETED SUCCESSFULLY
+            // ==============================
+            console.log('XXX - > ' + cleanLocation);
+            if (deletedSuccessfully) {
+                console.log('JJJ - > ' + cleanLocation);
+                // Remove from tracker
+                await removeFromTracker(cleanLocation);
+
+                // Flush DB entry
+                await removeDeletedata(apiUrl, item.id);
+
+            } else {
+                console.warn("⚠️ Skip tracker + server flush. Local delete failed:", fullLocalPath);
+            }
+
+            completedFiles++;
+            event.sender.send("delete-progress", {
+                done: completedFiles,
+                total: totalFiles,
+                file: fullLocalPath,
+                source : deleteFrom
+            });
+
+        } catch (err) {
+            console.error("Delete error:", item.location, err.message);
+        }
+    }
+
+    event.sender.send("delete-progress-complete", {
+        source: deleteFrom === "server" ? "server" : "local"
+    });
+    setTimeout(() => event.sender.send("delete-hide"), 6000);
+
+    return true;
+}
+
+
 // async function downloadPendingFilesLogic(event, args) {
 //     const { apiUrl, syncData, customer_id, domain_id } = args;
 
@@ -1759,6 +1855,82 @@ async function markDownloaded(apiUrl, id) {
     return false;
 }
 
+async function removeDeletedata(apiUrl, id) {
+    const payload = JSON.stringify({ id });
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+
+            const res = await fetch(`${apiUrl}/api/deleted-data`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: payload,
+                signal: controller.signal
+            });
+
+            clearTimeout(timeout);
+
+            let data;
+            try {
+                data = await res.json();
+            } catch (e) {
+                console.warn("⚠️ Invalid JSON from server");
+                continue;
+            }
+
+            if (data.status === true) {
+                console.log(`✔ Marked deleted: ${id}`);
+                return true;
+            }
+
+            console.warn(`⚠️ Server returned failure for id=${id}:`, data.message);
+
+        } catch (err) {
+            console.warn(`⚠️ Error marking deleted attempt ${attempt} for id=${id}:`, err.message);
+        }
+
+        await new Promise(r => setTimeout(r, 500)); // wait 0.5s before retry
+    }
+
+    console.error(`❌ FAILED after retries → mark-deleted for id=${id}`);
+    return false;
+}
+
+async function removeFromTracker(cleanLocation) {
+    const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
+
+    let tracker = {};
+    try {
+        tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf8"));
+    } catch (err) {
+        return;
+    }
+
+    // Normalize input key
+    const key = normalizeKey(cleanLocation);
+
+    // 🔥 Normalize existing tracker keys (fix old backslash keys)
+    const normalizedTracker = {};
+    for (const oldKey in tracker) {
+        const newKey = normalizeKey(oldKey);
+        normalizedTracker[newKey] = tracker[oldKey];
+    }
+
+    // Replace old tracker with normalized tracker
+    tracker = normalizedTracker;
+
+    // Remove key
+    if (tracker[key]) {
+        delete tracker[key];
+    }
+
+    fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
+}
+
 
 
 
@@ -1934,11 +2106,15 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
      // Downloaded
     console.log('AAAA');
+    await deleteLocalFilesLogic(event,args);
+    return true;
     await downloadPendingFilesLogic(event,args);
       console.log('BBBB');
     if (changedItems.length === 0 && deletedItems.length === 0) {
       return { success: true, message: "No changes" };
     }
+
+    const deleteFrom = 'server';
     //return;
     // ------------------------------------------------------------
     // UPLOAD CHANGED FILES
@@ -2031,11 +2207,15 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
         event.sender.send("delete-progress", {
           done: processed,
-          total: deletedItems.length
+          total: deletedItems.length,
+          file : chunk?.[chunk.length - 1] ?? null,
+          source:'server'
         });
       }
 
-      event.sender.send("delete-progress-complete");
+      event.sender.send("delete-progress-complete", {
+            source: deleteFrom === "server" ? "server" : "local"
+        });
       setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
     }
 
@@ -2987,7 +3167,11 @@ function safeCleanup() {
     }
 
     try {
-        unmountVHDX();
+        if (isDev) {
+           // no mount mount
+        }else{
+            unmountVHDX();
+        }
     } catch (e) {
         console.warn("⚠️ Failed to unmount VHDX:", e.message);
     }

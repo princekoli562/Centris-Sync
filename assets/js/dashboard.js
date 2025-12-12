@@ -99,17 +99,18 @@ window.electronAPI.onDeleteProgressStart(({ total }) => {
   progressLabel.textContent = `Deleting... 0% (0/${total})`;
 });
 
-window.electronAPI.onDeleteProgress(({ done, total, file }) => {
+
+window.electronAPI.onDeleteProgress(({ done, total, file, source }) => {
   const percent = Math.round((done / total) * 100);
 
   progressBar.value = percent;
-  progressLabel.textContent = `Deleting... ${percent}% (${done}/${total})`;
+  progressLabel.textContent = `Deleting from ${source}... ${percent}% (${done}/${total})`;
 
-  if (file) console.log("Deleting:", file);
+  if (file) console.log(`Deleting (${source}):`, file);
 });
 
-window.electronAPI.onDeleteComplete(() => {
-  progressLabel.textContent = "🗑️ Delete complete!";
+window.electronAPI.onDeleteComplete(({ source }) => {
+  progressLabel.textContent = `🗑️ Delete complete (${source})!`;
 });
 
 window.electronAPI.onDeleteHide(() => {

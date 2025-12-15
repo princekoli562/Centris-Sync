@@ -1474,10 +1474,13 @@ async function downloadPendingFilesLogicPrince(event, args) {
 
 async function downloadPendingFilesLogic(event, args) {
     const { customer_id, domain_id, apiUrl, syncData } = args;
-
+    const SourceFrom = "Centris One";
     const pending = await downloadServerPending(args);
     if (!Array.isArray(pending) || pending.length === 0) {
-        event.sender.send("download-complete");
+        event.sender.send("download-complete", {
+            source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
+            status: "no-download"
+        });
         return true;
     }
 
@@ -1540,7 +1543,10 @@ async function downloadPendingFilesLogic(event, args) {
         }
     }
 
-    event.sender.send("download-complete");
+     event.sender.send("download-complete", {
+        source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
+        status: "download"
+    });
     setTimeout(() => event.sender.send("download-hide"), 6000);
     return true;
 }
@@ -1548,12 +1554,14 @@ async function downloadPendingFilesLogic(event, args) {
 
 async function deleteLocalFilesLogic(event, args) {
     const { customer_id, domain_id, apiUrl, syncData } = args;
-    const deleteFrom = 'local';
+    const deleteFrom = 'Centris Drive';
 
     const deletedData = await getServerDeletedData(args);
     if (!Array.isArray(deletedData) || deletedData.length === 0) {
+      
         event.sender.send("delete-progress-complete", {
-            source: deleteFrom === "server" ? "server" : "local"
+            source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
+            status: "no-delete"
         });
         return true;
     }
@@ -1629,8 +1637,10 @@ async function deleteLocalFilesLogic(event, args) {
         }
     }
 
+
     event.sender.send("delete-progress-complete", {
-        source: deleteFrom === "server" ? "server" : "local"
+        source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
+        status: "delete"
     });
     setTimeout(() => event.sender.send("delete-hide"), 6000);
 
@@ -2104,6 +2114,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     }
 
     const user_id = syncData.user_data.id;
+    const deleteFrom = 'Centris Drive';
 
     // ------------------------------------------------------------
     // DIFF (NO MORE strip AGAIN — FIX)
@@ -2116,16 +2127,16 @@ ipcMain.handle("auto-sync", async (event, args) => {
     deletedItems = deletedItems.filter(Boolean);
 
      // Downloaded
-    console.log('AAAA');
+    
     await deleteLocalFilesLogic(event,args);
     //return true;
     await downloadPendingFilesLogic(event,args);
-      console.log('BBBB');
+    
     if (changedItems.length === 0 && deletedItems.length === 0) {
-      return { success: true, message: "No changes" };
+      return { success: true, message: "No  changes in " + deleteFrom +" to Upload." };
     }
 
-    const deleteFrom = 'server';
+    
     //return;
     // ------------------------------------------------------------
     // UPLOAD CHANGED FILES
@@ -2220,12 +2231,12 @@ ipcMain.handle("auto-sync", async (event, args) => {
           done: processed,
           total: deletedItems.length,
           file : chunk?.[chunk.length - 1] ?? null,
-          source:'server'
+          source:deleteFrom
         });
       }
 
       event.sender.send("delete-progress-complete", {
-            source: deleteFrom === "server" ? "server" : "local"
+            source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive"
         });
       setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
     }

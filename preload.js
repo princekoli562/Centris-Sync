@@ -62,7 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     downloadPendingFiles: (args) => ipcRenderer.invoke("download-pending-files",args),
     onDownloadProgressStart: (fn) => ipcRenderer.on("download-progress-start", (e, d) => fn(d)),
     onDownloadProgress: (fn) => ipcRenderer.on("download-progress", (e, d) => fn(d)),
-    onDownloadComplete: (fn) => ipcRenderer.on("download-complete", fn),
+    onDownloadComplete: (cb) => ipcRenderer.on("download-complete", (event, data) => cb(data)),   
     onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)    
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });

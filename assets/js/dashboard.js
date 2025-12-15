@@ -109,8 +109,14 @@ window.electronAPI.onDeleteProgress(({ done, total, file, source }) => {
   if (file) console.log(`Deleting (${source}):`, file);
 });
 
-window.electronAPI.onDeleteComplete(({ source }) => {
-  progressLabel.textContent = `🗑️ Delete complete (${source})!`;
+window.electronAPI.onDeleteComplete(({ source, status }) => {
+
+    if (status === "no-delete") {
+        progressLabel.textContent = `ℹ️ No items to delete (${source})`;
+        return;
+    }
+
+    progressLabel.textContent = `🗑️ Delete complete (${source})!`;
 });
 
 window.electronAPI.onDeleteHide(() => {
@@ -136,9 +142,21 @@ window.electronAPI.onDownloadProgressStart(({ total }) => {
 
 
 // Complete
-window.electronAPI.onDownloadComplete(() => {
-    progressLabel.textContent = "✅ Download complete!";
+window.electronAPI.onDownloadComplete(({ source, status }) => {
+
+    if (status === "no-download") {
+        progressLabel.textContent = `ℹ️ No items to download `;
+        return;
+    }
+
+    progressLabel.textContent = `✅ Download complete !`;
 });
+
+
+
+// window.electronAPI.onDownloadComplete(() => {
+//     progressLabel.textContent = "✅ Download complete!";
+// });
 
 // Auto hide
 window.electronAPI.onDownloadHide(() => {

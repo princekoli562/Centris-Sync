@@ -116,6 +116,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     // --- Finally load your dashboard (depends on globals) ---
+    await loadScript("assets/js/pdf-viewer.js");
     await loadScript("assets/js/dashboard.js");
     console.log("🚀 Dashboard loaded successfully.");
   } catch (err) {

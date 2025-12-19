@@ -1481,6 +1481,7 @@ async function downloadPendingFilesLogic(event, args) {
             source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
             status: "no-download"
         });
+        setTimeout(() => event.sender.send("download-hide"), 6000);
         return true;
     }
 
@@ -1563,6 +1564,7 @@ async function deleteLocalFilesLogic(event, args) {
             source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
             status: "no-delete"
         });
+        setTimeout(() => event.sender.send("delete-hide"), 6000);
         return true;
     }
 

@@ -923,3 +923,40 @@ button { margin-bottom: 10px; }
 #syncProgressBar::-moz-progress-bar {
     background-color: #194d79; /* blue for Firefox */
 }
+
+/*  PDF viewer */
+.pdf-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+}
+
+.pdf-modal.hidden {
+    display: none;
+}
+
+.pdf-header {
+    height: 45px;
+    background: #1e1e1e;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 15px;
+}
+
+.pdf-body {
+    flex: 1;
+    overflow: auto;
+    background: #2b2b2b;
+    text-align: center;
+}
+
+#pdfCanvas {
+    margin: 20px auto;
+    background: white;
+}
+

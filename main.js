@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain,dialog, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain,dialog, Tray, Menu,shell } = require('electron');
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
@@ -3138,6 +3138,10 @@ ipcMain.on("user:logout", () => {
     unmountVHDX();
     killLeftoverProcesses();
     app.quit();
+});
+
+ipcMain.handle("open-external-file", async (_, filePath) => {
+    await shell.openPath(filePath);
 });
 
 function isHiddenWindows(filePath) {

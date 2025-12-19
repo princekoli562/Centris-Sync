@@ -939,7 +939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const targetPath = $(this).attr('data-path');
        
-        if (action === 'view') viewFile(targetPath);
+        if (action === 'view') openPreview(targetPath);
         if (action === 'delete') deleteFile(targetPath);
         if (action === 'move') moveFile(targetPath);
         if (action === 'rename') renameFile(targetPath);
@@ -949,9 +949,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const mainContent = document.getElementById("main-content");
     const previewPanel = document.getElementById("preview-panel");
 
+    // previewToggleBtn.addEventListener("click", () => {
+    //     mainContent.classList.toggle("preview-mode");
+    //     previewPanel.classList.toggle("hidden");
+    // });
+
     previewToggleBtn.addEventListener("click", () => {
-        mainContent.classList.toggle("preview-mode");
-        previewPanel.classList.toggle("hidden");
+        const isActive = mainContent.classList.toggle("preview-mode");
+
+        previewPanel.classList.toggle("hidden", !isActive);
+        previewToggleBtn.classList.toggle("active", isActive);
     });
 
 
@@ -1227,7 +1234,7 @@ async function loadFiles(dirPath, reset = false) {
                 const action = $(e.currentTarget).data("action");
                 const targetPath = $(e.currentTarget).data("path");
                 console.log(targetPath);
-                if (action === 'view') viewFile(targetPath);
+                if (action === 'view') openPreview(targetPath);
                 if (action === "delete") deleteFile(item.path);
                 if (action === "move") moveFile(item.path);
                 if (action === "rename") renameFile(item.path);
@@ -1412,6 +1419,61 @@ async function initFirstPath(path) {
     currentIndex = 0;
     currentDir = path;
 }
+
+function openPreview(filePath) {
+    const ext = filePath.split(".").pop().toLowerCase();
+
+    const previewPanel = document.getElementById("preview-panel");
+    const canvas = document.getElementById("pdfPreviewCanvas");
+    const officePreview = document.getElementById("officePreview");
+
+    // Reset state
+    previewPanel.classList.remove("hidden");
+    canvas.style.display = "none";
+    officePreview.classList.add("hidden");
+
+    if (ext === "pdf") {
+        // 🔹 PDF → canvas
+        canvas.style.display = "block";
+        openPDF(filePath);
+    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx"].includes(ext)) {
+        // 🔹 Office → placeholder
+        officePreview.classList.remove("hidden");
+
+        document.getElementById("officeFileName").textContent =
+            filePath.split("/").pop();
+
+        //$("#officeFileName").text(filePath.split("/").pop());
+        $("#officeFileType").text("View only");
+
+        setOfficeIcon(ext);
+
+        document.getElementById("openOfficeBtn").onclick = () => {
+            window.electronAPI.openExternalFile(filePath);
+        };
+    } else {
+        // 🔹 Fallback
+        window.electronAPI.openExternalFile(filePath);
+    }
+}
+
+function setOfficeIcon(ext) {
+    const icon = document.getElementById("officeIcon");
+
+    icon.className = "fas";
+
+    if (ext === "xls" || ext === "xlsx") {
+        icon.classList.add("fa-file-excel");
+    } else if (ext === "doc" || ext === "docx") {
+        icon.classList.add("fa-file-word");
+    } else if (ext === "ppt" || ext === "pptx") {
+        icon.classList.add("fa-file-powerpoint");
+    } else {
+        icon.classList.add("fa-file");
+    }
+}
+
+
 
 function renderFileList1(container, files) {
     container.innerHTML = "";

@@ -87,6 +87,24 @@
                 </div>
                 <div id="preview-panel" class="hidden">
                     <canvas id="pdfPreviewCanvas"></canvas>
+                    <!-- <div id="officePreview" class="office-preview hidden">
+                        <i id="officeIcon" class="fas fa-file"></i>
+                        <p id="officeFileName"></p>
+                        <button id="openOfficeBtn">Open in Application</button>
+                    </div> -->
+
+                    <div id="officePreview" class="office-preview hidden">
+                        <i id="officeIcon" class="office-icon fas"></i>
+
+                        <div class="office-meta">
+                            <h3 id="officeFileName"></h3>
+                            <p id="officeFileType">View only</p>
+                        </div>
+
+                        <button id="openOfficeBtn" class="open-office-btn">
+                            Open in Application
+                        </button>
+                    </div>
                 </div>
             </div>
             <div id="validationBox" class="validation-box"></div>

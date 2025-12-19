@@ -63,6 +63,9 @@
                     <button class="nav-btn togg-view" id="forward-btn" title="Forward">
                         <i class="fas fa-arrow-right"></i>
                     </button>
+                    <button id="previewToggle" class="nav-btn btn-preview" title="Preview Mode">
+                        <i class="fas fa-eye"></i> 
+                    </button>
                     <button class="view-btn active" id="grid-view" title="Grid View">
                         <i class="fas fa-th-large"></i>
                     </button>
@@ -79,8 +82,13 @@
                 <div class="col size">Size</div>
                 <div class="col share">Share</div>
             </div>
-			<div id="file-list">
-			</div>
+            <div id="main-content" class="main-content">
+                <div id="file-list">
+                </div>
+                <div id="preview-panel" class="hidden">
+                    <canvas id="pdfPreviewCanvas"></canvas>
+                </div>
+            </div>
             <div id="validationBox" class="validation-box"></div>
         </div>
     </div>

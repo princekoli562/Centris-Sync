@@ -945,6 +945,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (action === 'rename') renameFile(targetPath);
     });
 
+    const previewToggleBtn = document.getElementById("previewToggle");
+    const mainContent = document.getElementById("main-content");
+    const previewPanel = document.getElementById("preview-panel");
+
+    previewToggleBtn.addEventListener("click", () => {
+        mainContent.classList.toggle("preview-mode");
+        previewPanel.classList.toggle("hidden");
+    });
+
 
     
     

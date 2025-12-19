@@ -960,3 +960,51 @@ button { margin-bottom: 10px; }
     background: white;
 }
 
+.main-content {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    height: calc(100vh - 120px); 
+    /* For responsiveness */
+    flex-wrap: nowrap; 
+    overflow: hidden;
+}
+
+
+#preview-panel.hidden {
+    display: none;
+}
+
+/* Preview panel when active */
+#preview-panel {
+    flex: 1 1 40%; /* 40% width */
+    max-height: calc(100vh - 100px);
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+    overflow: auto;
+}
+
+/* File list when preview mode active */
+.main-content.preview-mode #file-list {
+    flex: 1 1 60%; /* shrink to 60% */
+}
+
+.btn-preview {
+    /* display: inline-flex;
+    align-items: center;
+    gap: 6px;           
+    padding: 2px 2px;
+    border: 1px solid #ddd;
+    background: #f5f5f5; 
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    transition: background 0.2s;*/
+}
+
+.btn-preview:hover {
+    background: #e0e0e0;
+}
+

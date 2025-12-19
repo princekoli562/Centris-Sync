@@ -139,7 +139,8 @@ const createWindow = async () => {
             preload: preloadPath,
             contextIsolation: true,
             enableRemoteModule: false,
-            nodeIntegration: false
+            nodeIntegration: false,
+            webSecurity: false
         },
         icon: iconPath
     });

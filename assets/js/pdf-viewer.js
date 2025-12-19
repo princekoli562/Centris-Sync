@@ -1,32 +1,20 @@
 //import * as pdfjsLib from "pdfjs-dist/build/pdf";
 //import pdfWorker from "pdfjs-dist/build/pdf.worker?url";
-const pdfWorker = "assets/pdfjs/pdf.worker.min.js";
+// const pdfWorker = "assets/pdfjs/pdf.worker.min.js";
 
-if (typeof pdfjsLib === "undefined") {
-    console.error("pdf.js not loaded");
-}
-console.log("pdfjsLib =", window.pdfjsLib);
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+// if (typeof pdfjsLib === "undefined") {
+//     console.error("pdf.js not loaded");
+// }
+// console.log("pdfjsLib =", window.pdfjsLib);
+// pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const canvas = document.getElementById("pdfCanvas");
 const ctx = canvas.getContext("2d");
 
-// async function openPDF(path, title = "PDF Viewer") {
-//     $("#pdfTitle").text(title);
-//     $("#pdfModal").removeClass("hidden");
-
-//     const pdf = await pdfjsLib.getDocument(path).promise;
-//     const page = await pdf.getPage(1);
-
-//     const viewport = page.getViewport({ scale: 1.5 });
-//     canvas.width = viewport.width;
-//     canvas.height = viewport.height;
-
-//     await page.render({
-//         canvasContext: ctx,
-//         viewport
-//     }).promise;
-// }
+let pdfDoc = null;
+let currentScale = 1;
+let isPreview = false;
+let currentContainer = null;
 
 async function openPDF1(path, title = "PDF Viewer") {
     const isPreviewMode = document
@@ -67,7 +55,7 @@ async function openPDF1(path, title = "PDF Viewer") {
     }).promise;
 }
 
-async function openPDF(path, title = "PDF Viewer") {
+async function openPDF2(path, title = "PDF Viewer") {
     const mainContent = document.getElementById("main-content");
     const isPreviewMode = mainContent.classList.contains("preview-mode");
 
@@ -112,6 +100,111 @@ async function openPDF(path, title = "PDF Viewer") {
         viewport
     }).promise;
 }
+
+async function openPDF3(path, title = "PDF Viewer") {
+    const mainContent = document.getElementById("main-content");
+    isPreview = mainContent.classList.contains("preview-mode");
+
+    let containerWrapper;
+
+    if (isPreview) {
+        containerWrapper = document.getElementById("preview-panel");
+        containerWrapper.classList.remove("hidden");
+    } else {
+        $("#pdfTitle").text(title);
+        $("#pdfModal").removeClass("hidden");
+        containerWrapper = document.querySelector(".pdf-body");
+    }
+
+    currentContainer = containerWrapper.querySelector("#pdfScrollContainer");
+    currentContainer.innerHTML = ""; // clear previous pages
+
+    pdfDoc = await pdfjsLib.getDocument(path).promise;
+
+    // 🔑 Auto scale for preview mode
+    if (isPreview) {
+        const firstPage = await pdfDoc.getPage(1);
+        const vp = firstPage.getViewport({ scale: 1 });
+        const width = containerWrapper.clientWidth - 30;
+        currentScale = width / vp.width;
+    } else {
+        currentScale = 1.2;
+    }
+
+    renderAllPages();
+    updatePageInfo();
+}
+
+async function openPDF(filePath) {
+    const frame = document.getElementById("pdfViewerFrame");
+
+    // Convert to file:// for Electron
+    const fileUrl = filePath.startsWith("file://")
+        ? filePath
+        : "file://" + filePath.replace(/\\/g, "/");
+
+    const viewerUrl =
+        `assets/pdf.js/web/viewer.html?file=${encodeURIComponent(fileUrl)}`;
+
+    // Reset iframe before loading new PDF
+    frame.src = "";
+    frame.src = viewerUrl;
+}
+
+
+async function renderAllPages() {
+    currentContainer.innerHTML = "";
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: currentScale });
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        currentContainer.appendChild(canvas);
+
+        await page.render({
+            canvasContext: ctx,
+            viewport
+        }).promise;
+    }
+}
+
+function updatePageInfo() {
+    const pageInfo = document.getElementById("pageInfo");
+
+    currentContainer.addEventListener("scroll", () => {
+        const canvases = currentContainer.querySelectorAll("canvas");
+        let currentPage = 1;
+
+        canvases.forEach((canvas, index) => {
+            const rect = canvas.getBoundingClientRect();
+            if (rect.top >= 0) {
+                currentPage = index + 1;
+                return;
+            }
+        });
+
+        pageInfo.textContent = `Page ${currentPage} / ${pdfDoc.numPages}`;
+    });
+
+    pageInfo.textContent = `Page 1 / ${pdfDoc.numPages}`;
+}
+
+
+// document.getElementById("zoomIn").onclick = () => {
+//     currentScale += 0.15;
+//     renderAllPages();
+// };
+
+// document.getElementById("zoomOut").onclick = () => {
+//     currentScale = Math.max(0.4, currentScale - 0.15);
+//     renderAllPages();
+// };
 
 
 

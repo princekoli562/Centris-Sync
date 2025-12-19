@@ -1424,21 +1424,25 @@ function openPreview(filePath) {
     const ext = filePath.split(".").pop().toLowerCase();
 
     const previewPanel = document.getElementById("preview-panel");
-    const canvas = document.getElementById("pdfPreviewCanvas");
+    //const canvas = document.getElementById("pdfPreviewCanvas");
+    const pdfContainer = document.getElementById("pdfViewerFrame");
     const officePreview = document.getElementById("officePreview");
 
     // Reset state
     previewPanel.classList.remove("hidden");
-    canvas.style.display = "none";
+    //canvas.style.display = "none";
     officePreview.classList.add("hidden");
-
+    console.log(ext);
     if (ext === "pdf") {
         // 🔹 PDF → canvas
-        canvas.style.display = "block";
+        //canvas.style.display = "block";
+        pdfContainer.innerHTML = "";          // clear previous PDF pages
+        pdfContainer.classList.remove("hidden");
         openPDF(filePath);
     } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx"].includes(ext)) {
         // 🔹 Office → placeholder
         officePreview.classList.remove("hidden");
+        pdfContainer.classList.add("hidden");
 
         document.getElementById("officeFileName").textContent =
             filePath.split("/").pop();

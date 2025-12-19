@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain,dialog, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain,dialog, Tray, Menu,shell } = require('electron');
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
@@ -139,7 +139,8 @@ const createWindow = async () => {
             preload: preloadPath,
             contextIsolation: true,
             enableRemoteModule: false,
-            nodeIntegration: false
+            nodeIntegration: false,
+            webSecurity: false
         },
         icon: iconPath
     });
@@ -528,7 +529,9 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
 
     for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        const relPath = normalizePath(path.relative(baseDir, fullPath));
+        let relPath = normalizePath(path.relative(baseDir, fullPath));
+        relPath = relPath.replace(/\\/g, "/");
+       console.log('mm -> ' +relPath );
         const stats = fs.statSync(fullPath);
 
         if (!relPath) continue;
@@ -702,21 +705,24 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
     return JSON.parse(raw).pending;
 }
 
-// async function downloadServerPending(apiUrl, syncData, customer_id, domain_id, limit = 50) {
-//     const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         body: JSON.stringify({
-//             customer_id,
-//             domain_id,
-//             user_id: syncData.user_data.id,
-//             limit
-//         }),
-//     });
+async function getServerDeletedData({ customer_id, domain_id, apiUrl, syncData }) {
+    const res = await fetch(`${apiUrl}/api/get-delete-flush-data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id: syncData.user_data.id
+        }),
+    });
 
-//     return await res.json();
-// }
+    const raw = await res.text();
 
+    console.log("🔥 RAW RESPONSE 🔥");
+    console.log(raw);
+
+    return JSON.parse(raw).data;
+}
 
 function createTestFolderDocumentpath() {
     const TEST_FOLDER = path.join(app.getPath('documents'), 'Centris-Drive');
@@ -1469,10 +1475,14 @@ async function downloadPendingFilesLogicPrince(event, args) {
 
 async function downloadPendingFilesLogic(event, args) {
     const { customer_id, domain_id, apiUrl, syncData } = args;
-
+    const SourceFrom = "Centris One";
     const pending = await downloadServerPending(args);
     if (!Array.isArray(pending) || pending.length === 0) {
-        event.sender.send("download-complete");
+        event.sender.send("download-complete", {
+            source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
+            status: "no-download"
+        });
+        setTimeout(() => event.sender.send("download-hide"), 6000);
         return true;
     }
 
@@ -1535,10 +1545,111 @@ async function downloadPendingFilesLogic(event, args) {
         }
     }
 
-    event.sender.send("download-complete");
+     event.sender.send("download-complete", {
+        source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
+        status: "download"
+    });
     setTimeout(() => event.sender.send("download-hide"), 6000);
     return true;
 }
+
+
+async function deleteLocalFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData } = args;
+    const deleteFrom = 'Centris Drive';
+
+    const deletedData = await getServerDeletedData(args);
+    if (!Array.isArray(deletedData) || deletedData.length === 0) {
+      
+        event.sender.send("delete-progress-complete", {
+            source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
+            status: "no-delete"
+        });
+        setTimeout(() => event.sender.send("delete-hide"), 6000);
+        return true;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const mappedDrivePath = path.join(drive + ":", baseFolder);
+
+    const totalFiles = deletedData.length;
+    let completedFiles = 0;
+    
+
+    event.sender.send("delete-progress-start", { total: totalFiles });
+
+    for (const item of deletedData) {
+        try {
+            const cleanLocation = normalizeServerPath(item.location);
+            const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
+            console.log(cleanLocation);
+            // ======================
+            // 🔥 LOCAL DELETE LOGIC
+            // ======================
+            let deletedSuccessfully = false;
+
+            if (item.type === "file") {
+                if (fs.existsSync(fullLocalPath)) {
+                    try {
+                        fs.unlinkSync(fullLocalPath);
+                        deletedSuccessfully = true;
+                    } catch (err) {
+                        console.error("❌ Failed to delete file:", fullLocalPath, err.message);
+                    }
+                }
+            }
+
+            else if (item.type === "folder") {
+                if (fs.existsSync(fullLocalPath)) {
+                    try {
+                        fs.rmSync(fullLocalPath, { recursive: true, force: true });
+                        deletedSuccessfully = true;
+                    } catch (err) {
+                        console.error("❌ Failed to delete folder:", fullLocalPath, err.message);
+                    }
+                }
+            }
+
+            // ==============================
+            // 🔥 ONLY IF DELETED SUCCESSFULLY
+            // ==============================
+            console.log('XXX - > ' + cleanLocation + ' = ' + item.id);
+            if (deletedSuccessfully) {
+                console.log('JJJ - > ' + cleanLocation);
+                // Remove from tracker
+                await removeFromTracker(cleanLocation);
+
+                // Flush DB entry
+                await removeDeletedata(apiUrl, item.id);
+
+            } else {
+                console.warn("⚠️ Skip tracker + server flush. Local delete failed:", fullLocalPath);
+            }
+
+            completedFiles++;
+            event.sender.send("delete-progress", {
+                done: completedFiles,
+                total: totalFiles,
+                file: fullLocalPath,
+                source : deleteFrom
+            });
+
+        } catch (err) {
+            console.error("Delete error:", item.location, err.message);
+        }
+    }
+
+
+    event.sender.send("delete-progress-complete", {
+        source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
+        status: "delete"
+    });
+    setTimeout(() => event.sender.send("delete-hide"), 6000);
+
+    return true;
+}
+
 
 // async function downloadPendingFilesLogic(event, args) {
 //     const { apiUrl, syncData, customer_id, domain_id } = args;
@@ -1759,6 +1870,91 @@ async function markDownloaded(apiUrl, id) {
     return false;
 }
 
+async function removeDeletedata(apiUrl, id) {
+    const payload = JSON.stringify({ id });
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+
+            const res = await fetch(`${apiUrl}/api/deleted-data`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: payload,
+                signal: controller.signal
+            });
+
+            clearTimeout(timeout);
+
+            let data;
+            try {
+                data = await res.json();
+            } catch (e) {
+                console.warn("⚠️ Invalid JSON from server");
+                continue;
+            }
+
+            if (data.status === true) {
+                console.log(`✔ Marked deleted: ${id}`);
+                return true;
+            }
+
+            console.warn(`⚠️ Server returned failure for id=${id}:`, data.message);
+
+        } catch (err) {
+            console.warn(`⚠️ Error marking deleted attempt ${attempt} for id=${id}:`, err.message);
+        }
+
+        await new Promise(r => setTimeout(r, 500)); // wait 0.5s before retry
+    }
+
+    console.error(`❌ FAILED after retries → mark-deleted for id=${id}`);
+    return false;
+}
+
+function normalizeKeytodoubleslash(key) {
+    // Convert all / or \ into double backslash \\
+    return key.replace(/[\/]+/g, "\\");
+}
+
+async function removeFromTracker(cleanLocation) {
+    const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
+
+    let tracker = {};
+    try {
+        tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf8"));
+    } catch (err) {
+        return;
+    }
+
+    // Convert cleanLocation to tracker-style:  folder\\subfolder\\file
+    const key = normalizeKeytodoubleslash(cleanLocation);
+
+    // 🔥 Normalize all existing tracker keys
+    const normalizedTracker = {};
+    for (const oldKey in tracker) {
+        const newKey = normalizeKeytodoubleslash(oldKey);   // fixes keys with / or single \
+        normalizedTracker[newKey] = tracker[oldKey];
+    }
+
+    tracker = normalizedTracker;
+
+    // 🔥 Delete key if it exists
+    if (tracker[key]) {
+        delete tracker[key];
+        console.log("🗑 Removed tracker entry:", key);
+    } else {
+        console.warn("⚠ Tracker entry not found:", key);
+    }
+
+    // Save updated tracker
+    fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
+}
+
+
 
 
 
@@ -1921,6 +2117,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     }
 
     const user_id = syncData.user_data.id;
+    const deleteFrom = 'Centris Drive';
 
     // ------------------------------------------------------------
     // DIFF (NO MORE strip AGAIN — FIX)
@@ -1933,12 +2130,16 @@ ipcMain.handle("auto-sync", async (event, args) => {
     deletedItems = deletedItems.filter(Boolean);
 
      // Downloaded
-    console.log('AAAA');
+    
+    await deleteLocalFilesLogic(event,args);
+    //return true;
     await downloadPendingFilesLogic(event,args);
-      console.log('BBBB');
+    
     if (changedItems.length === 0 && deletedItems.length === 0) {
-      return { success: true, message: "No changes" };
+      return { success: true, message: "No  changes in " + deleteFrom +" to Upload." };
     }
+
+    
     //return;
     // ------------------------------------------------------------
     // UPLOAD CHANGED FILES
@@ -2031,11 +2232,15 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
         event.sender.send("delete-progress", {
           done: processed,
-          total: deletedItems.length
+          total: deletedItems.length,
+          file : chunk?.[chunk.length - 1] ?? null,
+          source:deleteFrom
         });
       }
 
-      event.sender.send("delete-progress-complete");
+      event.sender.send("delete-progress-complete", {
+            source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive"
+        });
       setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
     }
 
@@ -2936,6 +3141,10 @@ ipcMain.on("user:logout", () => {
     app.quit();
 });
 
+ipcMain.handle("open-external-file", async (_, filePath) => {
+    await shell.openPath(filePath);
+});
+
 function isHiddenWindows(filePath) {
     try {
         const stats = fs.statSync(filePath, { bigint: false });
@@ -2987,7 +3196,11 @@ function safeCleanup() {
     }
 
     try {
-        unmountVHDX();
+        if (isDev) {
+           // no mount mount
+        }else{
+            unmountVHDX();
+        }
     } catch (e) {
         console.warn("⚠️ Failed to unmount VHDX:", e.message);
     }

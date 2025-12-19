@@ -923,3 +923,188 @@ button { margin-bottom: 10px; }
 #syncProgressBar::-moz-progress-bar {
     background-color: #194d79; /* blue for Firefox */
 }
+
+/*  PDF viewer */
+.pdf-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+}
+
+.pdf-modal.hidden {
+    display: none;
+}
+
+.pdf-header {
+    height: 45px;
+    background: #1e1e1e;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 15px;
+}
+
+.pdf-body {
+    flex: 1;
+    overflow: auto;
+    background: #2b2b2b;
+    text-align: center;
+}
+
+#pdfCanvas {
+    margin: 20px auto;
+    background: white;
+}
+
+.main-content {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    height: calc(100vh - 120px); 
+    /* For responsiveness */
+    flex-wrap: nowrap; 
+    overflow: hidden;
+}
+
+
+@media screen and (max-width: 768px) {
+    .main-content {
+        flex-direction: column; /* stack file list and preview vertically */
+        height: auto;
+    }
+
+    #file-list,
+    #preview-panel {
+        width: 100%;
+        max-height: none;
+    }
+}
+
+
+#preview-panel.hidden {
+    display: none;
+}
+
+/* Preview panel when active */
+#preview-panel {
+    flex: 1 1 40%; /* 40% width */
+    max-height: calc(100vh - 100px);
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+    overflow: auto;
+}
+
+/* File list when preview mode active */
+.main-content.preview-mode #file-list {
+    flex: 1 1 60%; /* shrink to 60% */
+}
+
+.btn-preview {
+    /* display: inline-flex;
+    align-items: center;
+    gap: 6px;           
+    padding: 2px 2px;
+    border: 1px solid #ddd;
+    background: #f5f5f5; 
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    transition: background 0.2s;*/
+}
+
+.btn-preview i {
+    color: #999;          /* grey eye */
+    transition: color 0.2s ease;
+}
+
+/* Preview ON */
+.btn-preview.active i {
+    color: #000;          /* black eye */
+}
+
+.btn-preview:hover {
+    background: #e0e0e0;
+}
+
+/* .office-preview {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    color: #555;
+}
+
+.office-preview i {
+    font-size: 48px;
+} */
+
+.office-preview {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: #444;
+    text-align: center;
+}
+
+.office-icon {
+    font-size: 64px;
+}
+
+.office-meta h3 {
+    margin: 0;
+    font-size: 16px;
+    word-break: break-all;
+}
+
+.office-meta p {
+    margin: 0;
+    font-size: 13px;
+    color: #888;
+}
+
+.open-office-btn {
+    margin-top: 10px;
+    padding: 6px 14px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #f5f5f5;
+    cursor: pointer;
+}
+
+.pdf-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px;
+    border-bottom: 1px solid #ddd;
+}
+
+.pdf-scroll {
+    overflow-y: auto;
+    height: calc(100% - 40px);
+    padding: 10px;
+}
+
+.pdf-scroll canvas {
+    display: block;
+    margin: 0 auto 12px;
+    box-shadow: 0 0 4px rgba(0,0,0,0.15);
+}
+
+.pdf-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+

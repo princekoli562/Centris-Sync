@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     onDeleteProgressStart: (cb) => ipcRenderer.on("delete-progress-start", (_, data) => cb(data)),
     onDeleteProgress: (cb) => ipcRenderer.on("delete-progress", (_, data) => cb(data)),
-    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", cb),
+    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", (event, data) => cb(data)),    
     onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
     scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
     //createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
@@ -62,8 +62,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     downloadPendingFiles: (args) => ipcRenderer.invoke("download-pending-files",args),
     onDownloadProgressStart: (fn) => ipcRenderer.on("download-progress-start", (e, d) => fn(d)),
     onDownloadProgress: (fn) => ipcRenderer.on("download-progress", (e, d) => fn(d)),
-    onDownloadComplete: (fn) => ipcRenderer.on("download-complete", fn),
-    onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)    
+    onDownloadComplete: (cb) => ipcRenderer.on("download-complete", (event, data) => cb(data)),   
+    onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)   ,
+    openExternalFile: (path) => ipcRenderer.invoke("open-external-file", path)
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

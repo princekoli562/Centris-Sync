@@ -1,4 +1,3 @@
-
 const BATCH_SIZE = 500; // how many files to show per scroll
 let allItems = [];
 let visibleCount = 0;
@@ -99,17 +98,29 @@ window.electronAPI.onDeleteProgressStart(({ total }) => {
   progressLabel.textContent = `Deleting... 0% (0/${total})`;
 });
 
-window.electronAPI.onDeleteProgress(({ done, total, file }) => {
+
+window.electronAPI.onDeleteProgress(({ done, total, file, source }) => {
   const percent = Math.round((done / total) * 100);
 
   progressBar.value = percent;
-  progressLabel.textContent = `Deleting... ${percent}% (${done}/${total})`;
+  progressLabel.textContent = `Deleting from ${source}... ${percent}% (${done}/${total})`;
 
-  if (file) console.log("Deleting:", file);
+  if (file) console.log(`Deleting (${source}):`, file);
 });
 
-window.electronAPI.onDeleteComplete(() => {
-  progressLabel.textContent = "🗑️ Delete complete!";
+window.electronAPI.onDeleteComplete(({ source, status }) => {
+
+    if (status === "no-delete") {
+        progressLabel.textContent = `ℹ️ No items to delete (${source})`;
+        return;
+    }
+
+    progressLabel.textContent = `🗑️ Delete complete (${source})!`;
+
+    setTimeout(() => {
+        loadDriveItems(history[currentIndex], true);
+    }, 3000);
+    
 });
 
 window.electronAPI.onDeleteHide(() => {
@@ -135,9 +146,24 @@ window.electronAPI.onDownloadProgressStart(({ total }) => {
 
 
 // Complete
-window.electronAPI.onDownloadComplete(() => {
-    progressLabel.textContent = "✅ Download complete!";
+window.electronAPI.onDownloadComplete(({ source, status }) => {
+
+    if (status === "no-download") {
+        progressLabel.textContent = `ℹ️ No items to download `;
+        return;
+    }
+    progressLabel.textContent = `✅ Download complete !`;
+
+    setTimeout(() => {
+        loadDriveItems(history[currentIndex], true);
+    }, 3000);
 });
+
+
+
+// window.electronAPI.onDownloadComplete(() => {
+//     progressLabel.textContent = "✅ Download complete!";
+// });
 
 // Auto hide
 window.electronAPI.onDownloadHide(() => {
@@ -519,20 +545,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // ===============================
                 // 3A. CREATE ALL SUB-FOLDERS
                 // ===============================
-                for (const folder of folderList) {
-                    const rel = await window.electronAPI.pathRelative(folderPath, folder);
-                    const cleanRel = rootName + "/" + rel;
+                // for (const folder of folderList) {
+                //     const rel = await window.electronAPI.pathRelative(folderPath, folder);
+                //     const cleanRel = rootName + "/" + rel;
 
-                    await window.electronAPI.createFolderInDrive(cleanRel, mappedDrive);
+                //     await window.electronAPI.createFolderInDrive(cleanRel, mappedDrive);
 
-                    changedItems.push({
-                        path: cleanRel,
-                        is_dir: true,
-                        content: null,
-                        size: 0,
-                        mtime: Date.now()
-                    });
-                }
+                //     changedItems.push({
+                //         path: cleanRel,
+                //         is_dir: true,
+                //         content: null,
+                //         size: 0,
+                //         mtime: Date.now()
+                //     });
+                // }
 
                 // ===============================
                 // 3B. FILES WITH CONTENT BYTES
@@ -788,7 +814,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('back - ' + currentIndex);
         if (currentIndex > 0) {
             currentIndex--;
-            loadDriveItems(history[currentIndex], true);
+            await loadDriveItems(history[currentIndex], true);
         }
         console.log(history);
     });
@@ -797,7 +823,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('next - ' + currentIndex + (history.length - 1));
         if (currentIndex < history.length - 1) {
             currentIndex++;
-            loadDriveItems(history[currentIndex], true);
+            await loadDriveItems(history[currentIndex], true);
         }
         console.log(history);
     });
@@ -909,11 +935,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentMenu = null;
         currentBtn = null;
 
-        const targetPath = $(this).closest('.file-item').data('path');
+        //const targetPath = $(this).closest('.file-item .menu-item').attr('data-path');
+
+        const targetPath = $(this).attr('data-path');
+       
+        if (action === 'view') openPreview(targetPath);
         if (action === 'delete') deleteFile(targetPath);
         if (action === 'move') moveFile(targetPath);
         if (action === 'rename') renameFile(targetPath);
     });
+
+    const previewToggleBtn = document.getElementById("previewToggle");
+    const mainContent = document.getElementById("main-content");
+    const previewPanel = document.getElementById("preview-panel");
+
+    // previewToggleBtn.addEventListener("click", () => {
+    //     mainContent.classList.toggle("preview-mode");
+    //     previewPanel.classList.toggle("hidden");
+    // });
+
+    previewToggleBtn.addEventListener("click", () => {
+        const isActive = mainContent.classList.toggle("preview-mode");
+
+        previewPanel.classList.toggle("hidden", !isActive);
+        previewToggleBtn.classList.toggle("active", isActive);
+    });
+
+
+    
     
 
 });
@@ -921,6 +970,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
+
+function viewFile(targetPath){
+    //const filePath = $(this).data("path");
+    const filePath = targetPath;
+    console.log(filePath);
+    if (filePath.toLowerCase().endsWith(".pdf")) {
+        openPDF(`file:///${filePath.replace(/\\/g, "/")}`, "PDF Preview");
+    }
+};
 
 async function triggerSync(syncData,manual = false) {
     if (isSyncing) {
@@ -1097,7 +1155,7 @@ async function loadFiles(dirPath, reset = false) {
                 // Extract file extension safely
                 const parts = item.name.split('.');
                 const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
-                console.log(ext);
+                //console.log(item.path);
                 // Find icon from Laravel map or use default
 
                 if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
@@ -1134,6 +1192,7 @@ async function loadFiles(dirPath, reset = false) {
                     <div class="share">${item.shared ? "🔗" : ""}</div>
                     <div class="file-menu-btn">⋮</div>
                     <div class="file-menu hidden">
+                        <div class="menu-item" data-action="view" data-path="${item.path}">👁️ View</div>
                         <div class="menu-item" data-action="delete">🗑 Delete</div>
                         <div class="menu-item" data-action="move">📁 Move</div>
                         <div class="menu-item" data-action="rename">✏️ Rename</div>
@@ -1148,6 +1207,7 @@ async function loadFiles(dirPath, reset = false) {
                     </div>                    
                     <div class="file-menu-btn">⋮</div>
                     <div class="file-menu hidden">
+                        <div class="menu-item" data-action="view" data-path="${item.path}">👁️ View</div>
                         <div class="menu-item" data-action="delete">🗑 Delete</div>
                         <div class="menu-item" data-action="move">📁 Move</div>
                         <div class="menu-item" data-action="rename">✏️ Rename</div>
@@ -1157,35 +1217,6 @@ async function loadFiles(dirPath, reset = false) {
             </div>
             `);
 
-            // const div = $(`
-            //     <div class="file-item">
-            //         ${
-            //             isListView
-            //                 ? `
-            //                     <div class="file-icon">${icon}</div>
-            //                     <div class="file-name" title="${item.name}">${item.name}</div>
-            //                     <div class="file-menu-btn">⋮</div>
-            //                     <div class="file-menu hidden">
-            //                         <div class="menu-item" data-action="delete">🗑 Delete</div>
-            //                         <div class="menu-item" data-action="move">📁 Move</div>
-            //                         <div class="menu-item" data-action="rename">✏️ Rename</div>
-            //                     </div>
-            //                 `
-            //                 : `
-            //                     <div class="file-header">
-            //                         <div class="file-icon">${icon}</div>
-            //                         <div class="file-name" title="${item.name}">${item.name}</div>
-            //                     </div>
-            //                     <div class="file-menu-btn">⋮</div>
-            //                     <div class="file-menu hidden">
-            //                         <div class="menu-item" data-action="delete">🗑 Delete</div>
-            //                         <div class="menu-item" data-action="move">📁 Move</div>
-            //                         <div class="menu-item" data-action="rename">✏️ Rename</div>
-            //                     </div>
-            //                 `
-            //         }
-            //     </div>
-            // `);
 
             // open directory on name/icon click
             div.find(".file-name, .file-icon").on("dblclick", () => {
@@ -1201,6 +1232,9 @@ async function loadFiles(dirPath, reset = false) {
             div.find(".file-menu .menu-item").on("click", (e) => {
                 e.stopPropagation();
                 const action = $(e.currentTarget).data("action");
+                const targetPath = $(e.currentTarget).data("path");
+                console.log(targetPath);
+                if (action === 'view') openPreview(targetPath);
                 if (action === "delete") deleteFile(item.path);
                 if (action === "move") moveFile(item.path);
                 if (action === "rename") renameFile(item.path);
@@ -1385,6 +1419,65 @@ async function initFirstPath(path) {
     currentIndex = 0;
     currentDir = path;
 }
+
+function openPreview(filePath) {
+    const ext = filePath.split(".").pop().toLowerCase();
+
+    const previewPanel = document.getElementById("preview-panel");
+    //const canvas = document.getElementById("pdfPreviewCanvas");
+    const pdfContainer = document.getElementById("pdfViewerFrame");
+    const officePreview = document.getElementById("officePreview");
+
+    // Reset state
+    previewPanel.classList.remove("hidden");
+    //canvas.style.display = "none";
+    officePreview.classList.add("hidden");
+    console.log(ext);
+    if (ext === "pdf") {
+        // 🔹 PDF → canvas
+        //canvas.style.display = "block";
+        pdfContainer.innerHTML = "";          // clear previous PDF pages
+        pdfContainer.classList.remove("hidden");
+        openPDF(filePath);
+    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx"].includes(ext)) {
+        // 🔹 Office → placeholder
+        officePreview.classList.remove("hidden");
+        pdfContainer.classList.add("hidden");
+
+        document.getElementById("officeFileName").textContent =
+            filePath.split("/").pop();
+
+        //$("#officeFileName").text(filePath.split("/").pop());
+        $("#officeFileType").text("View only");
+
+        setOfficeIcon(ext);
+
+        document.getElementById("openOfficeBtn").onclick = () => {
+            window.electronAPI.openExternalFile(filePath);
+        };
+    } else {
+        // 🔹 Fallback
+        window.electronAPI.openExternalFile(filePath);
+    }
+}
+
+function setOfficeIcon(ext) {
+    const icon = document.getElementById("officeIcon");
+
+    icon.className = "fas";
+
+    if (ext === "xls" || ext === "xlsx") {
+        icon.classList.add("fa-file-excel");
+    } else if (ext === "doc" || ext === "docx") {
+        icon.classList.add("fa-file-word");
+    } else if (ext === "ppt" || ext === "pptx") {
+        icon.classList.add("fa-file-powerpoint");
+    } else {
+        icon.classList.add("fa-file");
+    }
+}
+
+
 
 function renderFileList1(container, files) {
     container.innerHTML = "";

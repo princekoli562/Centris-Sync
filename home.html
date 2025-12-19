@@ -63,6 +63,9 @@
                     <button class="nav-btn togg-view" id="forward-btn" title="Forward">
                         <i class="fas fa-arrow-right"></i>
                     </button>
+                    <button id="previewToggle" class="nav-btn btn-preview" title="Preview Mode">
+                        <i class="fas fa-eye"></i> 
+                    </button>
                     <button class="view-btn active" id="grid-view" title="Grid View">
                         <i class="fas fa-th-large"></i>
                     </button>
@@ -79,14 +82,63 @@
                 <div class="col size">Size</div>
                 <div class="col share">Share</div>
             </div>
-			<div id="file-list">
-			</div>
+            <div id="main-content" class="main-content">
+                <div id="file-list">
+                </div>
+                <div id="preview-panel" class="hidden">
+                    <!-- <canvas id="pdfPreviewCanvas"></canvas> -->
+                    
+                  
+                    <!-- <iframe
+                        id="pdfViewerFrame"
+                        class="pdf-frame"
+                        frameborder="0">
+                    </iframe> -->
+                    <iframe
+                        id="pdfViewerFrame"
+                        style="width:100%; height:100%; border:none;"
+                    ></iframe>
+                    <!-- <div id="officePreview" class="office-preview hidden">
+                        <i id="officeIcon" class="fas fa-file"></i>
+                        <p id="officeFileName"></p>
+                        <button id="openOfficeBtn">Open in Application</button>
+                    </div> -->
+
+                    <div id="officePreview" class="office-preview hidden">
+                        <i id="officeIcon" class="office-icon fas"></i>
+
+                        <div class="office-meta">
+                            <h3 id="officeFileName"></h3>
+                            <p id="officeFileType">View only</p>
+                        </div>
+
+                        <button id="openOfficeBtn" class="open-office-btn">
+                            Open in Application
+                        </button>
+                    </div>
+                </div>
+            </div>
             <div id="validationBox" class="validation-box"></div>
         </div>
     </div>
     
-	<script src="node_modules/jquery/dist/jquery.min.js"></script>
+	
+</body>
+<div id="pdfModal" class="pdf-modal hidden">
+    <div class="pdf-header">
+        <span id="pdfTitle">Document Preview</span>
+        <button id="closePdf">✖</button>
+    </div>
+
+    <div class="pdf-body">
+        <canvas id="pdfCanvas"></canvas>
+    </div>
+</div>
+<footer>
+    <script src="node_modules/jquery/dist/jquery.min.js"></script>
+    <!-- <script src="./assets/pdfjs/pdf.min.js"></script> -->
+    <script src="./assets/js/pdf-viewer.js"></script>
     <script src="assets/js/functions.js"></script>
   	<script  src="assets/js/dashboard.js"></script>
-</body>
+</footer>
 </html>

@@ -11,6 +11,11 @@ const http = require("http");
 const { pipeline,Readable } = require("stream");
 const { promisify } = require("util");
 const streamPipeline = promisify(pipeline);
+
+//const dbPath = path.join(__dirname, "main", "db", "init-db.js");
+const { initDB, getDB } = require("./main/db/init-db");
+// console.log("DB PATH:", dbPath);
+// const { initDB,getDB } = require(dbPath);
 //const vhdxService = require(path.join(__dirname, "assets/js/vhdx-service.js"));
 //const adminTasks  = require(path.join(__dirname, "assets/js/admin-task.js"));
 
@@ -134,7 +139,6 @@ const createWindow = async () => {
     // });
 
     
-
     const win = new BrowserWindow({
         width: 800,
         height: 600,
@@ -510,7 +514,7 @@ function removeDeleted(oldSnap, newSnap) {
     }
 }
 
-function loadTracker() {
+function loadTrackerJson() {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     if (fs.existsSync(trackerPath)) {
         return JSON.parse(fs.readFileSync(trackerPath, 'utf8'));
@@ -518,11 +522,66 @@ function loadTracker() {
     return {};
 }
 
+function loadTracker() {
+    const db = getDB();
+
+    try {
+        const rows = db.prepare(`
+            SELECT path, type, hash, mtime, size, synced
+            FROM tracker
+        `).all();
+
+        // Convert rows → object (same shape as old JSON)
+        const tracker = {};
+        for (const row of rows) {
+            tracker[row.path] = {
+                type: row.type,
+                hash: row.hash,
+                mtime: row.mtime,
+                size: row.size,
+                synced: row.synced
+            };
+        }
+
+        return tracker;
+    } catch (err) {
+        console.error("❌ Failed to load tracker from DB:", err.message);
+        return {};
+    }
+}
 
 
-function saveTracker(snapshot) {
+function saveTrackerJson(snapshot) {
     const trackerPath = path.join(app.getPath('userData'), 'sync-tracker.json');
     fs.writeFileSync(trackerPath, JSON.stringify(snapshot, null, 2));
+}
+
+function saveTracker(snapshot) {
+    const db = getDB();
+
+    const insert = db.prepare(`
+        INSERT INTO tracker (path, type, size, mtime, hash)
+        VALUES (@path, @type, @size, @mtime, @hash)
+        ON CONFLICT(path) DO UPDATE SET
+            type=excluded.type,
+            size=excluded.size,
+            mtime=excluded.mtime,
+            hash=excluded.hash
+    `);
+
+    const trx = db.transaction((data) => {
+        for (const [path, value] of Object.entries(data)) {
+            insert.run({
+                path,
+                type: value.type,
+                size: value.size || 0,
+                mtime: value.mtime || 0,
+                hash: value.hash || null
+            });
+        }
+    });
+
+    trx(snapshot);
 }
 
 
@@ -1326,6 +1385,10 @@ app.whenReady().then(() => {
         };
         console.log("🔄 Restored syncData from session:", syncData);
     }
+
+    initDB();
+    console.log('Deepak -> ');
+    console.log(app.getPath("userData"));
     //
 	createWindow();
 	//const folderPath = createSyncFolderAndDrive();
@@ -1644,6 +1707,8 @@ async function deleteLocalFilesLogic(event, args) {
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
     const mappedDrivePath = path.join(drive + ":", baseFolder);
 
+    let UserName = syncData.user_data.user_name;
+
     const totalFiles = deletedData.length;
     let completedFiles = 0;
     
@@ -1652,8 +1717,14 @@ async function deleteLocalFilesLogic(event, args) {
 
     for (const item of deletedData) {
         try {
-            const cleanLocation = normalizeServerPath(item.location);
+            const cleanLocationold = normalizeServerPath(item.location);
+            const cleanLocation = extractRelativePath(
+                item.location,
+                baseFolder,
+                UserName
+            );
             const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
+            console.log(cleanLocationold);
             console.log(cleanLocation);
             // ======================
             // 🔥 LOCAL DELETE LOGIC
@@ -1826,7 +1897,7 @@ async function deleteLocalFilesLogic(event, args) {
 
 
 
-async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+async function updateSaveTrackerJson(fullPath, cleanLocation, item = null) {
     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
 
     // Load tracker safely
@@ -1894,6 +1965,69 @@ async function updateSaveTracker(fullPath, cleanLocation, item = null) {
         console.error(`❌ Failed to write tracker JSON: ${err.message}`);
     }
 }
+
+async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+    const db = getDB();
+    // Ensure exists
+    let stats;
+    try {
+        stats = fs.statSync(fullPath);
+    } catch {
+        console.warn(`⚠️ Missing path (skip tracker): ${fullPath}`);
+        return;
+    }
+
+    const key = cleanLocation.replace(/\\/g, "/");
+
+    // FIX #1: trust server hash if present
+    let hash = item?.hash || null;
+
+    // FIX #2: compute hash only when needed
+    if (stats.isFile() && !hash) {
+        try {
+            hash = await hashFile(fullPath);
+        } catch (err) {
+            console.warn(`⚠️ Failed to hash: ${fullPath}`, err.message);
+        }
+    }
+
+    // FIX #3: mtime handling
+    const mtime = item?.mtimeMs
+        ? Number(item.mtimeMs)
+        : stats.mtimeMs;
+
+    // FIX #4: update filesystem mtime
+    if (stats.isFile()) {
+        try {
+            fs.utimesSync(fullPath, stats.atime, new Date(mtime));
+        } catch (err) {
+            console.warn(`⚠️ Failed utime: ${fullPath}`);
+        }
+    }
+
+    // FIX #5: UPSERT into SQLite
+    const stmt = db.prepare(`
+        INSERT INTO tracker (path, type, size, mtime, hash)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            type=excluded.type,
+            size=excluded.size,
+            mtime=excluded.mtime,
+            hash=excluded.hash
+    `);
+
+    stmt.run(
+        key,
+        stats.isDirectory() ? "folder" : "file",
+        stats.isFile() ? stats.size : 0,
+        stats.isDirectory() ? 0 : mtime,
+        hash
+    );
+
+    console.log(`✅ Tracker updated → ${key}`);
+}
+
+
 
 async function markDownloaded(apiUrl, id) {
     const payload = JSON.stringify({ id });
@@ -1991,7 +2125,7 @@ function normalizeKeytodoubleslash(key) {
     return key.replace(/[\/]+/g, "\\");
 }
 
-async function removeFromTracker(cleanLocation) {
+async function removeFromTrackerJson(cleanLocation) {
     const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
 
     let tracker = {};
@@ -2024,6 +2158,30 @@ async function removeFromTracker(cleanLocation) {
     // Save updated tracker
     fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
 }
+
+async function removeFromTracker(cleanLocation) {
+    const db = getDB();
+
+    const key = cleanLocation.replace(/\\/g, "/");
+
+    try {
+        const stmt = db.prepare(`
+            DELETE FROM tracker
+            WHERE path = ?
+        `);
+
+        const result = stmt.run(key);
+
+        if (result.changes > 0) {
+            console.log("🗑 Removed tracker entry:", key);
+        } else {
+            console.warn("⚠ Tracker entry not found:", key);
+        }
+    } catch (err) {
+        console.error("❌ Failed to remove tracker entry:", err.message);
+    }
+}
+
 
 
 

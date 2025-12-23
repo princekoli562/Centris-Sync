@@ -139,8 +139,8 @@ const createWindow = async () => {
             preload: preloadPath,
             contextIsolation: true,
             enableRemoteModule: false,
-            nodeIntegration: false,
-            webSecurity: false
+            nodeIntegration: false
+            //webSecurity: false
         },
         icon: iconPath
     });
@@ -531,7 +531,7 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
         const fullPath = path.join(dir, entry.name);
         let relPath = normalizePath(path.relative(baseDir, fullPath));
         relPath = relPath.replace(/\\/g, "/");
-       console.log('mm -> ' +relPath );
+      // console.log('mm -> ' +relPath );
         const stats = fs.statSync(fullPath);
 
         if (!relPath) continue;
@@ -1528,7 +1528,7 @@ async function downloadPendingFilesLogic(event, args) {
                 }
                 await updateSaveTracker(fullLocalPath, cleanLocation, item);
             }
-
+            console.log('Cleanpath = ' + cleanLocation);
             // Mark downloaded on server safely
             await markDownloaded(apiUrl, item.id);
 

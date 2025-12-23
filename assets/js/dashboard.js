@@ -10,6 +10,7 @@ let currentIndex = -1;
 window.stopSync = true;
 
 let currentView = "grid";
+let activeProgressType = null; 
 
 let customer_data = localStorage.getItem('customer_data');
 let domain_data = localStorage.getItem('domain_data');
@@ -67,6 +68,7 @@ window.electronAPI.onSyncStatus((_event, statusMsg) => {
 });
 
 window.electronAPI.onUploadProgressStart(({ total }) => {
+    activeProgressType = "upload";
     progressContainer.style.display = "block";
     progressBar.value = 0;
     progressLabel.textContent = `Uploading... 0% (0/${total})`;
@@ -74,6 +76,7 @@ window.electronAPI.onUploadProgressStart(({ total }) => {
 
 // Update progress
 window.electronAPI.onUploadProgress(({ done, total, file }) => {
+    if (activeProgressType !== "upload") return;
   const percent = Math.round((done / total) * 100);
 
   progressBar.value = percent;
@@ -84,15 +87,19 @@ window.electronAPI.onUploadProgress(({ done, total, file }) => {
 
 // On complete → 100%
 window.electronAPI.onUploadComplete(() => {
-  progressLabel.textContent = "✅ Upload complete!";
+    if (activeProgressType !== "upload") return;
+    progressLabel.textContent = "✅ Upload complete!";
 });
 
 // Auto hide after 1 min
 window.electronAPI.onUploadHide(() => {
-  progressContainer.style.display = "none";
+    if (activeProgressType !== "upload") return;
+    progressContainer.style.display = "none";
+    activeProgressType = null;
 });
 
 window.electronAPI.onDeleteProgressStart(({ total }) => {
+  activeProgressType = "delete";  
   progressContainer.style.display = "block";
   progressBar.value = 0;
   progressLabel.textContent = `Deleting... 0% (0/${total})`;
@@ -100,16 +107,17 @@ window.electronAPI.onDeleteProgressStart(({ total }) => {
 
 
 window.electronAPI.onDeleteProgress(({ done, total, file, source }) => {
-  const percent = Math.round((done / total) * 100);
+    if (activeProgressType !== "delete") return;
+    const percent = Math.round((done / total) * 100);
 
-  progressBar.value = percent;
-  progressLabel.textContent = `Deleting from ${source}... ${percent}% (${done}/${total})`;
+    progressBar.value = percent;
+    progressLabel.textContent = `Deleting from ${source}... ${percent}% (${done}/${total})`;
 
-  if (file) console.log(`Deleting (${source}):`, file);
+    if (file) console.log(`Deleting (${source}):`, file);
 });
 
 window.electronAPI.onDeleteComplete(({ source, status }) => {
-
+    if (activeProgressType !== "delete") return;
     if (status === "no-delete") {
         progressLabel.textContent = `ℹ️ No items to delete (${source})`;
         return;
@@ -124,12 +132,22 @@ window.electronAPI.onDeleteComplete(({ source, status }) => {
 });
 
 window.electronAPI.onDeleteHide(() => {
-  progressContainer.style.display = "none";
+    if (activeProgressType !== "delete") return;
+    progressContainer.style.display = "none";
+    activeProgressType = null;
+});
+
+
+window.electronAPI.onDownloadProgressStart(({ total }) => {
+    activeProgressType = "download";
+    progressContainer.style.display = "block";
+    progressBar.value = 0;
+    progressLabel.textContent = `Downloading... 0% (0/${total})`;
 });
 
 
 window.electronAPI.onDownloadProgress(({ done, total, file }) => {
-    
+    if (activeProgressType !== "download") return;
     const percent = Math.round((done / total) * 100);
 
     progressBar.value = percent;
@@ -138,16 +156,10 @@ window.electronAPI.onDownloadProgress(({ done, total, file }) => {
     if (file) console.log("Downloading:", file);
 });
 
-window.electronAPI.onDownloadProgressStart(({ total }) => {
-    progressContainer.style.display = "block";
-    progressBar.value = 0;
-    progressLabel.textContent = `Downloading... 0% (0/${total})`;
-});
-
 
 // Complete
 window.electronAPI.onDownloadComplete(({ source, status }) => {
-
+    if (activeProgressType !== "download") return;
     if (status === "no-download") {
         progressLabel.textContent = `ℹ️ No items to download `;
         return;
@@ -159,16 +171,20 @@ window.electronAPI.onDownloadComplete(({ source, status }) => {
     }, 3000);
 });
 
+// Auto hide
+window.electronAPI.onDownloadHide(() => {
+    if (activeProgressType !== "download") return;
+    progressContainer.style.display  = "none";
+    activeProgressType = null;
+});
+
 
 
 // window.electronAPI.onDownloadComplete(() => {
 //     progressLabel.textContent = "✅ Download complete!";
 // });
 
-// Auto hide
-window.electronAPI.onDownloadHide(() => {
-    progressContainer.style.display  = "none";
-});
+
 
 
 // Apply initial class

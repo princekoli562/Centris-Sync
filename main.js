@@ -8,6 +8,9 @@ const FormData = require('form-data');
 const sudo = require("sudo-prompt");
 const https = require("https");
 const http = require("http");
+const { pipeline,Readable } = require("stream");
+const { promisify } = require("util");
+const streamPipeline = promisify(pipeline);
 //const vhdxService = require(path.join(__dirname, "assets/js/vhdx-service.js"));
 //const adminTasks  = require(path.join(__dirname, "assets/js/admin-task.js"));
 
@@ -1389,91 +1392,7 @@ function cleanSegment(s) {
     return s.replace(/^[:\\/]+|[:\\/]+$/g, ""); // remove leading/trailing slashes or colon
 }
 
-async function downloadPendingFilesLogicPrince(event, args) {
-    const { customer_id, domain_id, apiUrl, syncData} = args;
-
-    const pending = await downloadServerPending(args);
-    if (!Array.isArray(pending) || pending.length === 0) {
-        event.sender.send("download-complete");
-        return true;
-    }
-
-    const drive = cleanSegment(getMappedDriveLetter());
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    // FINAL CORRECT MAPPED DRIVE PATH
-    const mappedDrivePath = path.join(drive + ":", baseFolder); 
-
-    const totalFiles = pending.length;
-    let completedFiles = 0;
-
-    event.sender.send("download-progress-start", { total: totalFiles });
-
-    for (const item of pending) {
-        try {
-            const cleanLocation = normalizeServerPath(item.location);
-            const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
-
-            const fileDir = path.dirname(fullLocalPath);
-            if (!fs.existsSync(fileDir)) {
-                fs.mkdirSync(fileDir, { recursive: true });
-            }
-
-            if (item.type === "folder") {
-                if (!fs.existsSync(fullLocalPath)) {
-                    fs.mkdirSync(fullLocalPath, { recursive: true });
-                }
-            } else {
-                const fileStream = fs.createWriteStream(fullLocalPath);
-                let chunkIndex = 0;
-
-                for (const chunk of item.chunks) {
-                    const binaryChunk = Buffer.from(chunk, "base64");
-                    fileStream.write(binaryChunk);
-
-                    chunkIndex++;
-                    const filePercent = Math.floor((chunkIndex / item.chunks.length) * 100);
-
-                    event.sender.send("download-progress", {
-                        done: completedFiles,
-                        total: totalFiles,
-                        file: item.location,
-                        filePercent
-                    });
-                }
-
-                fileStream.end();
-            }
-
-            await updateSaveTracker(fullLocalPath,cleanLocation, item);
-
-            await fetch(`${apiUrl}/api/mark-downloaded`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: item.id })
-            });
-
-
-            completedFiles++;
-            event.sender.send("download-progress", {
-                done: completedFiles,
-                total: totalFiles,
-                file: item.location,
-                filePercent: 100
-            });
-
-        } catch (err) {
-            console.log("Download error:", item.location, err);
-        }
-    }
-
-    event.sender.send("download-complete");
-    setTimeout(() => event.sender.send("download-hide"), 6000);
-
-    return true;
-}
-
-async function downloadPendingFilesLogic(event, args) {
+async function downloadPendingFilesLogicHangs(event, args) {
     const { customer_id, domain_id, apiUrl, syncData } = args;
     const SourceFrom = "Centris One";
     const pending = await downloadServerPending(args);
@@ -1490,6 +1409,8 @@ async function downloadPendingFilesLogic(event, args) {
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
     const mappedDrivePath = path.join(drive + ":", baseFolder);
 
+    let UserName = syncData.user_data.user_name;
+
     const totalFiles = pending.length;
     let completedFiles = 0;
 
@@ -1497,7 +1418,7 @@ async function downloadPendingFilesLogic(event, args) {
 
     for (const item of pending) {
         try {
-            const cleanLocation = normalizeServerPath(item.location);
+            const cleanLocation = extractRelativePath(item.location,baseFolder,UserName);
             const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
 
             // Ensure directory exists
@@ -1553,6 +1474,156 @@ async function downloadPendingFilesLogic(event, args) {
     return true;
 }
 
+async function downloadPendingFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData } = args;
+    const SourceFrom = "Centris One";
+    const pending = await downloadServerPending(args);
+    if (!Array.isArray(pending) || pending.length === 0) {
+        event.sender.send("download-complete", {
+            source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
+            status: "no-download"
+        });
+        setTimeout(() => event.sender.send("download-hide"), 6000);
+        return true;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const mappedDrivePath = path.join(drive + ":", baseFolder);
+
+    let UserName = syncData.user_data.user_name;
+
+    const totalFiles = pending.length;
+    let completedFiles = 0;
+
+    event.sender.send("download-progress-start", { total: totalFiles });
+
+    for (const item of pending) {
+        
+        try {
+            // 1️⃣ Build safe local path
+            const cleanLocation = extractRelativePath(
+                item.location,
+                baseFolder,
+                UserName
+            );
+
+            const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
+
+            // 🔐 Safety check
+            if (!fullLocalPath.startsWith(mappedDrivePath)) {
+                throw new Error("Path escape blocked: " + fullLocalPath);
+            }
+
+            // 2️⃣ Ensure directory exists
+            const targetDir =
+                item.type === "file"
+                    ? path.dirname(fullLocalPath)
+                    : fullLocalPath;
+
+            if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir, { recursive: true });
+            }
+
+            // 3️⃣ Download FILE (streamed → no freeze)
+            if (item.type === "file") {
+                await downloadFile(item, fullLocalPath, apiUrl);
+            }
+
+            // 4️⃣ Update local tracker (AFTER successful write)
+            await updateSaveTracker(
+                fullLocalPath,
+                cleanLocation,
+                item
+            );
+
+            // 5️⃣ Mark downloaded on server (AFTER tracker success)
+            await markDownloaded(apiUrl, item.id);
+
+            // 6️⃣ Progress update
+            // event.sender.send("download-progress", {
+            //     done: i + 1,
+            //     total: pending.length,
+            //     file: item.location
+            // });
+
+            completedFiles++;
+            event.sender.send("download-progress", {
+                done: completedFiles,
+                total: totalFiles,
+                file: item.location,
+                filePercent: 100,
+            });
+
+        } catch (err) {
+            console.error("Download failed:", item.location, err.message);
+            // optional: retry / log / skip
+        }
+
+        // 🔥 Yield event loop → keeps Electron responsive
+        if (completedFiles % 2 === 0) {
+            await new Promise(r => setImmediate(r));
+        }
+    }
+
+
+     event.sender.send("download-complete", {
+        source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
+        status: "download"
+    });
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+    return true;
+}
+
+function extractRelativePath(serverPath, baseFolder, username) {
+    if (!serverPath) return "";
+
+    let p = serverPath
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "")
+        .replace(/\/+/g, "/"); // collapse //
+
+    // remove base folder
+    if (p.startsWith(baseFolder + "/")) {
+        p = p.slice(baseFolder.length + 1);
+    }
+
+    const parts = p.split("/");
+
+    // 🔥 find FIRST occurrence only
+    let userIndex = -1;
+    for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === username) {
+            userIndex = i;
+            break;
+        }
+    }
+
+    if (userIndex === -1) {
+        throw new Error("Username not found in path: " + serverPath);
+    }
+
+    // everything AFTER FIRST username
+    return parts.slice(userIndex + 1).join("/");
+}
+
+async function downloadFile(item, fullLocalPath, apiUrl) {
+
+    const res = await fetch(`${apiUrl}/api/download-file/${item.id}`, {
+        method: "POST" // 🔥 MUST MATCH ROUTE
+    });
+
+    if (!res.ok) {
+        throw new Error(`Download failed: ${res.status} ${res.statusText}`);
+    }
+
+    const fileStream = fs.createWriteStream(fullLocalPath);
+
+    // 🔥 Convert WebStream → Node Stream (MANDATORY)
+    const nodeStream = Readable.fromWeb(res.body);
+
+    await streamPipeline(nodeStream, fileStream);
+}
 
 async function deleteLocalFilesLogic(event, args) {
     const { customer_id, domain_id, apiUrl, syncData } = args;

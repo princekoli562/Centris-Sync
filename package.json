@@ -58,15 +58,17 @@
     "cross-env": "^10.1.0",
     "electron": "^39.1.0",
     "electron-builder": "^24.0.0",
+    "electron-rebuild": "^3.2.9",
     "electron-reload": "^2.0.0-alpha.1"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",
+    "better-sqlite3": "^12.5.0",
     "bootstrap": "^5.3.8",
     "crypto-js": "^4.2.0",
     "form-data": "^4.0.5",
     "jquery": "^3.7.1",
-    "pdfjs-dist": "^2.16.105",
+    "pdfjs-dist": "^5.4.449",
     "sudo-prompt": "^9.2.1"
   }
 }

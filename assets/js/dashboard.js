@@ -947,18 +947,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     $(document).on('click', '.floating-menu .menu-item', function (e) {
         e.stopPropagation();
         const action = $(this).data('action');
+
+        // 👇 get data from parent menu
+        const $menu = $(this).closest('.floating-menu');
+        const targetPath = $menu.data('path');
+        const type = $menu.data('type');
+
         $('.floating-menu').remove();
         currentMenu = null;
         currentBtn = null;
+        console.log('SRILANKA = > ' + targetPath);
+        if (!targetPath) return;
 
-        //const targetPath = $(this).closest('.file-item .menu-item').attr('data-path');
-
-        const targetPath = $(this).attr('data-path');
+        if (action === 'view') openPreview(targetPath, type);
+        if (action === 'delete') deleteFile(targetPath, type);
+        if (action === 'move') moveFile(targetPath, type);
+        if (action === 'rename') renameFile(targetPath, type);
        
-        if (action === 'view') openPreview(targetPath);
-        if (action === 'delete') deleteFile(targetPath);
-        if (action === 'move') moveFile(targetPath);
-        if (action === 'rename') renameFile(targetPath);
     });
 
     const previewToggleBtn = document.getElementById("previewToggle");
@@ -1158,6 +1163,7 @@ async function loadFiles(dirPath, reset = false) {
 
             let icon = '';
             let iconHTML = '';
+            let type = '';
 
             if (item.isDirectory) {
                 // Use folder icon
@@ -1166,14 +1172,14 @@ async function loadFiles(dirPath, reset = false) {
                 }
 
                 iconHTML = `<div class="file-icon">${iconMap.data['folder'].value}</div>`;
-                
+                type = 'folder';
             } else {
                 // Extract file extension safely
                 const parts = item.name.split('.');
                 const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
                 //console.log(item.path);
                 // Find icon from Laravel map or use default
-
+                type = 'file';
                 if (iconMap.data && iconMap.data.hasOwnProperty(ext)) {
                     // Extension found in iconMap
                     const iconData = iconMap.data[ext];
@@ -1207,8 +1213,8 @@ async function loadFiles(dirPath, reset = false) {
                     <div class="file-size">${item.size || "-"}</div>
                     <div class="share">${item.shared ? "🔗" : ""}</div>
                     <div class="file-menu-btn">⋮</div>
-                    <div class="file-menu hidden">
-                        <div class="menu-item" data-action="view" data-path="${item.path}">👁️ View</div>
+                    <div class="file-menu hidden" data-path="${item.path}" data-type="${type}">
+                        <div class="menu-item" data-action="view">👁️ View</div>
                         <div class="menu-item" data-action="delete">🗑 Delete</div>
                         <div class="menu-item" data-action="move">📁 Move</div>
                         <div class="menu-item" data-action="rename">✏️ Rename</div>
@@ -1222,8 +1228,8 @@ async function loadFiles(dirPath, reset = false) {
                         <div class="file-name" title="${item.name}">${item.name}</div>
                     </div>                    
                     <div class="file-menu-btn">⋮</div>
-                    <div class="file-menu hidden">
-                        <div class="menu-item" data-action="view" data-path="${item.path}">👁️ View</div>
+                    <div class="file-menu hidden" data-path="${item.path}" data-type="${type}">
+                        <div class="menu-item" data-action="view">👁️ View</div>
                         <div class="menu-item" data-action="delete">🗑 Delete</div>
                         <div class="menu-item" data-action="move">📁 Move</div>
                         <div class="menu-item" data-action="rename">✏️ Rename</div>
@@ -1245,16 +1251,39 @@ async function loadFiles(dirPath, reset = false) {
             //     div.find(".file-menu").toggleClass("hidden");
             // });
 
+            // div.find(".file-menu .menu-item").on("click", (e) => {
+            //     e.stopPropagation();
+            //     const action = $(e.currentTarget).data("action");
+            //     const targetPath = $(e.currentTarget).data("path");
+            //     console.log(targetPath);
+            //     if (action === 'view') openPreview(targetPath);
+            //     if (action === "delete") deleteFile(item.path);
+            //     if (action === "move") moveFile(item.path);
+            //     if (action === "rename") renameFile(item.path);
+            //     div.find(".file-menu").addClass("hidden");
+            // });
+
             div.find(".file-menu .menu-item").on("click", (e) => {
                 e.stopPropagation();
-                const action = $(e.currentTarget).data("action");
-                const targetPath = $(e.currentTarget).data("path");
-                console.log(targetPath);
-                if (action === 'view') openPreview(targetPath);
-                if (action === "delete") deleteFile(item.path);
-                if (action === "move") moveFile(item.path);
-                if (action === "rename") renameFile(item.path);
-                div.find(".file-menu").addClass("hidden");
+
+                const $menuItem = $(e.currentTarget);
+                const action = $menuItem.data("action");
+
+                // 👇 read from parent .file-menu
+                const $menu = $menuItem.closest(".file-menu");
+                const targetPath = $menu.data("path");
+                const type = $menu.data("type");
+
+                console.log('INDIA = > ' + targetPath);
+
+                if (!targetPath) return;
+
+                if (action === "view") openPreview(targetPath, type);
+                if (action === "delete") deleteFile(targetPath, type);
+                if (action === "move") moveFile(targetPath, type);
+                if (action === "rename") renameFile(targetPath, type);
+
+                $menu.addClass("hidden");
             });
 
             $("#file-list").append(div);
@@ -1436,7 +1465,7 @@ async function initFirstPath(path) {
     currentDir = path;
 }
 
-function openPreview(filePath) {
+function openPreview(filePath,type) {
     const ext = filePath.split(".").pop().toLowerCase();
 
     const previewPanel = document.getElementById("preview-panel");
@@ -1476,6 +1505,34 @@ function openPreview(filePath) {
         window.electronAPI.openExternalFile(filePath);
     }
 }
+
+async function deleteFile(targetPath, type) {
+    if (!targetPath) return;
+
+    const confirmDelete = confirm(
+        type === "folder"
+            ? "Delete this folder and all its contents?"
+            : "Delete this file?"
+    );
+
+    if (!confirmDelete) return;
+
+    const result = await window.electronAPI.deleteItem({
+        path: targetPath,
+        type
+    });
+
+    if (result.success) {
+        showValidation("Deleted successfully","success");
+        setTimeout(() => {
+            loadDriveItems(history[currentIndex], true);
+        }, 3000);
+        // refresh UI here if needed
+    } else {
+        alert("Delete failed: " + result.error);
+    }
+}
+
 
 function setOfficeIcon(ext) {
     const icon = document.getElementById("officeIcon");

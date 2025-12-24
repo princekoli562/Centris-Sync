@@ -572,7 +572,7 @@ function saveTracker(snapshot) {
     const trx = db.transaction((data) => {
         for (const [path, value] of Object.entries(data)) {
             insert.run({
-                path,
+                path: normalizeTrackerPath(path),
                 type: value.type,
                 size: value.size || 0,
                 mtime: value.mtime || 0,
@@ -681,6 +681,15 @@ function findNewOrChangedFiles(current, previous) {
     }
 
     return changed;
+}
+
+
+function normalizeTrackerPath(p) {
+    return p
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "")
+        .replace(/\/+/g, "/")
+        .trim();
 }
 
 
@@ -1699,7 +1708,7 @@ async function deleteLocalFilesLogic(event, args) {
             source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
             status: "no-delete"
         });
-        setTimeout(() => event.sender.send("delete-hide"), 6000);
+        setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
         return true;
     }
 
@@ -1756,9 +1765,9 @@ async function deleteLocalFilesLogic(event, args) {
             // ==============================
             // 🔥 ONLY IF DELETED SUCCESSFULLY
             // ==============================
-            console.log('XXX - > ' + cleanLocation + ' = ' + item.id);
+           // console.log('XXX - > ' + cleanLocation + ' = ' + item.id);
             if (deletedSuccessfully) {
-                console.log('JJJ - > ' + cleanLocation);
+                //console.log('JJJ - > ' + cleanLocation);
                 // Remove from tracker
                 await removeFromTracker(cleanLocation);
 
@@ -1787,7 +1796,7 @@ async function deleteLocalFilesLogic(event, args) {
         source: deleteFrom === "Centris One" ? "Centris One" : "Centris Drive",
         status: "delete"
     });
-    setTimeout(() => event.sender.send("delete-hide"), 6000);
+    setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
 
     return true;
 }
@@ -1896,76 +1905,6 @@ async function deleteLocalFilesLogic(event, args) {
 // });
 
 
-
-async function updateSaveTrackerJson(fullPath, cleanLocation, item = null) {
-    const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
-
-    // Load tracker safely
-    let tracker = {};
-    try {
-        tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf-8"));
-    } catch (err) {
-        tracker = {};
-    }
-
-    // Ensure file/folder exists
-    let stats;
-    try {
-        stats = fs.statSync(fullPath);
-    } catch (err) {
-        console.warn(`⚠️ Missing path (skip tracker): ${fullPath}`);
-        return;
-    }
-
-    const key = cleanLocation.replace(/\\/g, "/");
-
-    // ---------- FIX #1: Always trust server hash for S2C direction ----------
-    // If item.hash exists, ALWAYS use that (server and desktop must match)
-    let hash = item?.hash || null;
-
-    // ---------- FIX #2: Only compute hash when no incoming hash ----------
-    if (stats.isFile() && !hash) {
-        try {
-            hash = await hashFile(fullPath); // same function used in C2S snapshot
-        } catch (err) {
-            console.warn(`⚠️ Failed to hash file: ${fullPath}`, err.message);
-        }
-    }
-
-    // ---------- FIX #3: Proper mtime handling ----------
-    // Prefer server mtime for S2C, otherwise local stat value
-    const mtime = item?.mtimeMs ? Number(item.mtimeMs) : stats.mtimeMs;
-
-    // ---------- FIX #4: Update filesystem timestamps (only for files) ----------
-    if (stats.isFile()) {
-        try {
-            fs.utimesSync(
-                fullPath,
-                stats.atime,         // keep access time
-                new Date(mtime)      // update modified time
-            );
-        } catch (err) {
-            console.warn(`⚠️ Failed to set mtime: ${fullPath} : ${err.message}`);
-        }
-    }
-
-    // ---------- FIX #5: Update tracker ----------
-    tracker[key] = {
-        type: stats.isDirectory() ? "folder" : "file",
-        size: stats.isFile() ? stats.size : 0,
-        mtime: stats.isDirectory() ? 0 : mtime,
-        hash
-    };
-
-    // ---------- FIX #6: Write JSON file safely ----------
-    try {
-        fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
-        console.log(`✅ Tracker updated → ${key}`);
-    } catch (err) {
-        console.error(`❌ Failed to write tracker JSON: ${err.message}`);
-    }
-}
-
 async function updateSaveTracker(fullPath, cleanLocation, item = null) {
     const db = getDB();
     // Ensure exists
@@ -2026,8 +1965,6 @@ async function updateSaveTracker(fullPath, cleanLocation, item = null) {
 
     console.log(`✅ Tracker updated → ${key}`);
 }
-
-
 
 async function markDownloaded(apiUrl, id) {
     const payload = JSON.stringify({ id });
@@ -2125,44 +2062,12 @@ function normalizeKeytodoubleslash(key) {
     return key.replace(/[\/]+/g, "\\");
 }
 
-async function removeFromTrackerJson(cleanLocation) {
-    const saveTrackerPath = path.join(app.getPath("userData"), "sync-tracker.json");
-
-    let tracker = {};
-    try {
-        tracker = JSON.parse(fs.readFileSync(saveTrackerPath, "utf8"));
-    } catch (err) {
-        return;
-    }
-
-    // Convert cleanLocation to tracker-style:  folder\\subfolder\\file
-    const key = normalizeKeytodoubleslash(cleanLocation);
-
-    // 🔥 Normalize all existing tracker keys
-    const normalizedTracker = {};
-    for (const oldKey in tracker) {
-        const newKey = normalizeKeytodoubleslash(oldKey);   // fixes keys with / or single \
-        normalizedTracker[newKey] = tracker[oldKey];
-    }
-
-    tracker = normalizedTracker;
-
-    // 🔥 Delete key if it exists
-    if (tracker[key]) {
-        delete tracker[key];
-        console.log("🗑 Removed tracker entry:", key);
-    } else {
-        console.warn("⚠ Tracker entry not found:", key);
-    }
-
-    // Save updated tracker
-    fs.writeFileSync(saveTrackerPath, JSON.stringify(tracker, null, 4));
-}
-
 async function removeFromTracker(cleanLocation) {
     const db = getDB();
 
-    const key = cleanLocation.replace(/\\/g, "/");
+   // const key = cleanLocation.replace(/\\/g, "/");
+
+    const key = normalizeTrackerPath(cleanLocation);
 
     try {
         const stmt = db.prepare(`
@@ -2173,7 +2078,7 @@ async function removeFromTracker(cleanLocation) {
         const result = stmt.run(key);
 
         if (result.changes > 0) {
-            console.log("🗑 Removed tracker entry:", key);
+            //console.log("🗑 Removed tracker entry:", key);
         } else {
             console.warn("⚠ Tracker entry not found:", key);
         }
@@ -2181,10 +2086,6 @@ async function removeFromTracker(cleanLocation) {
         console.error("❌ Failed to remove tracker entry:", err.message);
     }
 }
-
-
-
-
 
 
 function ensureDirSync(dirPath) {
@@ -2346,7 +2247,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     }
 
     const user_id = syncData.user_data.id;
-    const deleteFrom = 'Centris Drive';
+    let deleteFrom = 'Centris Drive';
 
     // ------------------------------------------------------------
     // DIFF (NO MORE strip AGAIN — FIX)
@@ -2373,6 +2274,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // ------------------------------------------------------------
     // UPLOAD CHANGED FILES
     // ------------------------------------------------------------
+    deleteFrom = 'Centris One';
     if (changedItems.length > 0) {
       const uploadChunks = chunkArray(changedItems, 50);
 

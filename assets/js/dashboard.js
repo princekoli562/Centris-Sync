@@ -435,6 +435,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         $(".upload-menu").removeClass("show");
     });
 
+    $(document).on("click", ".delete-btn", function (e) {
+        e.preventDefault();
+
+        const selectedCount = document.querySelectorAll(".file-item.selected").length;
+
+        if (selectedCount === 0) {
+            alert("Please select at least one item to delete.");
+            return;
+        }
+
+        const confirmDelete = confirm(
+            `Are you sure you want to delete ${selectedCount} item(s)?`
+        );
+
+        if (!confirmDelete) return;
+
+        deleteSelectedItems();
+    });
+
+    
+
     // This is for single Folder Selection , but work inside recursively
     $(document).on("click", "#uploadFolderSingleOption", async function () {
         try {
@@ -862,12 +883,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     $(document).on("click", ".file-item", function (e) {
         if ($(e.target).closest(".file-menu, .file-menu-btn").length) return;
-        $(this).toggleClass("selected");
+        // $(this).toggleClass("selected");
+        // hideMiddleSection();  
+        // 👇 read from parent .file-menu
+        // prevent preview when clicking menu or checkbox
+
+        const $menu = $(this).find(".file-menu");
+
+        const targetPath = $menu.data("path");
+        const type = $menu.data("type");
+        console.log(targetPath, type);
+        if(type == 'folder') return;
+        
+        openPreview(targetPath, type);
 
         // Add check icon only once
         // if ($item.find(".check-icon").length === 0) {
         //  $item.append('<div class="check-icon"></div>');
         // }
+
+       
+    });
+
+    $(document).on("click", ".file-item .check-icon", function (e) {
+        e.stopPropagation(); // prevent parent clicks
+
+        const fileItem = $(this).closest(".file-item");
+
+        fileItem.toggleClass("selected");
+        $(this).toggleClass("checked"); // optional visual state
 
         hideMiddleSection();
     });
@@ -894,9 +938,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         $('.floating-menu').remove();
         currentMenu = null;
         currentBtn = null;
-        console.log('SRILANKA = > ' + targetPath);
+      
         if (!targetPath) return;
-
+        if (action === 'open') openFolder(targetPath,type);
         if (action === 'view') openPreview(targetPath, type);
         if (action === 'delete') deleteFile(targetPath, type);
         if (action === 'move') moveFile(targetPath, type);
@@ -1138,6 +1182,20 @@ async function loadFiles(dirPath, reset = false) {
                 
             }
 
+
+            const menuHTML = type === "folder"
+                ? `
+                    <div class="menu-item" data-action="open">📂 Open Folder</div>
+                    <div class="menu-item" data-action="delete">🗑 Delete</div>
+                    <div class="menu-item" data-action="move">📁 Move</div>
+                    <div class="menu-item" data-action="rename">✏️ Rename</div>
+                `
+                : `
+                    <div class="menu-item" data-action="view">👁️ View</div>
+                    <div class="menu-item" data-action="delete">🗑 Delete</div>
+                    <div class="menu-item" data-action="move">📁 Move</div>
+                    <div class="menu-item" data-action="rename">✏️ Rename</div>`;
+
             const isListView = $("#file-list").hasClass("list-view");
             const div = $(`
             <div class="file-item">
@@ -1152,10 +1210,7 @@ async function loadFiles(dirPath, reset = false) {
                     <div class="share">${item.shared ? "🔗" : ""}</div>
                     <div class="file-menu-btn">⋮</div>
                     <div class="file-menu hidden" data-path="${item.path}" data-type="${type}">
-                        <div class="menu-item" data-action="view">👁️ View</div>
-                        <div class="menu-item" data-action="delete">🗑 Delete</div>
-                        <div class="menu-item" data-action="move">📁 Move</div>
-                        <div class="menu-item" data-action="rename">✏️ Rename</div>
+                        ${menuHTML}
                     </div>
                     `
                     : `
@@ -1167,10 +1222,7 @@ async function loadFiles(dirPath, reset = false) {
                     </div>                    
                     <div class="file-menu-btn">⋮</div>
                     <div class="file-menu hidden" data-path="${item.path}" data-type="${type}">
-                        <div class="menu-item" data-action="view">👁️ View</div>
-                        <div class="menu-item" data-action="delete">🗑 Delete</div>
-                        <div class="menu-item" data-action="move">📁 Move</div>
-                        <div class="menu-item" data-action="rename">✏️ Rename</div>
+                        ${menuHTML}
                     </div>
                     `
                 }
@@ -1189,17 +1241,6 @@ async function loadFiles(dirPath, reset = false) {
             //     div.find(".file-menu").toggleClass("hidden");
             // });
 
-            // div.find(".file-menu .menu-item").on("click", (e) => {
-            //     e.stopPropagation();
-            //     const action = $(e.currentTarget).data("action");
-            //     const targetPath = $(e.currentTarget).data("path");
-            //     console.log(targetPath);
-            //     if (action === 'view') openPreview(targetPath);
-            //     if (action === "delete") deleteFile(item.path);
-            //     if (action === "move") moveFile(item.path);
-            //     if (action === "rename") renameFile(item.path);
-            //     div.find(".file-menu").addClass("hidden");
-            // });
 
             div.find(".file-menu .menu-item").on("click", (e) => {
                 e.stopPropagation();
@@ -1216,6 +1257,7 @@ async function loadFiles(dirPath, reset = false) {
 
                 if (!targetPath) return;
 
+                if (action === "open") openFolder(targetPath, type);
                 if (action === "view") openPreview(targetPath, type);
                 if (action === "delete") deleteFile(targetPath, type);
                 if (action === "move") moveFile(targetPath, type);
@@ -1403,6 +1445,10 @@ async function initFirstPath(path) {
     currentDir = path;
 }
 
+function openFolder(targetPath,type){
+    if (targetPath) loadFiles(targetPath, true);
+}
+
 function openPreview(filePath,type) {
     const ext = filePath.split(".").pop().toLowerCase();
 
@@ -1487,6 +1533,58 @@ function setOfficeIcon(ext) {
         icon.classList.add("fa-file");
     }
 }
+
+async function deleteSelectedItems() {
+    const selectedItems = document.querySelectorAll(".file-item.selected");
+
+    if (selectedItems.length === 0) {
+        alert("No items selected");
+        return;
+    }
+
+    let deletedCount = 0;
+    for (const item of selectedItems) {
+        const menu = item.querySelector(".file-menu");
+
+        if (!menu) continue;
+
+        const targetPath = menu.dataset.path;
+        const type = menu.dataset.type; // "file" or "folder"
+
+        try {
+            const result = await window.electronAPI.deleteItem({
+                path: targetPath,
+                type: type
+            });
+
+            if (result.success) {
+                // Remove from UI after successful delete
+                deletedCount++;
+                item.remove();
+            } else {
+                console.error("Delete failed:", result.error);
+            }
+        } catch (err) {
+            console.error("IPC error:", err);
+        }
+    }
+
+    if (deletedCount > 0) {
+        const message =
+            deletedCount === 1
+                ? "1 item deleted successfully."
+                : deletedCount + " items deleted successfully.";
+
+        showValidation(message, "success");
+        setTimeout(() => {
+            loadDriveItems(history[currentIndex], true);
+        }, 3000);
+        // refresh UI here if needed
+    } else {
+        alert("Delete failed: " + result.error);
+    }
+}
+
 
 
 

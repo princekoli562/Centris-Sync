@@ -485,7 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     root_path: folderPath
                 })
             });
-            const oldSnapshot = await window.electronAPI.loadTracker();
+            const oldSnapshot = await window.electronAPI.loadTracker(false);
              console.log(oldSnapshot);
             const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive,oldSnapshot);
             //console.log(newSnapshot['snapshot']);
@@ -646,7 +646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadFiles(mappedDrive, true);
             await wait(1000);
 
-            const oldSnapshot = await window.electronAPI.loadTracker();
+            const oldSnapshot = await window.electronAPI.loadTracker(false);
             const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
             await window.electronAPI.saveTracker(newSnapshot.snapshot);
 
@@ -658,68 +658,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-
-    // $(document).on("click", "#uploadFileOption", async function () {
-    //     try {
-    //         $(".upload-menu").removeClass("show");
-    //         const local_stored = localStorage.getItem("customer_data");
-       
-    //         if(local_stored){
-    //             customer_data = JSON.parse(localStorage.getItem("customer_data"));
-    //             domain_data = JSON.parse(localStorage.getItem("domain_data"));
-    //             user_data = JSON.parse(localStorage.getItem("user_data"));
-    //         }else{
-    //             customer_data  = syncData.customer_data; 
-    //             domain_data  = syncData.domain_data; 
-    //             user_data = syncData.user_data; 
-    //         }           
-
-    //         const filePaths = await window.electronAPI.openFiles(); // now returns array
-    //         if (!filePaths || filePaths.length === 0) return alert("No files selected.");
-
-    //         let mappedDrive;
-    //         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
-    //         if (crumbs.length > 0) {
-    //             mappedDrive = crumbs[crumbs.length - 1].getAttribute('data-path');
-    //         } else {
-    //             mappedDrive = await window.electronAPI.getMappedDrive();
-    //         }
-
-    //         if (!confirm(`Upload ${filePaths.length} file(s) to ${mappedDrive}?`)) return;
-
-    //         const result = await window.electronAPI.uploadFileToDrive(filePaths, mappedDrive);
-    //         if (result.success) {
-    //             showValidation("The files have been uploaded to Centris Local Drive successfully.", 'success');
-    //             loadFiles(mappedDrive, true);
-    //         } else {
-    //             alert("Error uploading: " + result.error);
-    //         }
-    //         console.log(filePaths);
-    //         await wait(2000);
-    //         showValidation("Syncing files to Centris Local Drive. Please wait...", 'info');
-
-    //         const res = await fetch(`${apiUrl}/api/sync-files`, {
-    //             method: "POST",
-    //             headers: { "Content-Type": "application/json" },
-    //             body: JSON.stringify({
-    //                 customer_id: customer_data.id,
-    //                 domain_id: domain_data.id,
-    //                 user_id: user_data.id,
-    //                 files: filePaths  // send all files for sync
-    //             })
-    //         });
-
-    //         const data = await res.json();
-    //         console.log("Sync Result:", data);
-
-    //         await wait(2000);
-    //         showValidation(data.message, 'success');
-
-    //     } catch (err) {
-    //         console.error("Upload or Sync Error:", err);
-    //         showValidation("An error occurred: " + err.message, 'error');
-    //     }
-    // });
 
    $(document).on("click", "#uploadFileOption", async function () {
         try {
@@ -808,7 +746,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await wait(500);
 
             // 7️⃣ UPDATE TRACKER SNAPSHOT
-            const oldSnapshot = await window.electronAPI.loadTracker();
+            const oldSnapshot = await window.electronAPI.loadTracker(false);
             const newSnapshot = await window.electronAPI.getDirectorySnapshot(
                 mappedDrive,
                 oldSnapshot

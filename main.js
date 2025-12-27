@@ -11,6 +11,10 @@ const http = require("http");
 const { pipeline,Readable } = require("stream");
 const { promisify } = require("util");
 const streamPipeline = promisify(pipeline);
+const chokidar = require("chokidar");
+let watcher = null;
+let syncTimer = null;
+let debounceTimer = null;
 
 //const dbPath = path.join(__dirname, "main", "db", "init-db.js");
 const { initDB, getDB } = require("./main/db/init-db");
@@ -69,7 +73,7 @@ if (process.env.NODE_ENV === "development") {
 const os = require('os');
 const { execSync, exec,spawn } = require('child_process');
 const SECRET_KEY = "25fHeqIXYAfa";
-let win;
+let win = null;
 let tray;
 const VHDX_NAME = "Centris-Drive.vhdx";
 const VHDX_SIZE_MB = 10240; // 10 GB
@@ -91,6 +95,15 @@ let syncData = {
   apiUrl: null,
 };
 
+
+
+
+const DRIVE_ROOT = 'F:\\Centris-Drive';
+
+if (!fs.existsSync(DRIVE_ROOT)) {
+  console.error("❌ Path does NOT exist:", DRIVE_ROOT);
+}
+
 const isDev = !app.isPackaged;
 
 const preloadPath = isDev
@@ -102,9 +115,15 @@ const iconPath = isDev
     ? path.join(__dirname, "assets/images/favicon.ico")
     : path.join(process.resourcesPath, "app.asar" ,"assets/images/favicon.ico");
 
+// function sendLogToRenderer(message) {
+//   win = BrowserWindow.getAllWindows()[0];
+//   if (win && win.webContents) {
+//     win.webContents.send('main-log', message);
+//   }
+// }
+
 function sendLogToRenderer(message) {
-  const win = BrowserWindow.getAllWindows()[0];
-  if (win && win.webContents) {
+  if (win && !win.isDestroyed() && win.webContents) {
     win.webContents.send('main-log', message);
   }
 }
@@ -121,25 +140,8 @@ console.log = (...args) => {
 };
 //
 const createWindow = async () => {
-    // if (win) {
-    //     // 👇 If already exists, just show instead of recreating
-    //     win.show();
-    //     return;
-    // }
-    // win = new BrowserWindow({
-    //     width: 800,
-    //     height: 600,
-    //     webPreferences: {
-    //         preload: path.join(__dirname, 'preload.js'),
-    //         contextIsolation: true,
-    //         enableRemoteModule: false,
-    //         nodeIntegration: false // ❗ keep false for security
-    //     },
-    //     icon: path.join(__dirname, 'assets/images/favicon.ico')
-    // });
-
     
-    const win = new BrowserWindow({
+    win = new BrowserWindow({
         width: 800,
         height: 600,
         webPreferences: {
@@ -172,8 +174,8 @@ const createWindow = async () => {
         }
     });
 
-    //win.webContents.on('did-finish-load', handleSessionCheck);
-   // win.webContents.on('did-navigate', handleSessionCheck);
+    win.webContents.on('did-finish-load', handleSessionCheck);
+    //win.webContents.on('did-navigate', handleSessionCheck);
 
     // 🧩 Handle navigation from renderer
     // ipcMain.on('navigate', (event, page) => {
@@ -234,20 +236,48 @@ const createWindow = async () => {
   //     }
   // }
 
+    // async function handleSessionCheck() {
+    //     if (!isSessionActive() && !redirectingToLogin) {
+    //         redirectingToLogin = true; // prevent multiple triggers
+    //         console.log("⚠️ Session expired — redirecting to login page...");
+
+    //         try {
+    //             await win.loadFile(getHtmlPath('index.html'));
+    //         } catch (err) {
+    //             console.error("Error loading login page:", err);
+    //         }
+
+    //         redirectingToLogin = false; // reset after done
+    //     }
+    // }
+
     async function handleSessionCheck() {
         if (!isSessionActive() && !redirectingToLogin) {
-            redirectingToLogin = true; // prevent multiple triggers
+            redirectingToLogin = true;
             console.log("⚠️ Session expired — redirecting to login page...");
 
             try {
-                await win.loadFile(getHtmlPath('index.html'));
+            await win.loadFile(getHtmlPath('index.html'));
+
+            // ✅ wait for renderer to be ready
+            win.webContents.once("did-finish-load", () => {
+                console.log("🧪 fs-changed after redirect");
+
+                setTimeout(() => {
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send("fs-changed");
+                }
+                }, 1000);
+            });
+
             } catch (err) {
-                console.error("Error loading login page:", err);
+            console.error("Error loading login page:", err);
             }
 
-            redirectingToLogin = false; // reset after done
+            redirectingToLogin = false;
         }
     }
+
 
     function getHtmlPath(file) {
         return isDev
@@ -279,6 +309,195 @@ function createTray() {
   ]);
   tray.setToolTip('Centris Drive');
   tray.setContextMenu(contextMenu);
+}
+
+async function startDriveWatcher1(syncData) {
+  if (watcher) await watcher.close();
+
+  const drive = cleanSegment(getMappedDriveLetter()); // "Z"
+  const baseFolder = cleanSegment(syncData.config_data.centris_drive); // "Centris-Drive"
+
+  const DRIVE_ROOT = path.resolve(`${drive}:\\${baseFolder}`);
+
+  console.log("👀 Watching:", DRIVE_ROOT);
+
+  watcher = chokidar.watch(DRIVE_ROOT, {
+    persistent: true,
+    ignoreInitial: true,
+    depth: 99,
+
+    usePolling: true,
+    interval: 1000,
+    binaryInterval: 2000,
+
+    awaitWriteFinish: {
+      stabilityThreshold: 2000,
+      pollInterval: 100
+    }
+  });
+
+
+const notifyRenderer = () => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+
+  debounceTimer = setTimeout(() => {
+    if (win && !win.isDestroyed()) {
+      console.log("📤 Sending fs-changed to renderer");
+      win.webContents.send("fs-changed");
+    } else {
+      console.warn("⚠️ win not available");
+    }
+  }, 3000);
+};
+
+  watcher
+    .on("add", notifyRenderer)
+    .on("change", notifyRenderer)
+    .on("unlink", notifyRenderer)
+    .on("addDir", notifyRenderer)
+    .on("unlinkDir", notifyRenderer)
+    .on("ready", () => console.log("✅ Watcher ready"))
+    .on("error", err => console.error("❌ Watcher error:", err));
+}
+
+async function startDriveWatcher2(syncData) {
+  try {
+    if (!syncData?.config_data?.centris_drive) {
+      console.warn("⚠️ Invalid syncData");
+      return;
+    }
+
+    if (watcher) {
+      await watcher.close();
+      watcher = null;
+    }
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter()); // "Z"
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    const DRIVE_ROOT = path.resolve(`${drive}:\\${baseFolder}`);
+
+    console.log("👀 Watching:", DRIVE_ROOT);
+
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 99,
+
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 2000,
+
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    const notifyRenderer = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+
+      debounceTimer = setTimeout(() => {
+        if (win && !win.isDestroyed()) {
+          console.log("📤 Sending fs-changed");
+          win.webContents.send("fs-changed");
+        } else {
+          console.warn("⚠️ win not available");
+        }
+      }, 3000);
+    };
+
+    watcher
+      .on("add", notifyRenderer)
+      .on("change", notifyRenderer)
+      .on("unlink", notifyRenderer)
+      .on("addDir", notifyRenderer)
+      .on("unlinkDir", notifyRenderer)
+      .on("ready", () => console.log("✅ Watcher ready"))
+      .on("error", err => console.error("❌ Watcher error:", err));
+
+  } catch (err) {
+    console.error("❌ startDriveWatcher failed:", err);
+  }
+}
+
+let watcherRunning = false;
+
+async function startDriveWatcher(syncData) {
+  try {
+    if (!syncData?.config_data?.centris_drive) {
+      console.warn("⚠️ Invalid syncData");
+      return;
+    }
+
+    if (watcherRunning) {
+      console.log("🟡 Drive watcher already running");
+      return;
+    }
+
+    if (watcher) {
+      await watcher.close();
+      watcher = null;
+    }
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter()); // "Z"
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    const DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+
+    console.log("👀 Watching (polling):", DRIVE_ROOT);
+
+    watcherRunning = true;
+
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 10,
+
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 2000,
+
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    const notifyRenderer = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+
+      debounceTimer = setTimeout(() => {
+        if (win && !win.isDestroyed()) {
+          console.log("📤 fs-changed");
+          win.webContents.send("fs-changed");
+        }
+      }, 3000);
+    };
+
+    watcher
+      .on("add", notifyRenderer)
+      .on("change", notifyRenderer)
+      .on("unlink", notifyRenderer)
+      .on("addDir", notifyRenderer)
+      .on("unlinkDir", notifyRenderer)
+      .on("ready", () => console.log("✅ Watcher ready"))
+      .on("error", err => console.error("❌ Watcher error:", err));
+
+  } catch (err) {
+    console.error("❌ startDriveWatcher failed:", err);
+    watcherRunning = false;
+  }
 }
 
 
@@ -1357,11 +1576,19 @@ app.whenReady().then(() => {
     //     autoSync({ customer_id, domain_id , apiUrl ,syncData }).catch(console.error);
     // }, 5 * 60 * 1000); // 5 min
 
-	app.on('activate', () => {
-		if (BrowserWindow.getAllWindows().length === 0) {
-			createWindow();
-		}
-	});
+	// app.on('activate', () => {
+	// 	if (BrowserWindow.getAllWindows().length === 0) {
+	// 		createWindow();
+	// 	}
+	// });
+
+    app.on('activate', () => {
+        if (!win || win.isDestroyed()) {
+            createWindow();
+        } else {
+            win.show(); // restore from tray
+        }
+    });
 
      //createTray();
 
@@ -2367,7 +2594,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // SAVE TRACKER
     //saveTracker(currentSnapshot);
 
-    const win = BrowserWindow.getFocusedWindow();
+    //win = BrowserWindow.getFocusedWindow();
     if (win) win.webContents.send("sync-status", "Auto sync complete.");
 
     return { success: true, message: "Sync completed successfully" };
@@ -2377,6 +2604,356 @@ ipcMain.handle("auto-sync", async (event, args) => {
     return { success: false, message: err.message };
   }
 });
+
+// function makeRelativePath(fullPath, rootPath) {
+//     return fullPath
+//         .replace(rootPath, "")
+//         .replace(/\\/g, "/")
+//         .replace(/^\/+/, "");
+// }
+
+function makeRelativePath(fullPath, rootPath) {
+    const full = path.resolve(fullPath).replace(/\\/g, "/");
+    const root = path.resolve(rootPath).replace(/\\/g, "/");
+
+    if (!full.startsWith(root + "/")) {
+        throw new Error(`Invalid path outside root: ${full}`);
+    }
+
+    return full.slice(root.length + 1);
+}
+
+ipcMain.handle("auto-sync-failed", async (event, args) => {
+    const { customer_id, domain_id, apiUrl, syncData } = args;
+
+    const user_id = syncData.user_data.id;
+    const centrisFolder = syncData.config_data.centris_drive;
+    const deleteFrom = "Centris Drive";
+
+    const db = getDB();
+
+    try {
+        // --------------------------------------------------
+        // BASE PATH (NO DUPLICATION)
+        // --------------------------------------------------
+        const driveLetter = getMappedDriveLetter(); // e.g. F:
+        const mappedDrivePath = path
+            .resolve(`${driveLetter}\\${centrisFolder}`)
+            .replace(/\\/g, "/");
+
+        // --------------------------------------------------
+        // TEMP SNAPSHOT TABLE
+        // --------------------------------------------------
+        db.exec(`
+            DROP TABLE IF EXISTS temp_snapshot;
+            CREATE TEMP TABLE temp_snapshot (
+                path TEXT PRIMARY KEY,
+                type TEXT,
+                size INTEGER,
+                mtime INTEGER,
+                hash TEXT
+            );
+        `);
+
+        const insertStmt = db.prepare(`
+            INSERT OR REPLACE INTO temp_snapshot
+            (path, type, size, mtime, hash)
+            VALUES (?, ?, ?, ?, ?)
+        `);
+
+        const insertBatch = db.transaction(rows => {
+            for (const r of rows) {
+                insertStmt.run(
+                    r.path,
+                    r.type,
+                    r.size,
+                    r.mtime,
+                    r.hash
+                );
+            }
+        });
+
+        // --------------------------------------------------
+        // DIRECTORY SCAN (STREAMING)
+        // --------------------------------------------------
+        async function* scanDirectory(start) {
+            const stack = [start];
+
+            while (stack.length) {
+                const dir = stack.pop();
+                let entries;
+
+                try {
+                    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+                } catch {
+                    continue;
+                }
+
+                for (const e of entries) {
+                    const full = path.join(dir, e.name);
+
+                    if (e.isDirectory()) {
+                        yield { full, type: "folder" };
+                        stack.push(full);
+                    } else if (e.isFile()) {
+                        const stat = await fs.promises.stat(full);
+                        yield {
+                            full,
+                            type: "file",
+                            size: stat.size,
+                            mtime: stat.mtimeMs
+                        };
+                    }
+                }
+            }
+        }
+
+        // --------------------------------------------------
+        // BUILD SNAPSHOT (BATCHED)
+        // --------------------------------------------------
+        const BATCH_SIZE = 1000;
+        let buffer = [];
+
+        for await (const item of scanDirectory(mappedDrivePath)) {
+            const relPath = makeRelativePath(item.full, mappedDrivePath);
+
+            let hash = null;
+
+            if (item.type === "file") {
+                const prev = db.prepare(`
+                    SELECT mtime, hash FROM tracker WHERE path = ?
+                `).get(relPath);
+
+                if (!prev || prev.mtime !== item.mtime) {
+                    hash = await hashFile(item.full);
+                } else {
+                    hash = prev.hash;
+                }
+            }
+
+            buffer.push({
+                path: relPath,
+                type: item.type,
+                size: item.size || 0,
+                mtime: item.mtime || 0,
+                hash
+            });
+
+            if (buffer.length >= BATCH_SIZE) {
+                insertBatch(buffer);
+                buffer = [];
+            }
+        }
+
+        if (buffer.length) insertBatch(buffer);
+
+        // --------------------------------------------------
+        // DIFF (SQL BASED)
+        // --------------------------------------------------
+        const newItems = db.prepare(`
+            SELECT t.*
+            FROM temp_snapshot t
+            LEFT JOIN tracker tr ON t.path = tr.path
+            WHERE tr.path IS NULL
+        `).all();
+
+        const changedItems = db.prepare(`
+            SELECT t.*
+            FROM temp_snapshot t
+            JOIN tracker tr ON t.path = tr.path
+            WHERE tr.synced = 1
+              AND (
+                    t.hash  != tr.hash OR
+                    t.mtime != tr.mtime OR
+                    t.size  != tr.size
+              )
+        `).all();
+
+        const deletedItems = db.prepare(`
+            SELECT tr.path
+            FROM tracker tr
+            LEFT JOIN temp_snapshot t ON tr.path = t.path
+            WHERE tr.synced = 1
+              AND t.path IS NULL
+        `).all();
+
+        await deleteLocalFilesLogic(event,args);
+       
+        await downloadPendingFilesLogic(event,args);
+
+        // --------------------------------------------------
+        // NO CHANGES
+        // --------------------------------------------------
+        if (newItems.length === 0 &&
+            changedItems.length === 0 &&
+            deletedItems.length === 0) {
+
+            return {
+                success: true,
+                message: "No changes found to upload."
+            };
+        }
+
+        // --------------------------------------------------
+        // UPLOAD NEW + CHANGED
+        // --------------------------------------------------
+        const uploadItems = [...newItems, ...changedItems];
+
+        if (uploadItems.length) {
+            event.sender.send("upload-progress-start", {
+                total: uploadItems.length
+            });
+
+            const chunks = chunkArray(uploadItems, 50);
+            let done = 0;
+
+            for (const chunk of chunks) {
+                const payload = await Promise.all(
+                    chunk.map(async item => {
+                        const fullPath = path
+                            .join(mappedDrivePath, item.path)
+                            .replace(/\\/g, "/");
+
+                        return {
+                            path: item.path,
+                            is_dir: item.type === "folder",
+                            content: item.type === "file"
+                                ? await fs.promises.readFile(fullPath, "base64")
+                                : null,
+                            size: item.size,
+                            mtime: item.mtime,
+                            hash: item.hash
+                        };
+                    })
+                );
+
+                const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        customer_id,
+                        domain_id,
+                        user_id,
+                        changed_items: payload
+                    })
+                });
+
+                if (!res.ok) {
+                    throw new Error("Upload failed");
+                }
+
+                for (const i of payload) {
+                    saveTrackerItem({
+                        path: i.path,
+                        type: i.is_dir ? "folder" : "file",
+                        size: i.size,
+                        mtime: i.mtime,
+                        hash: i.hash,
+                        synced: 1
+                    });
+                }
+
+                done += chunk.length;
+                event.sender.send("upload-progress", {
+                    done,
+                    total: uploadItems.length
+                });
+            }
+
+            event.sender.send("upload-progress-complete");
+        }
+
+        if (deletedItems.length) {
+            event.sender.send("delete-progress-start", {
+                total: deletedItems.length
+            });
+
+            const chunks = chunkArray(deletedItems, 50);
+            let done = 0;
+
+            for (const chunk of chunks) {
+
+                // For server: keep as objects
+                const payload = chunk;  // [{ path: "..."}]
+
+                const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        customer_id,
+                        domain_id,
+                        user_id,
+                        deleted_items: payload, // send objects for API
+                        root_path: mappedDrivePath
+                    })
+                });
+
+                const result = await res.json();
+                if (!res.ok || result.success !== true) {
+                    throw new Error(result.message || "Server delete failed");
+                }
+
+                // For removing from tracker: extract strings
+                for (const p of payload.map(x => x.path)) {
+                    await removeFromTracker(p);
+                }
+
+                done += payload.length;
+                event.sender.send("delete-progress", {
+                    done,
+                    total: deletedItems.length
+                });
+            }
+
+
+            // for (const chunk of chunks) {
+
+            //     // ✅ chunk is already an array of paths (strings)
+            //     const paths = chunk;
+
+            //     const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+            //         method: "POST",
+            //         headers: { "Content-Type": "application/json" },
+            //         body: JSON.stringify({
+            //             customer_id,
+            //             domain_id,
+            //             user_id,
+            //             deleted_items: paths,
+            //             root_path: mappedDrivePath
+            //         })
+            //     });
+
+            //     const result = await res.json();
+            //     if (!res.ok || result.success !== true) {
+            //         throw new Error(result.message || "Server delete failed");
+            //     }
+
+            //     // ✅ Remove from tracker using SAME path string
+            //     for (const p of paths) {
+            //         await removeFromTracker(p);
+            //     }
+
+            //     done += paths.length;
+            //     event.sender.send("delete-progress", {
+            //         done,
+            //         total: deletedItems.length
+            //     });
+            // }
+
+            event.sender.send("delete-progress-complete");
+        }
+
+
+        event.sender.send("sync-status", "Auto sync complete");
+        return { success: true };
+
+    } catch (err) {
+        console.error("AUTO-SYNC ERROR:", err);
+        return { success: false, message: err.message };
+    }
+});
+
+
 
 ipcMain.handle("copy-file", async (e, src, dest) => {
     const fs = require("fs/promises");
@@ -3032,6 +3609,11 @@ ipcMain.on("user:logout", () => {
 ipcMain.handle("open-external-file", async (_, filePath) => {
     await shell.openPath(filePath);
 });
+
+ipcMain.on("start-drive-watcher", (event, syncData) => {
+    startDriveWatcher(syncData);
+});
+
 
 function isHiddenWindows(filePath) {
     try {

@@ -28,6 +28,8 @@ if (progressContainer) {
 
 let isSyncing = false;
 let autoSyncInterval = null;
+let isSyncRunning = false;
+
 
 
 window.electronAPI.onSyncProgress(({ done, total, file }) => {
@@ -216,6 +218,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
     window.apiUrl = syncData.apiUrl;
+
+    window.electronAPI.onFSChange(() => {
+        if (isSyncRunning) return;
+
+        isSyncRunning = true;
+
+        triggerSync(syncData, false)
+            .finally(() => {
+            isSyncRunning = false;
+            });
+    });
+
+    window.electronAPI.startDriveWatcher(syncData);
     
 
     var apiUrl = window.apiUrl;
@@ -989,10 +1004,10 @@ async function triggerSync(syncData,manual = false) {
         if (manual) showValidation("Sync already in progress.", "warning");
         return;
     }
- 
+    
     isSyncing = true;
     console.log(manual ? "🔄 Manual sync started..." : "🔄 Auto sync started...");
-    console.log(apiUrl);
+    console.log(syncData);
     try {
         
         if (!customer_data || !domain_data || !user_data) {
@@ -1468,7 +1483,7 @@ function openPreview(filePath,type) {
         pdfContainer.innerHTML = "";          // clear previous PDF pages
         pdfContainer.classList.remove("hidden");
         openPDF(filePath);
-    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx"].includes(ext)) {
+    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx", "csv", "zip","rar","gz","cad"].includes(ext)) {
         // 🔹 Office → placeholder
         officePreview.classList.remove("hidden");
         pdfContainer.classList.add("hidden");

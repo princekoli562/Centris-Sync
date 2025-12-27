@@ -65,7 +65,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadComplete: (cb) => ipcRenderer.on("download-complete", (event, data) => cb(data)),   
     onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)   ,
     openExternalFile: (path) => ipcRenderer.invoke("open-external-file", path),
-    deleteItem: (data) => ipcRenderer.invoke("delete-item", data)
+    deleteItem: (data) => ipcRenderer.invoke("delete-item", data),
+    // startDriveWatcher: (syncData) => ipcRenderer.send("start-drive-watcher", syncData),
+    // onFSChange: (callback) => ipcRenderer.on("fs-changed", callback),
+    onFSChange: (callback) => {
+        ipcRenderer.removeAllListeners("fs-changed");
+        ipcRenderer.on("fs-changed", callback);
+    },
+
+    startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)}
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

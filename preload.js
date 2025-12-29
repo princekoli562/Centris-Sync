@@ -73,7 +73,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on("fs-changed", callback);
     },
 
-    startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)}
+    startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
+    getAllPaths: (rootDir) => ipcRenderer.invoke("get-all-paths", rootDir),
+    searchPaths: (query) => ipcRenderer.invoke("search-paths", query)
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

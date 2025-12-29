@@ -29,6 +29,7 @@ if (progressContainer) {
 let isSyncing = false;
 let autoSyncInterval = null;
 let isSyncRunning = false;
+let searchTimer = null;
 
 
 
@@ -575,7 +576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // ===============================
             for (const folderPath of folderPaths) {
 
-                showValidation(`Scanning folder: ${folderPath}`, "info", 0);
+                showValidation(`Scanning folder: ${folderPath}`, "info", 2000);
 
                 const scanResult = await window.electronAPI.scanFolder(folderPath);
                 const fileList = scanResult.files || [];
@@ -640,53 +641,53 @@ document.addEventListener('DOMContentLoaded', async () => {
                         mtime: stats.mtimeMs
                     });
                 }
-
+               
                 // ===============================
                 // 4. CHUNK UPLOAD
                 // ===============================
-                const chunkSize = 50;
-                let uploaded = 0;
+                // const chunkSize = 50;
+                // let uploaded = 0;
 
-                for (let i = 0; i < changedItems.length; i += chunkSize) {
-                    const chunk = changedItems.slice(i, i + chunkSize);
+                // for (let i = 0; i < changedItems.length; i += chunkSize) {
+                //     const chunk = changedItems.slice(i, i + chunkSize);
 
-                    await fetch(`${apiUrl}/api/sync-folders-and-files`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            customer_id: customer_data.id,
-                            domain_id: domain_data.id,
-                            user_id: user_data.id,
+                //     await fetch(`${apiUrl}/api/sync-folders-and-files`, {
+                //         method: "POST",
+                //         headers: { "Content-Type": "application/json" },
+                //         body: JSON.stringify({
+                //             customer_id: customer_data.id,
+                //             domain_id: domain_data.id,
+                //             user_id: user_data.id,
 
-                            root_path: mappedDrive,
-                            changed_items: chunk
-                        })
-                    });
+                //             root_path: mappedDrive,
+                //             changed_items: chunk
+                //         })
+                //     });
 
-                    uploaded += chunk.length;
+                //     uploaded += chunk.length;
 
-                    showValidation(
-                        `Uploaded ${uploaded}/${changedItems.length} items from ${folderPath}`,
-                        "info", 0
-                    );
+                //     showValidation(
+                //         `Uploaded ${uploaded}/${changedItems.length} items from ${folderPath}`,
+                //         "info", 0
+                //     );
 
-                    await wait(200);
-                }
+                //     await wait(200);
+                // }
 
-                showValidation(`Upload complete for: ${folderPath}`, "success");
+                // showValidation(`Upload complete for: ${folderPath}`, "success");
             }
 
             // ===============================
             // 7. REFRESH VIEW + TRACKER UPDATE
             // ===============================
-            loadFiles(mappedDrive, true);
-            await wait(1000);
+            // loadFiles(mappedDrive, true);
+            // await wait(1000);
 
-            const oldSnapshot = await window.electronAPI.loadTracker(false);
-            const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
-            await window.electronAPI.saveTracker(newSnapshot.snapshot);
+            // const oldSnapshot = await window.electronAPI.loadTracker(false);
+            // const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
+            // await window.electronAPI.saveTracker(newSnapshot.snapshot);
 
-            showValidation("All selected folders uploaded & synced successfully!", "success");
+            // showValidation("All selected folders uploaded & synced successfully!", "success");
 
         } catch (err) {
             console.error(err);
@@ -746,35 +747,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             showValidation("All files copied to Centris Local Drive.", "success", 2000);
+            
 
             // 4️⃣ CHUNK FILE ITEMS (50 each)
-            const chunkSize = 50;
-            const chunks = [];
-            for (let i = 0; i < fileItems.length; i += chunkSize) {
-                chunks.push(fileItems.slice(i, i + chunkSize));
-            }
+            // const chunkSize = 50;
+            // const chunks = [];
+            // for (let i = 0; i < fileItems.length; i += chunkSize) {
+            //     chunks.push(fileItems.slice(i, i + chunkSize));
+            // }
 
-            // 5️⃣ SEND CHUNKS TO SERVER
-            let uploadedCount = 0;
+            // // 5️⃣ SEND CHUNKS TO SERVER
+            // let uploadedCount = 0;
 
-            for (const chunk of chunks) {
-                showValidation(`Syncing ${uploadedCount}/${fileItems.length} files...`, "info", 0);
+            // for (const chunk of chunks) {
+            //     showValidation(`Syncing ${uploadedCount}/${fileItems.length} files...`, "info", 0);
 
-                await fetch(`${apiUrl}/api/sync-files`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        customer_id: customer_data.id,
-                        domain_id: domain_data.id,
-                        user_id: user_data.id,
-                        files: chunk  // base64 included
-                    })
-                });
+            //     await fetch(`${apiUrl}/api/sync-files`, {
+            //         method: "POST",
+            //         headers: { "Content-Type": "application/json" },
+            //         body: JSON.stringify({
+            //             customer_id: customer_data.id,
+            //             domain_id: domain_data.id,
+            //             user_id: user_data.id,
+            //             files: chunk  // base64 included
+            //         })
+            //     });
 
-                uploadedCount += chunk.length;
+            //     uploadedCount += chunk.length;
 
-                await wait(200);
-            }
+            //     await wait(200);
+            // }
 
             // 6️⃣ REFRESH FILE VIEW
             loadFiles(mappedDrive, true);
@@ -979,15 +981,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         previewToggleBtn.classList.toggle("active", isActive);
     });
 
+    document.getElementById("searchInput").addEventListener("input", e => {
+        clearTimeout(searchTimer);
 
-    
-    
+        const query = e.target.value.trim();
+
+        if (!query) {
+            hideResults();
+            return;
+        }
+
+        searchTimer = setTimeout(async () => {
+            const results = await window.electronAPI.searchPaths(query);
+            console.log("Results:", results);
+            renderResults(results, query.toLowerCase());
+        }, 500);
+    });
 
 });
 
 window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
+
+function performFuzzySearch(query) {
+    const q = query.toLowerCase();
+
+    let results = normalizedPaths
+        .filter(path => fuzzyMatch(path.toLowerCase(), q))
+        .sort((a, b) => a.split("/").length - b.split("/").length); // parent → child
+
+    renderResults(results, q);
+}
+
+function fuzzyMatch(text, pattern) {
+    let t = 0;
+    for (let p = 0; p < pattern.length; p++) {
+        t = text.indexOf(pattern[p], t);
+        if (t === -1) return false;
+        t++;
+    }
+    return true;
+}
+
+
+function highlightText(text, query) {
+    const regex = new RegExp(`(${query})`, "ig");
+    return text.replace(regex, `<span class="highlight">$1</span>`);
+}
+
+function hideResults() {
+    document.getElementById("searchResults").style.display = "none";
+}
 
 function viewFile(targetPath){
     //const filePath = $(this).data("path");
@@ -1066,7 +1111,7 @@ function hideMiddleSection(){
 }
 
 
-async function loadFiles(dirPath, reset = false) {
+async function loadFilesYes(dirPath, reset = false) {
     if (isLoading) return;
     isLoading = true;
 
@@ -1315,6 +1360,224 @@ async function loadFiles(dirPath, reset = false) {
     }
 }
 
+async function loadFiles(dirPath, reset = false, filterPath = null) {
+    if (isLoading) return;
+    isLoading = true;
+
+    const targetDir = reset ? dirPath : currentDir;
+
+    if (!targetDir || targetDir.trim() === "") {
+        console.error("INVALID DIRECTORY PATH", targetDir);
+        isLoading = false;
+        return;
+    }
+
+    /* ---------------------------
+       RESET / HISTORY HANDLING
+    ----------------------------*/
+    if (reset) {
+
+        // 🔥 SET SEARCH FILTER (ONLY FROM SEARCH)
+        activeSearchFilter = filterPath || null;
+
+        if (currentIndex === -1) {
+            history = [targetDir];
+            currentIndex = 0;
+        } else if (history[currentIndex] !== targetDir) {
+
+            const existsIndex = history.indexOf(targetDir);
+            if (existsIndex === -1) {
+                history = history.slice(0, currentIndex + 1);
+                history.push(targetDir);
+                currentIndex++;
+            } else {
+                currentIndex = existsIndex;
+            }
+        }
+
+        updateNavButtons();
+
+        loadedItems = 0;
+        currentDir = targetDir;
+        $("#file-list").empty();
+        $("#breadcrumb").html(buildBreadcrumb(currentDir));
+    }
+
+    /* ---------------------------
+       LOAD USER CONTEXT
+    ----------------------------*/
+    const local_stored = localStorage.getItem("customer_data");
+
+    if (local_stored) {
+        customer_data = JSON.parse(localStorage.getItem("customer_data"));
+        domain_data = JSON.parse(localStorage.getItem("domain_data"));
+        user_data = JSON.parse(localStorage.getItem("user_data"));
+    } else {
+        customer_data = syncData.customer_data;
+        domain_data = syncData.domain_data;
+        user_data = syncData.user_data;
+    }
+
+    showLoader();
+    await tick();
+
+    try {
+        const result = await window.electronAPI.listRecurFiles(
+            targetDir,
+            loadedItems,
+            BATCH_SIZE
+        );
+
+        if (result.error) {
+            $("#file-list").html(`<p style="color:red">${result.error}</p>`);
+            return;
+        }
+
+        totalItems = result.total;
+        currentDir = result.currentPath;
+
+        const res_icon = await fetch(apiUrl + "/api/folder-files-icons", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                customer_id: customer_data.id,
+                domain_id: domain_data.id,
+                user_id: user_data.id
+            })
+        });
+
+        const iconMap = await res_icon.json();
+
+        /* ---------------------------
+           RENDER ITEMS
+        ----------------------------*/
+        result.items.forEach(item => {
+
+            /* 🔍 SEARCH FILTER LOGIC */
+
+             if (activeSearchFilter) {
+                const filterNorm = activeSearchFilter.replace(/\\/g, "/");
+                const itemNorm = item.path.replace(/\\/g, "/");
+                const filterName = filterNorm.split("/").pop();
+
+                // Folder search → show folder + children
+                if (
+                    itemNorm === filterNorm ||
+                    itemNorm.startsWith(filterNorm + "/")
+                ) {
+                    // allowed
+                }
+                // File search → show only that file
+                else if (item.name === filterName) {
+                    // allowed
+                }
+                else {
+                    return;
+                }
+            }
+
+            let iconHTML = "";
+            let type = item.isDirectory ? "folder" : "file";
+
+            if (item.isDirectory) {
+                iconHTML = iconMap.data.folder.value;
+            } else {
+                const ext = item.name.split(".").pop().toLowerCase();
+                const iconData = iconMap.data[ext] || iconMap.data.default;
+
+                iconHTML = iconData.type === "path"
+                    ? `<img src="${iconData.value}" class="file-icon-img">`
+                    : iconData.value;
+            }
+
+            const menuHTML = type === "folder"
+                ? `
+                    <div class="menu-item" data-action="open">📂 Open Folder</div>
+                    <div class="menu-item" data-action="delete">🗑 Delete</div>
+                    <div class="menu-item" data-action="move">📁 Move</div>
+                    <div class="menu-item" data-action="rename">✏️ Rename</div>
+                `
+                : `
+                    <div class="menu-item" data-action="view">👁️ View</div>
+                    <div class="menu-item" data-action="delete">🗑 Delete</div>
+                    <div class="menu-item" data-action="move">📁 Move</div>
+                    <div class="menu-item" data-action="rename">✏️ Rename</div>
+                `;
+
+
+            const isListView = $("#file-list").hasClass("list-view");
+
+            const div = $(`
+            <div class="file-item">
+                ${
+                isListView
+                    ? `<div class="check-icon"></div>
+                    <div class="file-icon">${iconHTML}</div>
+                    <div class="file-name" title="${item.name}">${item.name}</div>
+                    <div class="modified-by">${item.modified_by || "-"}</div>
+                    <div class="modified-date">${item.modified_date || "-"}</div>
+                    <div class="file-size">${item.size || "-"}</div>
+                    <div class="share">${item.shared ? "🔗" : ""}</div>
+                    <div class="file-menu-btn">⋮</div>
+                    <div class="file-menu hidden" data-path="${item.path}" data-type="${type}">
+                        ${menuHTML}
+                    </div>
+                    `
+                    : `
+                    
+                    <div class="file-header">  
+                        <div class="check-icon"></div>                      
+                        <div class="file-icon">${iconHTML}</div>
+                        <div class="file-name" title="${item.name}">${item.name}</div>
+                    </div>                    
+                    <div class="file-menu-btn">⋮</div>
+                    <div class="file-menu hidden" data-path="${item.path}" data-type="${type}">
+                        ${menuHTML}
+                    </div>
+                    `
+                }
+            </div>
+            `);
+
+            /* ---------------------------
+               EVENTS
+            ----------------------------*/
+            div.find(".file-name, .file-icon").on("dblclick", () => {
+                activeSearchFilter = null; // 🔥 exit search mode
+                if (item.isDirectory) loadFiles(item.path, true);
+            });
+
+            div.find(".menu-item").on("click", e => {
+                const action = $(e.currentTarget).data("action");
+                const path = item.path;
+
+                if (action === "open") loadFiles(path, true);
+                if (action === "view") openPreview(path, type);
+                if (action === "delete") deleteFile(path, type);
+                if (action === "move") moveFile(path, type);
+                if (action === "rename") renameFile(path, type);
+            });
+
+            $("#file-list").append(div);
+        });
+
+        loadedItems += result.items.length;
+        hideMiddleSection();
+
+    } catch (err) {
+        console.error(err);
+        $("#file-list").html(`<p style="color:red">${err.message}</p>`);
+    } finally {
+        $("#file-list")
+            .removeClass("grid-view list-view")
+            .addClass(currentView === "grid" ? "grid-view" : "list-view");
+
+        hideLoader();
+        isLoading = false;
+    }
+}
+
+
 function getFileIcon(fileName, isDirectory) {
     if (isDirectory) return "📁";
 
@@ -1346,16 +1609,7 @@ function getFileIcon(fileName, isDirectory) {
     }
 }
 
-
-// function buildBreadcrumb(fullPath) {
-//     const parts = fullPath.split(/[\\/]+/).filter(Boolean);
-//     return parts.map((p, i) => {
-//         const subPath = parts.slice(0, i + 1).join("\\") + "\\";
-//         return `<span class="crumb" data-path="${subPath}">${p}</span>`;
-//     }).join(" › ");
-// }
-
-function buildBreadcrumb(fullPath) {
+function buildBreadcrumb1(fullPath) {
     const parts = fullPath.split(/[\\/]+/).filter(Boolean);
 
     return parts.map((p, i) => {
@@ -1365,6 +1619,24 @@ function buildBreadcrumb(fullPath) {
             : parts.slice(0, i + 1).join("\\") + "\\";
 
         return `<span class="crumb" data-path="${subPath}">${p}</span>`;
+    }).join(" › ");
+}
+
+function buildBreadcrumb(fullPath) {
+    if (!fullPath) return "";
+
+    // Normalize path
+    const normalized = fullPath.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter(Boolean);
+
+    return parts.map((p, i) => {
+        const subPath = parts.slice(0, i + 1).join("/");
+
+        return `
+            <span class="crumb" data-path="${subPath}">
+                ${p}
+            </span>
+        `;
     }).join(" › ");
 }
 
@@ -1429,13 +1701,13 @@ function updateNavButtons() {
     forwardBtn.disabled = currentIndex >= history.length - 1;
 }
 
-async function loadDriveItems(path, fromHistory = false) {
+async function loadDriveItems(path, fromHistory = false, filterPath = null) {
     if (!path) return;
 
     currentDir = path;
 
     // LOAD DIRECTORY
-    await loadFiles(path, true);
+    await loadFiles(path, true,filterPath);
 
     if (!fromHistory) {
 
@@ -1600,9 +1872,6 @@ async function deleteSelectedItems() {
     }
 }
 
-
-
-
 function renderFileList1(container, files) {
     container.innerHTML = "";
     if (files.error) {
@@ -1656,3 +1925,76 @@ async function setupDrive() {
     console.log("✅ Drive Mounted At:", drivePath);
     alert("Drive mounted at: " + drivePath);
 }
+
+async function renderResults(results, query) {
+    const config = await  window.electronAPI.getAppConfig();
+    console.log(config);
+    syncData = await window.electronAPI.getSyncData();
+    //startAutoSync(syncData);
+    //await window.electronAPI.getMappedDrive();//
+    let currentDir = config.drivePath;
+
+    const container = document.getElementById("searchResults");
+    container.innerHTML = "";
+
+    if (!results.length) {
+        hideResults();
+        return;
+    }
+
+   //${buildBreadcrumb(currentDirectory)}
+
+    results.forEach(fullPath => {
+        const normalized = fullPath.replace(/\\/g, "/");
+        const parts = normalized.split("/");
+        const name = parts.pop();
+        const parent = parts.join("/");
+        const depth = parts.length;
+
+        const currentDirectory  = currentDir + '/' + parent;
+        const currentnormalized = currentDir + '/' + normalized;
+
+        const isFileItem = isFile(name);
+
+        const item = document.createElement("div");
+        item.className = "search-item";
+
+        item.innerHTML = `
+            <div class="search-row">
+                <i class="fas ${isFileItem ? "fa-file" : "fa-folder"} search-icon"></i>
+                <div class="search-text">
+                    <div class="search-name">
+                        ${highlightText(name, query)}
+                    </div>
+                    <div class="search-path">                        
+                        ${currentnormalized}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // ✅ Navigate on click
+        item.addEventListener("click", () => {
+
+        const openDir = isFileItem
+        ? currentDirectory      // 👈 parent folder
+        : currentnormalized;    // 👈 folder itself
+
+        const filterPath = isFileItem
+            ? currentnormalized     // 👈 file path
+            : null;                 // 👈 show full folder
+            loadDriveItems(openDir,false,filterPath);
+            hideResults();
+        });
+
+        container.appendChild(item);
+    });
+
+    container.style.display = "block";
+}
+
+function isFile(name) {
+    return /\.[a-z0-9]+$/i.test(name);
+}
+
+

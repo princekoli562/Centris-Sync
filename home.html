@@ -35,6 +35,7 @@
 			</div>
         </div>
         <div class="content">
+            
             <div class="title-bar">
                 <div class="left-section">
                     <button class="menu-btn" title="Menu">
@@ -43,23 +44,30 @@
                     <h2 class="title">Files</h2>
                 </div>
 
-                <div class="middle-section hidden">
-                    <button class="action-btn delete-btn" title="Delete">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                    <button class="action-btn download-btn" title="Download">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="action-btn share-btn" title="Share">
-                        <i class="fas fa-share-alt"></i>
-                    </button>
+                <!-- CENTER ZONE -->
+                <div class="center-section">
+                    <div class="search-container">
+                        <input type="text" id="searchInput" placeholder="Search files & folders..." />
+                        <div id="searchResults"></div>
+                    </div>
+
+                    <div class="middle-section hidden">
+                        <button class="action-btn delete-btn" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <button class="action-btn download-btn" title="Download">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button class="action-btn share-btn" title="Share">
+                            <i class="fas fa-share-alt"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="right-section">
                     <button class="nav-btn togg-view" id="back-btn" title="Back">
                         <i class="fas fa-arrow-left"></i>
                     </button>
-
                     <button class="nav-btn togg-view" id="forward-btn" title="Forward">
                         <i class="fas fa-arrow-right"></i>
                     </button>
@@ -74,6 +82,7 @@
                     </button>
                 </div>
             </div>
+
             <div id="file-list-header" class="hidden">
                 <div class="col check"></div>
                 <div class="col name">Name</div>

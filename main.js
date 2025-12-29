@@ -311,120 +311,7 @@ function createTray() {
   tray.setContextMenu(contextMenu);
 }
 
-async function startDriveWatcher1(syncData) {
-  if (watcher) await watcher.close();
 
-  const drive = cleanSegment(getMappedDriveLetter()); // "Z"
-  const baseFolder = cleanSegment(syncData.config_data.centris_drive); // "Centris-Drive"
-
-  const DRIVE_ROOT = path.resolve(`${drive}:\\${baseFolder}`);
-
-  console.log("👀 Watching:", DRIVE_ROOT);
-
-  watcher = chokidar.watch(DRIVE_ROOT, {
-    persistent: true,
-    ignoreInitial: true,
-    depth: 99,
-
-    usePolling: true,
-    interval: 1000,
-    binaryInterval: 2000,
-
-    awaitWriteFinish: {
-      stabilityThreshold: 2000,
-      pollInterval: 100
-    }
-  });
-
-
-const notifyRenderer = () => {
-  if (debounceTimer) clearTimeout(debounceTimer);
-
-  debounceTimer = setTimeout(() => {
-    if (win && !win.isDestroyed()) {
-      console.log("📤 Sending fs-changed to renderer");
-      win.webContents.send("fs-changed");
-    } else {
-      console.warn("⚠️ win not available");
-    }
-  }, 3000);
-};
-
-  watcher
-    .on("add", notifyRenderer)
-    .on("change", notifyRenderer)
-    .on("unlink", notifyRenderer)
-    .on("addDir", notifyRenderer)
-    .on("unlinkDir", notifyRenderer)
-    .on("ready", () => console.log("✅ Watcher ready"))
-    .on("error", err => console.error("❌ Watcher error:", err));
-}
-
-async function startDriveWatcher2(syncData) {
-  try {
-    if (!syncData?.config_data?.centris_drive) {
-      console.warn("⚠️ Invalid syncData");
-      return;
-    }
-
-    if (watcher) {
-      await watcher.close();
-      watcher = null;
-    }
-
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-
-    const drive = cleanSegment(getMappedDriveLetter()); // "Z"
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    const DRIVE_ROOT = path.resolve(`${drive}:\\${baseFolder}`);
-
-    console.log("👀 Watching:", DRIVE_ROOT);
-
-    watcher = chokidar.watch(DRIVE_ROOT, {
-      persistent: true,
-      ignoreInitial: true,
-      depth: 99,
-
-      usePolling: true,
-      interval: 1000,
-      binaryInterval: 2000,
-
-      awaitWriteFinish: {
-        stabilityThreshold: 2000,
-        pollInterval: 100
-      }
-    });
-
-    const notifyRenderer = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-
-      debounceTimer = setTimeout(() => {
-        if (win && !win.isDestroyed()) {
-          console.log("📤 Sending fs-changed");
-          win.webContents.send("fs-changed");
-        } else {
-          console.warn("⚠️ win not available");
-        }
-      }, 3000);
-    };
-
-    watcher
-      .on("add", notifyRenderer)
-      .on("change", notifyRenderer)
-      .on("unlink", notifyRenderer)
-      .on("addDir", notifyRenderer)
-      .on("unlinkDir", notifyRenderer)
-      .on("ready", () => console.log("✅ Watcher ready"))
-      .on("error", err => console.error("❌ Watcher error:", err));
-
-  } catch (err) {
-    console.error("❌ startDriveWatcher failed:", err);
-  }
-}
 
 let watcherRunning = false;
 
@@ -482,7 +369,7 @@ async function startDriveWatcher(syncData) {
           console.log("📤 fs-changed");
           win.webContents.send("fs-changed");
         }
-      }, 3000);
+      }, 6000);
     };
 
     watcher
@@ -1991,9 +1878,10 @@ async function deleteLocalFilesLogic(event, args) {
 
                 // 🔥 TRACKER + SERVER BUFFER
                 if (deletedSuccessfully) {
-                    await removeFromTracker(cleanLocation);
-                    deletedIds.push(item.id);
+                    await removeFromTracker(cleanLocation);                    
                 }
+
+                deletedIds.push(item.id);
 
                 completedFiles++;
                 event.sender.send("delete-progress", {
@@ -2273,12 +2161,38 @@ async function removeFromTracker(cleanLocation) {
     }
 }
 
+function scanDataDirectory(dir, base = dir, result = []) {
+    const items = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const item of items) {
+        const fullPath = path.join(dir, item.name);
+        const relativePath = path.relative(base, fullPath).replace(/\\/g, "/");
+
+        result.push(relativePath);
+
+        if (item.isDirectory()) {
+            scanDataDirectory(fullPath, base, result);
+        }
+    }
+
+    return result;
+}
+
 
 function ensureDirSync(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
 }
+
+ipcMain.handle("get-all-paths", async (event, rootDir) => {
+    try {
+        return scanDataDirectory(rootDir);
+    } catch (err) {
+        console.error(err);
+        return [];
+    }
+});
 
 ipcMain.handle('uploadChunkToDrive', async (event, chunk = [], mappedDrive, sourceRoot) => {
   try {
@@ -2953,6 +2867,27 @@ ipcMain.handle("auto-sync-failed", async (event, args) => {
     }
 });
 
+ipcMain.handle("search-paths", async (event, query) => {
+    try {
+        const db = getDB();
+        const q = `%${query.replace(/%/g, "\\%")}%`;
+
+        const rows = db.prepare(`
+            SELECT path
+            FROM tracker
+            WHERE path LIKE ?
+            ORDER BY
+                (LENGTH(path) - LENGTH(REPLACE(path, '/', ''))) ASC,
+                path ASC
+            LIMIT 50
+        `).all(q);
+
+        return rows.map(r => r.path);
+    } catch (err) {
+        console.error("Search error:", err);
+        return [];
+    }
+});
 
 
 ipcMain.handle("copy-file", async (e, src, dest) => {

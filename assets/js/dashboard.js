@@ -998,11 +998,101 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 500);
     });
 
+    const searchInput = document.getElementById("searchInput");
+    const searchResults = document.getElementById("searchResults");
+    const searchContainer = document.querySelector(".search-container");
+    const clearBtn = document.getElementById("clearSearchBtn");
+
+   
+
+    /* --------------------------
+    SHOW WHEN TYPING & RESULTS EXIST
+    ---------------------------*/
+    searchInput.addEventListener("input", () => {
+        if (searchResults.children.length > 0) {
+            showResults();
+        } else {
+            hideResults();
+        }
+        clearBtn.style.display = searchInput.value.trim() ? "block" : "none";
+    });
+
+    clearBtn.addEventListener("click", () => {
+        // 1️⃣ Clear input
+        searchInput.value = "";
+
+        // 2️⃣ Hide search results
+        searchResults.innerHTML = "";
+        searchResults.style.display = "none";
+
+        // 3️⃣ Hide clear button
+        clearBtn.style.display = "none";
+
+        // 4️⃣ Optional: refocus input
+        searchInput.focus();
+    });
+
+    /* --------------------------
+    SHOW WHEN INPUT FOCUSED
+    ---------------------------*/
+    searchInput.addEventListener("focus", () => {
+        if (searchResults.children.length > 0) {
+            showResults();
+        }
+    });
+
+    /* --------------------------
+    CLICK OUTSIDE → HIDE
+    ---------------------------*/
+    document.addEventListener("mousedown", (e) => {
+        if (!searchContainer.contains(e.target)) {
+            hideResults();
+        }
+    });
+
+    /* --------------------------
+    CLICK RESULT → HIDE
+    ---------------------------*/
+    searchResults.addEventListener("click", () => {
+        hideResults();
+    });
+
+    searchInput.addEventListener("input", () => {
+        if (searchInput.value.trim() === "") {
+            activeSearchFilter = null;
+            hideResults();
+            loadFiles(currentDir, true); // reload without filter
+        }
+    });
+
+
+
+    // Optional: hide when input loses focus AND mouse is not over results
+    // searchInput.addEventListener("blur", () => {
+    //     setTimeout(() => {
+    //         if (!searchResults.matches(":hover")) {
+    //             hideResults();
+    //         }
+    //     }, 500);
+    // });
+
 });
 
 window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
+
+ /* --------------------------
+HELPERS
+---------------------------*/
+function showResults() {
+    searchResults.style.display = "block";
+}
+
+function hideResults() {
+    searchResults.style.display = "none";
+    searchResults.innerHTML = "";
+}
 
 function performFuzzySearch(query) {
     const q = query.toLowerCase();
@@ -1028,10 +1118,6 @@ function fuzzyMatch(text, pattern) {
 function highlightText(text, query) {
     const regex = new RegExp(`(${query})`, "ig");
     return text.replace(regex, `<span class="highlight">$1</span>`);
-}
-
-function hideResults() {
-    document.getElementById("searchResults").style.display = "none";
 }
 
 function viewFile(targetPath){
@@ -1926,6 +2012,27 @@ async function setupDrive() {
     alert("Drive mounted at: " + drivePath);
 }
 
+function getIconHTMLForItem(item, iconMap) {
+    // 📂 Folder
+    if (item.isDirectory) {
+        const folderIcon = iconMap.data.folder;
+        return folderIcon.type === "path"
+            ? `<img src="${folderIcon.value}" class="file-icon-img" alt="folder">`
+            : folderIcon.value;
+    }
+
+    // 📄 File
+    const parts = item.name.split(".");
+    const ext = parts.length > 1 ? parts.pop().toLowerCase() : "default";
+
+    const iconData = iconMap.data[ext] || iconMap.data.default;
+
+    return iconData.type === "path"
+        ? `<img src="${iconData.value}" class="file-icon-img" alt="${ext}">`
+        : iconData.value;
+}
+
+
 async function renderResults(results, query) {
     const config = await  window.electronAPI.getAppConfig();
     console.log(config);
@@ -1944,6 +2051,17 @@ async function renderResults(results, query) {
 
    //${buildBreadcrumb(currentDirectory)}
 
+   const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            customer_id: customer_data.id,
+            domain_id: domain_data.id,
+            user_id: user_data.id
+        })
+    });
+    const iconMap = await res_icon.json();
+
     results.forEach(fullPath => {
         const normalized = fullPath.replace(/\\/g, "/");
         const parts = normalized.split("/");
@@ -1959,31 +2077,65 @@ async function renderResults(results, query) {
         const item = document.createElement("div");
         item.className = "search-item";
 
+        const itemData = {
+            name,
+            isDirectory: !isFileItem
+        };
+
+         const iconHTML = getIconHTMLForItem(itemData, iconMap);
+
         item.innerHTML = `
-            <div class="search-row">
-                <i class="fas ${isFileItem ? "fa-file" : "fa-folder"} search-icon"></i>
-                <div class="search-text">
-                    <div class="search-name">
-                        ${highlightText(name, query)}
-                    </div>
-                    <div class="search-path">                        
-                        ${currentnormalized}
-                    </div>
+        <div class="search-row">
+            <div class="search-icon">
+                ${iconHTML}
+            </div>
+            <div class="search-text">
+                <div class="search-name">
+                    ${highlightText(name, query)}
+                </div>
+                <div class="search-path" data-name="${name}">
+                    ${currentnormalized}
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
         // ✅ Navigate on click
-        item.addEventListener("click", () => {
+        // item.addEventListener("click", () => {
 
-        const openDir = isFileItem
-        ? currentDirectory      // 👈 parent folder
-        : currentnormalized;    // 👈 folder itself
+        //     const openDir = isFileItem
+        //     ? currentDirectory      // 👈 parent folder
+        //     : currentnormalized;    // 👈 folder itself
 
-        const filterPath = isFileItem
-            ? currentnormalized     // 👈 file path
-            : null;                 // 👈 show full folder
-            loadDriveItems(openDir,false,filterPath);
+        //     const filterPath = isFileItem
+        //         ? currentnormalized     // 👈 file path
+        //         : null;                 // 👈 show full folder
+        //         loadDriveItems(openDir,false,filterPath);
+        //         hideResults();
+        // });
+
+        item.addEventListener("click", (e) => {
+
+            // 👉 Get real name from DOM (not partial query)
+            const realName = item.querySelector(".search-path")?.dataset.name;
+
+            // 👉 Put full name into search input
+            const searchInput = document.getElementById("searchInput");
+            if (searchInput && realName) {
+                searchInput.value = realName;
+            }
+
+            let openDir;
+            let filterPath = null;
+
+            if (isFileItem) {
+                openDir = currentDirectory;
+                filterPath = currentnormalized;
+            } else {
+                openDir = currentnormalized;
+            }
+
+            loadDriveItems(openDir, false, filterPath);
             hideResults();
         });
 

@@ -1153,7 +1153,8 @@ button { margin-bottom: 10px; }
 }
 
 #searchInput {
-    width: 100%;
+    width: 90%;
+    box-sizing: border-box;
     padding: 8px 10px;
     border-radius: 6px;
     border: 1px solid #ccc;
@@ -1193,3 +1194,46 @@ button { margin-bottom: 10px; }
     background: yellow;
     font-weight: bold;
 }
+
+.search-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.search-icon {
+    font-size: 18px;
+    color: #f4b400; /* folder default */
+}
+
+.fa-file {
+    color: #4285f4;
+}
+
+.search-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.search-name {
+    font-weight: 500;
+}
+
+.clear-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    cursor: pointer;
+    color: #888;
+    display: none; 
+}
+
+.clear-btn:hover {
+    color: #000;
+}
+
+

@@ -32,8 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSyncData: () => ipcRenderer.invoke('get-sync-data'),
     //getDirectorySnapshot: (dir) => ipcRenderer.invoke("get-directory-snapshot", dir),   
     getDirectorySnapshot: (dir, oldSnapshot = {}) => ipcRenderer.invoke("get-directory-snapshot", dir, oldSnapshot),
-    saveTracker: (dir) => ipcRenderer.invoke("save-tracker", dir), 
-    loadTracker: () => ipcRenderer.invoke("load-tracker"),
+    saveTracker: (snapshot, syncedDefault = 1) => ipcRenderer.invoke("save-tracker", {snapshot,syncedDefault}),
+    loadTracker: (onlyUnsynced = true) => ipcRenderer.invoke("load-tracker", { onlyUnsynced }),
     onSyncProgress: (callback) => ipcRenderer.on('sync-progress', (event, data) => callback(data)),
     onSyncStatus: (callback) => ipcRenderer.on('sync-status', callback),
     onUploadProgressStart: (cb) => ipcRenderer.on("upload-progress-start", (_, data) => cb(data)),
@@ -65,7 +65,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadComplete: (cb) => ipcRenderer.on("download-complete", (event, data) => cb(data)),   
     onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)   ,
     openExternalFile: (path) => ipcRenderer.invoke("open-external-file", path),
-    deleteItem: (data) => ipcRenderer.invoke("delete-item", data)
+    deleteItem: (data) => ipcRenderer.invoke("delete-item", data),
+    // startDriveWatcher: (syncData) => ipcRenderer.send("start-drive-watcher", syncData),
+    // onFSChange: (callback) => ipcRenderer.on("fs-changed", callback),
+    onFSChange: (callback) => {
+        ipcRenderer.removeAllListeners("fs-changed");
+        ipcRenderer.on("fs-changed", callback);
+    },
+
+    startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
+    getAllPaths: (rootDir) => ipcRenderer.invoke("get-all-paths", rootDir),
+    searchPaths: (query) => ipcRenderer.invoke("search-paths", query)
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

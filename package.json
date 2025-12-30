@@ -40,7 +40,8 @@
     },
     "asar": true,
     "asarUnpack": [
-      "preload.js"
+      "preload.js",
+      "node_modules/chokidar/**"
     ],
     "files": [
       "preload.js",

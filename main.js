@@ -17,7 +17,8 @@ let syncTimer = null;
 let debounceTimer = null;
 
 //const dbPath = path.join(__dirname, "main", "db", "init-db.js");
-const { initDB, getDB } = require("./main/db/init-db");
+//const { initDB, getDB } = require("./main/db/init-db");
+const { initDB, getDB } = require("./main/db/init-db.js");
 // console.log("DB PATH:", dbPath);
 // const { initDB,getDB } = require(dbPath);
 //const vhdxService = require(path.join(__dirname, "assets/js/vhdx-service.js"));

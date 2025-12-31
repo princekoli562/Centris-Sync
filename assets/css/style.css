@@ -2,6 +2,17 @@ body {
   font-family: 'poppins', sans-serif;
   overflow: hidden;
 }
+
+:root {
+  --col-check: 40px;
+  --col-name: 2fr;
+  --col-modified-by: 1fr;
+  --col-modified-date: 1.2fr;
+  --col-size: 0.8fr;
+  --col-share: 0.6fr;
+  --footer-height: 36px;
+}
+
 .btn-centris {
   color: #fff;
   background-color: #194d79;
@@ -537,14 +548,7 @@ button { margin-bottom: 10px; }
     margin-left: 20px;
 }
 
-:root {
-  --col-check: 40px;
-  --col-name: 2fr;
-  --col-modified-by: 1fr;
-  --col-modified-date: 1.2fr;
-  --col-size: 0.8fr;
-  --col-share: 0.6fr;
-}
+
 
 
 /* List view */
@@ -932,7 +936,7 @@ button { margin-bottom: 10px; }
     left: 50%;
     transform: translateX(-50%);
     width: 90%;
-    top : 60%;
+    top : 55%;
     background: #f8f9fa;
     border: 1px solid #ccc;
     border-radius: 8px;
@@ -1004,7 +1008,7 @@ button { margin-bottom: 10px; }
     gap: 10px;
     width: 100%;
     box-sizing: border-box;
-    height: calc(100vh - 120px); 
+    height: calc(100vh - 150px); 
     /* For responsiveness */
     flex-wrap: nowrap; 
     overflow: hidden;
@@ -1235,5 +1239,112 @@ button { margin-bottom: 10px; }
 .clear-btn:hover {
     color: #000;
 }
+
+/* Toggle switch */
+.sync-switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 22px;
+    margin-right: 10px;
+}
+
+.sync-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    background-color: #ccc;
+    border-radius: 20px;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transition: 0.3s;
+}
+
+.slider::before {
+    content: "";
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.sync-switch input:checked + .slider {
+    background-color: #22c55e;
+}
+
+.sync-switch input:checked + .slider::before {
+    transform: translateX(20px);
+}
+
+#sync-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--footer-height);
+    background: #f9fafb;
+    border-top: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-size: 13px;
+    z-index: 1000;
+}
+
+/* Left */
+.sync-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Dot indicator */
+.sync-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.sync-dot.green {
+    background: #22c55e;
+}
+
+.sync-dot.red {
+    background: #ef4444;
+}
+
+.sync-dot.orange {
+    background: #f59e0b;
+}
+
+/* Right */
+.sync-right i {
+    font-size: 14px;
+}
+
+/* Rotating icon while syncing */
+.syncing {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+
 
 

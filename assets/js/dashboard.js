@@ -1065,6 +1065,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    const syncToggle = document.getElementById("syncToggle");
+
+    syncToggle.addEventListener("change", () => {
+        if (syncToggle.checked) {
+            enableSync();
+        } else {
+            disableSync();
+        }
+    });
+
 
 
     // Optional: hide when input loses focus AND mouse is not over results
@@ -1081,6 +1091,41 @@ document.addEventListener('DOMContentLoaded', async () => {
 window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
+
+
+function enableSync() {
+    document.getElementById("sync-indicator").className = "sync-dot green";
+    document.getElementById("sync-text").innerText = "Sync Enabled · Checking...";
+
+    const icon = document.getElementById("sync-icon");
+    icon.className = "fas fa-sync-alt syncing";
+
+    // 🔁 Start chokidar / polling / ipc
+    // ipcRenderer.send("sync-enable");
+
+    setTimeout(() => {
+        setSyncDone();
+    }, 1500);
+}
+
+function disableSync() {
+    document.getElementById("sync-indicator").className = "sync-dot red";
+    document.getElementById("sync-text").innerText = "Sync Disabled";
+
+    const icon = document.getElementById("sync-icon");
+    icon.className = "fas fa-ban";
+
+    // 🛑 Stop watcher
+    // ipcRenderer.send("sync-disable");
+}
+
+function setSyncDone() {
+    document.getElementById("sync-indicator").className = "sync-dot green";
+    document.getElementById("sync-text").innerText = "Sync Enabled · Up to date";
+
+    const icon = document.getElementById("sync-icon");
+    icon.className = "fas fa-check-circle";
+}
 
  /* --------------------------
 HELPERS

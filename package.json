@@ -44,6 +44,7 @@
       "node_modules/chokidar/**"
     ],
     "files": [
+      "main/**/*",
       "main.js",
       "preload.js",
       "*.html",
@@ -66,6 +67,7 @@
     "form-data": "^4.0.5",
     "jquery": "^3.7.1",
     "pdfjs-dist": "^5.4.449",
-    "sudo-prompt": "^9.2.1"
+    "sudo-prompt": "^9.2.1",
+     "chokidar": "^3.5.3"
   }
 }

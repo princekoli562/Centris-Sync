@@ -75,7 +75,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
     getAllPaths: (rootDir) => ipcRenderer.invoke("get-all-paths", rootDir),
-    searchPaths: (query) => ipcRenderer.invoke("search-paths", query)
+    searchPaths: (query) => ipcRenderer.invoke("search-paths", query),
+    getSessionUser: () => ipcRenderer.invoke("get-session-user")
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

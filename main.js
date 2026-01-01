@@ -15,6 +15,7 @@ const chokidar = require("chokidar");
 let watcher = null;
 let syncTimer = null;
 let debounceTimer = null;
+let autoExpireVal = false;
 
 //const dbPath = path.join(__dirname, "main", "db", "init-db.js");
 //const { initDB, getDB } = require("./main/db/init-db");
@@ -96,15 +97,6 @@ let syncData = {
   apiUrl: null,
 };
 
-
-
-
-const DRIVE_ROOT = 'F:\\Centris-Drive';
-
-if (!fs.existsSync(DRIVE_ROOT)) {
-  console.error("❌ Path does NOT exist:", DRIVE_ROOT);
-}
-
 const isDev = !app.isPackaged;
 
 const preloadPath = isDev
@@ -156,7 +148,7 @@ const createWindow = async () => {
     });
 
     // ✅ Use local session checker instead of win.electronAPI
-    const sessionActive = isSessionActive(); // function defined below
+    const sessionActive = isSessionActive({ autoExpire: autoExpireVal }); // function defined below
     console.log(sessionActive);
     if (sessionActive) {
         console.log("✅ Session active, redirecting to home...");
@@ -227,33 +219,9 @@ const createWindow = async () => {
         return loadSession();
     });
 
-  //   function handleSessionCheck() {
-  //         if (!isSessionActive() && !redirectingToLogin) {
-  //             redirectingToLogin = true; // 🔒 prevent multiple triggers
-  //             console.log("⚠️ Session expired — redirecting to login page...");
-  //             await win.loadFile(path.join(__dirname, 'index.html').then(() => {
-  //             redirectingToLogin = false; // ✅ reset once done
-  //         });
-  //     }
-  // }
-
-    // async function handleSessionCheck() {
-    //     if (!isSessionActive() && !redirectingToLogin) {
-    //         redirectingToLogin = true; // prevent multiple triggers
-    //         console.log("⚠️ Session expired — redirecting to login page...");
-
-    //         try {
-    //             await win.loadFile(getHtmlPath('index.html'));
-    //         } catch (err) {
-    //             console.error("Error loading login page:", err);
-    //         }
-
-    //         redirectingToLogin = false; // reset after done
-    //     }
-    // }
 
     async function handleSessionCheck() {
-        if (!isSessionActive() && !redirectingToLogin) {
+        if (!isSessionActive({ autoExpire: autoExpireVal }) && !redirectingToLogin) {
             redirectingToLogin = true;
             console.log("⚠️ Session expired — redirecting to login page...");
 
@@ -393,7 +361,7 @@ async function startDriveWatcher(syncData) {
 
 
 // ✅ Helper: checks if session exists and is valid
-function isSessionActive() {
+function isSessionActiveTimer() {
     const sessionFile = path.join(app.getPath('userData'), 'session.json');
 
     try {
@@ -411,6 +379,39 @@ function isSessionActive() {
     }
     return false;
 }
+
+function isSessionActive({ autoExpire = false, maxAge = 6 * 60 * 60 * 1000 } = {}) {
+    const sessionFile = path.join(app.getPath('userData'), 'session.json');
+
+    try {
+        if (!fs.existsSync(sessionFile)) {
+            return false;
+        }
+
+        const sessionData = JSON.parse(
+            fs.readFileSync(sessionFile, 'utf8')
+        );
+
+        // not logged in
+        if (!sessionData.isLoggedIn) {
+            return false;
+        }
+
+        // manual mode → no expiry
+        if (!autoExpire) {
+            return true;
+        }
+
+        // auto expiry mode
+        const now = Date.now();
+        return (now - sessionData.loginTime) < maxAge;
+
+    } catch (err) {
+        console.error("⚠️ Error reading session file:", err);
+        return false;
+    }
+}
+
 //
 function saveSession(data) {
     const sessionFile = path.join(app.getPath('userData'), 'session.json');
@@ -3548,6 +3549,37 @@ ipcMain.handle("open-external-file", async (_, filePath) => {
 
 ipcMain.on("start-drive-watcher", (event, syncData) => {
     startDriveWatcher(syncData);
+});
+
+ipcMain.handle("get-session-user", async () => {
+    try {
+        const sessionFile = path.join(app.getPath("userData"), "session.json");
+
+        if (!fs.existsSync(sessionFile)) {
+            return null;
+        }
+
+        const raw = fs.readFileSync(sessionFile, "utf8");
+        const session = JSON.parse(raw);
+
+        if (!session.user_data) {
+            return null;
+        }
+
+        const u = session.user_data;
+
+        return {
+            id: u.id,
+            user_name: u.user_name,
+            first_name: u.first_name,
+            last_name: u.last_name,
+            profile_image : u.profile_image,
+            active: true
+        };
+    } catch (err) {
+        console.error("Session read error:", err);
+        return null;
+    }
 });
 
 

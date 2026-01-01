@@ -21,6 +21,7 @@ const progressContainer = document.getElementById('syncProgressContainer');
 const progressLabel = document.getElementById('syncProgressLabel');
 const progressBar = document.getElementById('syncProgressBar');
 let syncData = null;
+let user_list = [];
 
 if (progressContainer) {
   progressContainer.style.display = 'none';
@@ -219,6 +220,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
     window.apiUrl = syncData.apiUrl;
+
+    await loadUsersFromSession(syncData,user_list);
 
     window.electronAPI.onFSChange(() => {
         if (isSyncRunning) return;
@@ -965,6 +968,23 @@ document.addEventListener('DOMContentLoaded', async () => {
        
     });
 
+    const userIcon = document.getElementById("userIcon");
+    const userdropdown = document.getElementById("userDropdown");
+    const userList = document.getElementById("userList");
+
+    userIcon.addEventListener("click", () => {
+        userdropdown.style.display =
+            userdropdown.style.display === "block" ? "none" : "block";
+        renderUsers(syncData,user_list);
+    });
+
+    // Close userdropdown on outside click
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest(".user-menu")) {
+            userdropdown.style.display = "none";
+        }
+    });
+
     const previewToggleBtn = document.getElementById("previewToggle");
     const mainContent = document.getElementById("main-content");
     const previewPanel = document.getElementById("preview-panel");
@@ -1002,6 +1022,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchResults = document.getElementById("searchResults");
     const searchContainer = document.querySelector(".search-container");
     const clearBtn = document.getElementById("clearSearchBtn");
+    
 
    
 
@@ -1091,6 +1112,76 @@ document.addEventListener('DOMContentLoaded', async () => {
 window.electronAPI.onMainLog((message) => {
   console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
+
+function renderUsers(syncData,user_list = []) {
+    userList.innerHTML = "";
+
+    user_list.forEach(user => {
+        const li = document.createElement("li");
+        li.className = user.active ? "active" : "";
+
+        const hasImage =
+            user.profile_image &&
+            user.profile_image.trim() !== "";
+
+       let fullPathProfileImg = syncData.config_data.storage_relative_path + user.profile_image;
+
+        const avatarHTML = hasImage
+            ? `<img src="${fullPathProfileImg}"
+                    class="user-avatar-img"
+                    onerror="this.replaceWith(createDefaultAvatar())" />`
+            : getDefaultAvatarHTML();
+
+        li.innerHTML = `
+            <div class="user-row">
+                ${avatarHTML}
+                <span class="user-name">${user.name}</span>
+                ${user.active ? '<span class="check">✔</span>' : ''}
+            </div>
+        `;
+
+        userList.appendChild(li);
+    });
+}
+
+function getDefaultAvatarHTML() {
+    return `
+        <span class="user-avatar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#143b64"
+                 xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/>
+            </svg>
+        </span>
+    `;
+}
+
+function createDefaultAvatar() {
+    const span = document.createElement("span");
+    span.className = "user-avatar";
+    span.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#143b64"
+             xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/>
+        </svg>
+    `;
+    return span;
+}
+
+
+async function loadUsersFromSession(syncData,user_list = []) {
+    const sessionUser = await window.electronAPI.getSessionUser();
+
+    if (sessionUser) {
+        user_list.push({
+            id: sessionUser.id,
+            name: `${sessionUser.first_name} ${sessionUser.last_name}`,
+            profile_image: `${sessionUser.profile_image}`,
+            active: true
+        });
+    }
+
+    renderUsers(syncData,user_list);
+}
 
 
 function enableSync() {

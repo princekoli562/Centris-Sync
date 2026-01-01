@@ -11,6 +11,8 @@ body {
   --col-size: 0.8fr;
   --col-share: 0.6fr;
   --footer-height: 36px;
+  --footer-height1: 40px;
+  --header-offset: 150px;
 }
 
 .btn-centris {
@@ -231,6 +233,8 @@ button { margin-bottom: 10px; }
     align-items: flex-start; /* Align to left side */
     padding: 20px;
     gap: 2px; /* space between buttons */
+    position: relative;   /* 👈 REQUIRED */
+    height: 100vh; 
 }
 
 
@@ -304,9 +308,18 @@ button { margin-bottom: 10px; }
 }
 
 #breadcrumb {
+    flex: 1;
     padding: 12px 20px;
-    background: #f1f3f4;
-    border-bottom: 1px solid #ddd;
+    font-weight: bold;
+    cursor: pointer;
+
+    /* Prevent layout breaking on long paths */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    /* background: #f1f3f4;
+    border-bottom: 1px solid #ddd; */
 }
 
 .crumb {
@@ -931,18 +944,22 @@ button { margin-bottom: 10px; }
 
 .progress-container {
     display: none; /* Hidden until sync starts */
-    position: relative; /* stick to sidebar bottom */
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
+    position: absolute; /* stick to sidebar bottom */
+    left: 10px;
+    right: 10px;
+    /*bottom: 10px;
+     left: 50%;
+    transform: translateX(-50%); */
     width: 90%;
-    top : 55%;
+    /* top : 55%; */
+    bottom: calc(36px + 10px); 
     background: #f8f9fa;
     border: 1px solid #ccc;
     border-radius: 8px;
     padding: 10px 15px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
+
 
 /* label text */
 #syncProgressLabel {
@@ -1008,10 +1025,16 @@ button { margin-bottom: 10px; }
     gap: 10px;
     width: 100%;
     box-sizing: border-box;
-    height: calc(100vh - 150px); 
+    height: calc(100vh - 100px); 
+    /* height: calc(
+        100vh
+        - var(--footer-height)
+    ); */
     /* For responsiveness */
     flex-wrap: nowrap; 
-    overflow: hidden;
+    padding-bottom: var(--footer-height); /* 👈 KEY FIX */
+    flex-wrap: nowrap;
+    overflow: hidden; /* allow scroll */
 }
 
 
@@ -1329,6 +1352,12 @@ button { margin-bottom: 10px; }
     background: #f59e0b;
 }
 
+.sync-right {
+    display: flex;
+    align-items: center;   /* 👈 vertical center */
+    gap: 10px;             /* 👈 space between toggle & icon */
+}
+
 /* Right */
 .sync-right i {
     font-size: 14px;
@@ -1344,6 +1373,90 @@ button { margin-bottom: 10px; }
         transform: rotate(360deg);
     }
 }
+
+.header {
+    /* justify-content: space-between; */
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: #f1f3f4;
+    border-bottom: 1px solid #ddd;
+    /* padding: 8px 12px; */
+}
+
+.user-menu {
+    width: 40px;                 /* 🔥 FIX */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+.user-icon {
+    cursor: pointer;
+    font-size: 20px;
+}
+
+.user-dropdown {
+    position: absolute;
+    right: 0;
+    top: 28px;
+    width: 220px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    display: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    z-index: 100;
+}
+
+.user-dropdown ul {
+    list-style: none;
+    margin: 0;
+}
+
+.user-dropdown li {
+    padding: 4px 8px;
+    display: flex;
+    justify-content: space-between;
+    cursor: default;
+}
+
+.user-dropdown li.active {
+    background: #f0f8ff;
+    font-weight: bold;
+}
+
+.check {
+    color: green;
+}
+
+.user-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.user-avatar-img,
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 50%;
+    object-fit: contain;       /* 👈 crop image properly */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #f1f3f4;
+}
+
+/* SVG inside avatar */
+.user-avatar svg {
+    width: 18px;
+    height: 18px;
+}
+
 
 
 

@@ -22,6 +22,7 @@ const progressLabel = document.getElementById('syncProgressLabel');
 const progressBar = document.getElementById('syncProgressBar');
 let syncData = null;
 let user_list = [];
+let pingInterval = null;
 
 if (progressContainer) {
   progressContainer.style.display = 'none';
@@ -31,6 +32,13 @@ let isSyncing = false;
 let autoSyncInterval = null;
 let isSyncRunning = false;
 let searchTimer = null;
+let fsListenerAttached = false;  // track listener
+
+
+let sync_toggle = document.getElementById("syncToggle");
+let sync_indicator = document.getElementById("sync-indicator");
+let sync_text = document.getElementById("sync-text");
+let sync_icon = document.getElementById("sync-icon");
 
 
 
@@ -182,6 +190,20 @@ window.electronAPI.onDownloadHide(() => {
     activeProgressType = null;
 });
 
+// Online / Offline listener
+window.addEventListener("online", () => {
+ console.log('On - > ' + sync_toggle.checked);
+  updateUI({ enabled: sync_toggle.checked, online: true });
+  checkServer(sync_toggle.checked,true); // 🔥 important
+  startPing();
+});
+
+window.addEventListener("offline", () => {
+    console.log('Off - > ' + sync_toggle.checked);
+  updateUI({ enabled: sync_toggle.checked, online: false,server: false });
+  stopPing();
+});
+
 
 
 // window.electronAPI.onDownloadComplete(() => {
@@ -221,21 +243,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
     window.apiUrl = syncData.apiUrl;
 
+    let currentUser = {
+        customer_id :syncData.customer_data.id,
+        domain_id :syncData.domain_data.id,
+        domain_name :syncData.domain_data.domain_name,
+        user_id:syncData.user_data.id,
+        apiUrl:syncData.apiUrl
+    };
+
+   
+
     await loadUsersFromSession(syncData,user_list);
 
-    window.electronAPI.onFSChange(() => {
-        if (isSyncRunning) return;
+    const syncEnabled = await window.electronAPI.getSyncStatus(currentUser);
 
-        isSyncRunning = true;
+    if (navigator.onLine) {
+        checkServer(syncEnabled,navigator.onLine);
+        startPing();
+    }else{
+        updateUI({enabled: syncEnabled, online: navigator.onLine });
+    }
 
-        triggerSync(syncData, false)
-            .finally(() => {
-            isSyncRunning = false;
-            });
-    });
+    if (syncEnabled) {
+        window.electronAPI.onFSChange(() => {
+            if (isSyncRunning) return;
 
-    window.electronAPI.startDriveWatcher(syncData);
-    
+            isSyncRunning = true;
+
+            triggerSync(syncData, false)
+                .finally(() => {
+                isSyncRunning = false;
+                });
+        });
+    }    
+
+    console.log('DD - >' + syncEnabled);
+
+    if (!syncEnabled) {
+        console.log("Sync disabled by user");
+    }else{
+        window.electronAPI.startDriveWatcher(syncData);
+    }
 
     var apiUrl = window.apiUrl;
     var secret_gen_key = window.secret_gen_key;
@@ -782,21 +830,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             // }
 
             // 6️⃣ REFRESH FILE VIEW
-            loadFiles(mappedDrive, true);
+            // loadFiles(mappedDrive, true);
 
-            await wait(500);
+            // await wait(500);
 
-            // 7️⃣ UPDATE TRACKER SNAPSHOT
-            const oldSnapshot = await window.electronAPI.loadTracker(false);
-            const newSnapshot = await window.electronAPI.getDirectorySnapshot(
-                mappedDrive,
-                oldSnapshot
-            );
+            // // 7️⃣ UPDATE TRACKER SNAPSHOT
+            // const oldSnapshot = await window.electronAPI.loadTracker(false);
+            // const newSnapshot = await window.electronAPI.getDirectorySnapshot(
+            //     mappedDrive,
+            //     oldSnapshot
+            // );
 
-            await window.electronAPI.saveTracker(newSnapshot.snapshot);
+            // await window.electronAPI.saveTracker(newSnapshot.snapshot);
 
-            // 8️⃣ DONE
-            showValidation("Files uploaded, synced & tracker updated successfully!", "success");
+            // // 8️⃣ DONE
+            // showValidation("Files uploaded, synced & tracker updated successfully!", "success");
 
         } catch (err) {
             console.error("Upload Error:", err);
@@ -821,6 +869,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadDriveItems(history[currentIndex], true);
         }
         console.log(history);
+    });
+
+    $(document).on("click", ".logout-icon", async function (e) {
+        if (confirm("Logout this user?")) {
+            SessionLogout();
+            // call API / IPC / AJAX here
+        }
     });
 
 
@@ -866,11 +921,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     $(document).on("click", "#SyncDrive", async function () {
         const btn = $(this);
-        btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
+        console.log(currentUser);
+        const syncEnabled = await window.electronAPI.getSyncStatus(currentUser);
+        if (syncEnabled) {
+            btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
 
-        await triggerSync(syncData,true);
+            await triggerSync(syncData,true);
 
-        btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> 🔄 Sync Drive');
+            btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> 🔄 Sync Drive');
+        }else{
+            showValidation("Sync is Disabled", "warning");
+        }
     });
 
     $(document).on('click', '.file-menu-btn', function (e) {
@@ -1023,9 +1084,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchContainer = document.querySelector(".search-container");
     const clearBtn = document.getElementById("clearSearchBtn");
     
-
-   
-
     /* --------------------------
     SHOW WHEN TYPING & RESULTS EXIST
     ---------------------------*/
@@ -1086,17 +1144,65 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    const syncToggle = document.getElementById("syncToggle");
+    // Toggle click
 
-    syncToggle.addEventListener("change", () => {
-        if (syncToggle.checked) {
-            enableSync();
+    
+
+    // sync_toggle.addEventListener("change", async () => {
+    //     const enabled = sync_toggle.checked;
+    //     sync_icon.classList.add("syncing");
+    //     // Save to DB / main process
+    //     await window.electronAPI.setSyncStatus(currentUser, enabled);
+
+    //     updateUI({ enabled : enabled, online: navigator.onLine });
+    //     console.log(syncData);
+    //     if (enabled) {
+    //         startPing();
+    //         window.electronAPI.startDriveWatcher(syncData);
+    //     } else {
+    //         stopPing();
+    //         window.electronAPI.stopDriveWatcher();   
+    //     }
+    // });
+
+
+    sync_toggle.addEventListener("change", async () => {
+        const enabled = sync_toggle.checked;
+        sync_icon.classList.add("syncing");
+
+        // Save toggle state to DB / main process
+        await window.electronAPI.setSyncStatus(currentUser, enabled);
+
+        updateUI({ enabled, online: navigator.onLine });
+
+        if (enabled) {
+            startPing();
+            window.electronAPI.startDriveWatcher(syncData);
+
+            // Attach FS listener if not already
+            if (!fsListenerAttached) {
+                window.electronAPI.onFSChange(() => {
+                    if (!sync_toggle.checked) return;  // extra guard
+                    if (isSyncRunning) return;
+
+                    isSyncRunning = true;
+
+                    triggerSync(syncData, false)
+                        .finally(() => {
+                            isSyncRunning = false;
+                        });
+                });
+
+                fsListenerAttached = true;
+            }
+
         } else {
-            disableSync();
+            stopPing();
+            window.electronAPI.stopDriveWatcher();
         }
+
+        sync_icon.classList.remove("syncing");
     });
-
-
 
     // Optional: hide when input loses focus AND mouse is not over results
     // searchInput.addEventListener("blur", () => {
@@ -1136,7 +1242,17 @@ function renderUsers(syncData,user_list = []) {
             <div class="user-row">
                 ${avatarHTML}
                 <span class="user-name">${user.name}</span>
-                ${user.active ? '<span class="check">✔</span>' : ''}
+                ${user.active 
+            ? `
+                <span class="check" title="Active">✔</span>
+                <span class="logout-icon" 
+                      title="Logout user" 
+                      data-user-id="${user.id}">
+                    <i class="fa fa-sign-out-alt"></i>
+                </span>
+              `
+            : ''
+        }
             </div>
         `;
 
@@ -1183,32 +1299,9 @@ async function loadUsersFromSession(syncData,user_list = []) {
     renderUsers(syncData,user_list);
 }
 
-
-function enableSync() {
-    document.getElementById("sync-indicator").className = "sync-dot green";
-    document.getElementById("sync-text").innerText = "Sync Enabled · Checking...";
-
-    const icon = document.getElementById("sync-icon");
-    icon.className = "fas fa-sync-alt syncing";
-
-    // 🔁 Start chokidar / polling / ipc
-    // ipcRenderer.send("sync-enable");
-
-    setTimeout(() => {
-        setSyncDone();
-    }, 1500);
-}
-
-function disableSync() {
-    document.getElementById("sync-indicator").className = "sync-dot red";
-    document.getElementById("sync-text").innerText = "Sync Disabled";
-
-    const icon = document.getElementById("sync-icon");
-    icon.className = "fas fa-ban";
-
-    // 🛑 Stop watcher
-    // ipcRenderer.send("sync-disable");
-}
+async function SessionLogout() {
+    const clearSessionData = await window.electronAPI.clearSession();
+};
 
 function setSyncDone() {
     document.getElementById("sync-indicator").className = "sync-dot green";
@@ -2284,5 +2377,81 @@ async function renderResults(results, query) {
 function isFile(name) {
     return /\.[a-z0-9]+$/i.test(name);
 }
+
+function updateUI({ enabled, online, server = true }) {
+    sync_toggle.checked = enabled;
+    if (!enabled) {
+        sync_indicator.className = "sync-dot red";
+        sync_text.innerText = "Sync Disabled";
+        sync_icon.classList.remove("syncing");
+        return;
+    }
+
+    if (!online) {
+        sync_indicator.className = "sync-dot orange";
+        sync_text.innerText = "Offline · Waiting for connection";
+        sync_icon.classList.remove("syncing");
+        return;
+    }
+
+    // 🔥 NEW CONDITION
+    if (!server) {
+        sync_indicator.className = "sync-dot orange";
+        sync_text.innerText = "Server Unreachable · Waiting";
+        sync_icon.classList.remove("syncing");
+        return;
+    }
+
+    sync_indicator.className = "sync-dot green";
+    sync_text.innerText = "Sync Enabled · Up to date";
+    sync_icon.classList.remove("syncing");
+}
+
+async function checkServer(syncEnabled,online) {
+  try {
+    const res = await fetch(`${apiUrl}/api/ping`, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    });
+
+    if (!res.ok) throw new Error("Server not reachable");
+
+    const data = await res.json();
+
+    updateUI({
+      enabled: syncEnabled,
+      online: online,
+      server: true,
+      serverTime: data.data?.server_time
+    });
+
+  } catch (err) {
+    updateUI({
+      enabled: syncEnabled,
+      online: online,
+      server: false
+    });
+  }
+}
+
+
+function startPing() {
+  if (pingInterval) return;
+
+  pingInterval = setInterval(() => {
+    checkServer(sync_toggle.checked, navigator.onLine);
+  }, 15_000);
+}
+
+function stopPing() {
+  clearInterval(pingInterval);
+  pingInterval = null;
+}
+
+
+
+
+
 
 

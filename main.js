@@ -356,7 +356,31 @@ async function startDriveWatcher(syncData) {
   }
 }
 
+async function stopDriveWatcher() {
+    try {
+        if (!watcher) {
+            console.log("🟡 No watcher to stop");
+            watcherRunning = false;
+            return;
+        }
 
+        // Close chokidar watcher
+        await watcher.close();
+        watcher = null;
+        watcherRunning = false;
+
+        // Clear debounce timer if running
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+            debounceTimer = null;
+        }
+
+        console.log("🛑 Drive watcher stopped");
+
+    } catch (err) {
+        console.error("❌ stopDriveWatcher failed:", err);
+    }
+}
 
 
 
@@ -3551,6 +3575,10 @@ ipcMain.on("start-drive-watcher", (event, syncData) => {
     startDriveWatcher(syncData);
 });
 
+ipcMain.handle("stop-drive-watcher", async () => {
+    stopDriveWatcher();
+});
+
 ipcMain.handle("get-session-user", async () => {
     try {
         const sessionFile = path.join(app.getPath("userData"), "session.json");
@@ -3582,6 +3610,71 @@ ipcMain.handle("get-session-user", async () => {
     }
 });
 
+ipcMain.handle("set-sync-enabled", async (e, enabled) => {
+  setSyncEnabled(enabled);
+
+  // notify backend
+  try {
+    await fetch(`${apiUrl}/sync-preference`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ sync_enabled: enabled ? 1 : 0 })
+    });
+  } catch {
+    // offline → safe to ignore
+  }
+});
+
+
+ipcMain.handle("get-sync-status", async (event, params) => {
+  return await getSyncEnabled(params);
+});
+
+ipcMain.handle("set-sync-status", async (event, user, enabled) => {
+  // 1️⃣ Save locally (SQLite)
+  await setSyncEnabled(user, "sync_enabled", enabled ? "1" : "0");
+
+  // Optional: update last_sync_at when enabling
+  if (enabled) {
+    await setSyncEnabled(
+      user,
+      "last_sync_at",
+      Math.floor(Date.now() / 1000).toString()
+    );
+  }
+  console.log(user.apiUrl);
+  // 2️⃣ Update server (user-wise)
+  try {
+    const response = await fetch(`${user.apiUrl}/api/update-sync-status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: user.user_id,
+        sync_status: enabled ? 1 : 0
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    console.log("✅ Sync status updated on server");
+  } catch (err) {
+    console.error("❌ Server sync status update failed:", err.message);
+  }
+
+  return true;
+});
+
+
+ipcMain.handle("user-sync-update-success", async (event, user) => {
+  return onUserSyncLogin(user);
+});
+
+
 
 function isHiddenWindows(filePath) {
     try {
@@ -3600,6 +3693,145 @@ function addDriveLetter(drive, filePath) {
   // ensure begins with slash
   if (!filePath.startsWith('/')) filePath = '/' + filePath;
   return drive + filePath.replace(/\//g, '\\');
+}
+
+function getSyncEnabledFails(params = {}) {
+  const { customer_id, domain_id, domain_name, user_id } = params;
+  const db = getDB();
+
+  // default ON if params missing
+  if (!customer_id || !domain_id || !domain_name || !user_id) {
+    return true;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      SELECT value FROM app_settings
+      WHERE customer_id = ?
+        AND domain_id = ?
+        AND domain_name = ?
+        AND user_id = ?
+        AND key = 'sync_enabled'
+    `);
+
+    const row = stmt.get(customer_id, domain_id, domain_name, user_id);
+
+    if (!row) return true;
+    return row.value === "1";
+
+  } catch (err) {
+    console.error("getSyncEnabled error:", err);
+    return true; // fail-safe default
+  }
+}
+
+function getSyncEnabled(params = {}) {
+  const { customer_id, domain_id, domain_name, user_id } = params;
+  const db = getDB();
+
+  // default ON
+  if (!customer_id || !domain_id || !domain_name || !user_id) {
+    return 1;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      SELECT value FROM app_settings
+      WHERE customer_id = ?
+        AND domain_id = ?
+        AND domain_name = ?
+        AND user_id = ?
+        AND key = 'sync_enabled'
+    `);
+
+    const row = stmt.get(customer_id, domain_id, domain_name, user_id);
+
+    if (!row) return 1;
+
+    return Number(row.value) === 1 ? 1 : 0;
+
+  } catch (err) {
+    console.error("getSyncEnabled error:", err);
+    return 1;
+  }
+}
+
+
+
+function setSyncErrorEnabled(
+  { customer_id, domain_id,domain_name, user_id },
+  enabled
+) {
+  const db = getDB();
+
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO app_settings
+       (customer_id, domain_id,domain_name, user_id, key, value)
+       VALUES (?, ?, ?, ?, 'sync_enabled', ?)
+       ON CONFLICT(customer_id, domain_id,domain_name, user_id, key)
+       DO UPDATE SET
+         value = excluded.value,
+         updated_at = strftime('%s','now')`,
+      [customer_id, domain_id, domain_name , user_id, enabled ? "1" : "0"],
+      (err) => {
+        if (err) reject(err);
+        else resolve(true);
+      }
+    );
+  });
+}
+
+function setSyncEnabled({ customer_id, domain_id, domain_name, user_id },
+  key,
+  value
+) {
+  const db = getDB();
+    console.log(customer_id + ' = ' + domain_id + ' = ' + domain_name + ' = ' + key + ' = ' +  value);
+  const stmt = db.prepare(`
+    INSERT INTO app_settings
+      (customer_id, domain_id, domain_name, user_id, key, value)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(customer_id, domain_id, user_id, key)
+    DO UPDATE SET
+      value = excluded.value,
+      domain_name = excluded.domain_name,
+      updated_at = strftime('%s','now')
+  `);
+
+  stmt.run(
+    customer_id,
+    domain_id,
+    domain_name,
+    user_id,
+    key,
+    value
+  );
+
+  return true;
+}
+
+
+function onUserSyncLogin(user) {
+  insertDefaultSetting.run(
+    user.customer_id,
+    user.domain_id,
+    user.domain_name,
+    user.user_id,    
+    "sync_enabled",
+    "1"
+  );
+
+  insertDefaultSetting.run(
+    user.customer_id,
+    user.domain_id,
+    user.domain_name,
+    user.user_id,    
+    "last_sync_at",
+    "0"
+  );
+
+  return true;
 }
 
 

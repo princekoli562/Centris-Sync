@@ -53,6 +53,18 @@ document.getElementById('sync').addEventListener('click', async () => {
             apiUrl:apiUrl
         });
 
+
+        let user_sync_data = {
+            customer_id :response.customer_data.id,
+            domain_id :response.domain_data.id,
+            domain_name :response.domain_data.domain_name,
+            user_id:response.data.id,
+            apiUrl:apiUrl
+        };
+
+
+        await window.electronAPI.setSyncStatus(user_sync_data,1);
+
         window.secureAPI.send('navigate', 'home');
         localStorage.setItem('secret_key', secret_key);
         localStorage.setItem('secret_gen_key', secret_gen_key);

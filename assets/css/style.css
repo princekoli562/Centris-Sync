@@ -224,7 +224,7 @@ button { margin-bottom: 10px; }
 
  /* Sidebar */
 
-.sidebar {
+.sidebar-no {
     width: 220px;
     background: #fff;
     border-right: 1px solid #ddd;
@@ -235,6 +235,26 @@ button { margin-bottom: 10px; }
     gap: 2px; /* space between buttons */
     position: relative;   /* 👈 REQUIRED */
     height: 100vh; 
+    padding-bottom: calc(var(--footer-height) + 20px);
+}
+
+.sidebar {
+    width: 220px;
+    background: #fff;
+    border-right: 1px solid #ddd;
+
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+
+    padding: 20px;
+    padding-bottom: calc(var(--footer-height) + 30px);
+
+    position: relative;   /* REQUIRED for absolute children */
+    height: 100vh;
+
+    overflow: hidden;     /* prevents overlap glitches */
 }
 
 
@@ -943,23 +963,19 @@ button { margin-bottom: 10px; }
 }
 
 .progress-container {
-    display: none; /* Hidden until sync starts */
-    position: absolute; /* stick to sidebar bottom */
-    left: 10px;
-    right: 10px;
-    /*bottom: 10px;
-     left: 50%;
-    transform: translateX(-50%); */
-    width: 90%;
-    /* top : 55%; */
-    bottom: calc(36px + 10px); 
+    display: none;                 /* show via JS */
+    position: absolute;            /* relative to sidebar */
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--footer-height) + 90px); /* just above footer */
+    width: 85%;
     background: #f8f9fa;
     border: 1px solid #ccc;
     border-radius: 8px;
     padding: 10px 15px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    z-index: 1100; /* above footer */
 }
-
 
 /* label text */
 #syncProgressLabel {
@@ -1455,6 +1471,16 @@ button { margin-bottom: 10px; }
 .user-avatar svg {
     width: 18px;
     height: 18px;
+}
+
+.logout-icon {
+    cursor: pointer;
+    color: #d9534f;
+    font-size: 14px;
+}
+
+.logout-icon:hover {
+    color: #b52b27;
 }
 
 

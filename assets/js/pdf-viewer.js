@@ -9,7 +9,12 @@
 // pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const canvas = document.getElementById("pdfCanvas");
-const ctx = canvas.getContext("2d");
+if (canvas) {
+    const ctx = canvas.getContext("2d");
+    // draw logic here
+} else {
+    console.warn("Canvas not found on this page");
+}
 
 let pdfDoc = null;
 let currentScale = 1;

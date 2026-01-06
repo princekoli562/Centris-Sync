@@ -33,6 +33,27 @@ function initDB() {
       CREATE INDEX IF NOT EXISTS idx_tracker_path ON tracker(path);
     `);
 
+
+    /* ---------------- APP SETTINGS TABLE ---------------- */
+   db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      customer_id INTEGER NOT NULL,
+      domain_id   INTEGER NOT NULL,
+      domain_name TEXT NOT NULL,
+      user_id     INTEGER NOT NULL,
+      key         TEXT NOT NULL,
+      value       TEXT NOT NULL,
+      updated_at  INTEGER DEFAULT (strftime('%s','now')),
+      PRIMARY KEY (customer_id, domain_id, user_id, key)
+    );
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_app_settings_user
+    ON app_settings(customer_id, domain_id, user_id);
+  `);
+    
+
     return db;
 }
 

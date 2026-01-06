@@ -66,7 +66,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)   ,
     openExternalFile: (path) => ipcRenderer.invoke("open-external-file", path),
     deleteItem: (data) => ipcRenderer.invoke("delete-item", data),
-    // startDriveWatcher: (syncData) => ipcRenderer.send("start-drive-watcher", syncData),
     // onFSChange: (callback) => ipcRenderer.on("fs-changed", callback),
     onFSChange: (callback) => {
         ipcRenderer.removeAllListeners("fs-changed");
@@ -74,9 +73,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
+    stopDriveWatcher: () => ipcRenderer.invoke("stop-drive-watcher"),
     getAllPaths: (rootDir) => ipcRenderer.invoke("get-all-paths", rootDir),
     searchPaths: (query) => ipcRenderer.invoke("search-paths", query),
-    getSessionUser: () => ipcRenderer.invoke("get-session-user")
+    getSessionUser: () => ipcRenderer.invoke("get-session-user"),
+    getSyncStatus: (params) => ipcRenderer.invoke("get-sync-status", params),
+    setSyncStatus: (user,enabled ) => ipcRenderer.invoke("set-sync-status",  user,enabled),
+    onLogin: (user) => ipcRenderer.invoke("user-login-success", user)
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

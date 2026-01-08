@@ -27,7 +27,8 @@
     "mac": {
       "target": [
         "dmg",
-        "zip"
+        "zip",
+        "pkg"
       ],
       "icon": "assets/images/favicon.icns",
       "identity": null

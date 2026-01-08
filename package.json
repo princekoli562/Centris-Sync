@@ -25,13 +25,16 @@
       "icon": "assets/images/favicon.ico"
     },
     "mac": {
-      "target": [
-        "dmg",
-        "zip",
-        "pkg"
-      ],
-      "icon": "assets/images/favicon.icns"      
-    },
+        "target": [
+          "dmg",
+          "zip",
+          "pkg"
+        ],
+        "icon": "assets/images/favicon.icns",
+        "identity": null,
+        "hardenedRuntime": false,
+        "gatekeeperAssess": false
+      },
     "nsis": {
       "oneClick": false,
       "perMachine": true,

@@ -282,6 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!syncEnabled) {
         console.log("Sync disabled by user");
     }else{
+        window.electronAPI.startServerPolling(syncData);
         window.electronAPI.startDriveWatcher(syncData);
     }
 
@@ -874,6 +875,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     $(document).on("click", ".logout-icon", async function (e) {
         if (confirm("Logout this user?")) {
             SessionLogout();
+            const autoExpireVal = true; // or from storage/config
+            const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);
             // call API / IPC / AJAX here
         }
     });
@@ -1177,6 +1180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (enabled) {
             startPing();
+            window.electronAPI.startServerPolling(syncData);
             window.electronAPI.startDriveWatcher(syncData);
 
             // Attach FS listener if not already
@@ -1198,7 +1202,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } else {
             stopPing();
+            window.electronAPI.stopServerPolling();
             window.electronAPI.stopDriveWatcher();
+           
         }
 
         sync_icon.classList.remove("syncing");

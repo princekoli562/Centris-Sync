@@ -87,6 +87,8 @@ let syncCustomerId = null;
 let syncDomainId = null;
 let syncConfigData = null;
 let redirectingToLogin = false;
+let s2cPollingTimer = null;
+let s2cSyncRunning = false;
 //global.isSyncCancelled = false;
 
 let syncData = {
@@ -200,10 +202,26 @@ const createWindow = async () => {
               console.error('Unknown page:', page);
           }
 
-      } catch (err) {
-          console.error('Error during navigation:', err);
-      }
-  });
+        } catch (err) {
+            console.error('Error during navigation:', err);
+        }
+    });
+
+    ipcMain.handle("check-session-and-redirect", async (event, autoExpireVal) => {
+  
+        const sessionActive = isSessionActive({ autoExpire: autoExpireVal });
+        console.log("Session Active:", sessionActive);
+
+        if (sessionActive) {
+            console.log("✅ Session active, redirecting to home...");
+            await win.loadFile(getHtmlPath("home.html"));
+            return { status: "active" };
+        } else {
+            console.log("🔒 Session expired or not logged in");
+            await win.loadFile(getHtmlPath("index.html"));
+            return { status: "expired" };
+        }
+    });
 
     // 🧩 Save session on login from renderer
     ipcMain.on('save-session', (event, sessionData) => {
@@ -832,6 +850,7 @@ function normalizeServerPath(location) {
 }
 
 async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
+
     const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -845,9 +864,10 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
     const raw = await res.text();
 
     console.log("🔥 RAW RESPONSE 🔥");
-    console.log(raw);
+    //console.log(raw);
+    //JSON.parse(raw).pending;
 
-    return JSON.parse(raw).pending;
+    return JSON.parse(raw);
 }
 
 async function getServerDeletedData({ customer_id, domain_id, apiUrl, syncData }) {
@@ -866,7 +886,7 @@ async function getServerDeletedData({ customer_id, domain_id, apiUrl, syncData }
     console.log("🔥 RAW RESPONSE 🔥");
     console.log(raw);
 
-    return JSON.parse(raw).data;
+    return JSON.parse(raw);
 }
 
 function createTestFolderDocumentpath() {
@@ -1669,7 +1689,7 @@ async function downloadPendingFilesLogicNew(event, args) {
     return true;
 }
 
-async function downloadPendingFilesLogic(event, args) {
+async function downloadPendingFilesLogicOld(event, args) {
     const { customer_id, domain_id, apiUrl, syncData } = args;
     const SourceFrom = "Centris One";
     const CHUNK_SIZE = 50;
@@ -1785,6 +1805,139 @@ async function downloadPendingFilesLogic(event, args) {
     return true;
 }
 
+async function downloadPendingFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData, db } = args;
+    const SourceFrom = "Centris One";
+    const CHUNK_SIZE = 50;
+    // 🔥 Get pending data + server time
+    const response = await downloadServerPending(args);
+    console.log('bbbbbbb');
+    const pending = response.pending;
+    const serverTime = response.server_time; // 👈 IMPORTANT
+     console.log(serverTime);
+    console.log(pending);
+    if (!Array.isArray(pending) || pending.length === 0) {
+        event.sender.send("download-complete", {
+            source: SourceFrom,
+            status: "no-download"
+        });
+        setTimeout(() => event.sender.send("download-hide"), 6000);
+        return true;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const mappedDrivePath = path.join(drive + ":", baseFolder);
+    const UserName = syncData.user_data.user_name;
+
+    const totalFiles = pending.length;
+    let completedFiles = 0;
+
+    event.sender.send("download-progress-start", { total: totalFiles });
+
+    const chunks = chunkArray(pending, CHUNK_SIZE);
+
+    for (const chunk of chunks) {
+        const downloadedIds = [];
+
+        for (const item of chunk) {
+            try {
+                const cleanLocation = extractRelativePath(
+                    item.location,
+                    baseFolder,
+                    UserName
+                );
+
+                const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
+
+                if (!fullLocalPath.startsWith(mappedDrivePath)) {
+                    throw new Error("Path escape blocked");
+                }
+
+                const targetDir =
+                    item.type === "file"
+                        ? path.dirname(fullLocalPath)
+                        : fullLocalPath;
+
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
+                }
+
+                if (item.type === "file") {
+                    await downloadFile(item, fullLocalPath, apiUrl);
+                }
+
+                await updateSaveTracker(
+                    fullLocalPath,
+                    cleanLocation,
+                    item
+                );
+
+                downloadedIds.push(item.id);
+
+                completedFiles++;
+                event.sender.send("download-progress", {
+                    done: completedFiles,
+                    total: totalFiles,
+                    file: item.location,
+                    filePercent: Math.round(
+                        (completedFiles / totalFiles) * 100
+                    )
+                });
+
+            } catch (err) {
+                console.error("Download failed:", item.location, err.message);
+            }
+
+            await new Promise(r => setImmediate(r));
+        }
+
+        if (downloadedIds.length > 0) {
+            await fetch(`${apiUrl}/api/markDownloadedBulk`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    customer_id,
+                    domain_id,
+                    user_id: syncData.user_data.id,
+                    ids: downloadedIds
+                })
+            });
+        }
+
+        await new Promise(r => setTimeout(r, 10));
+    }
+
+    // ✅ UPDATE last_sync_at AFTER DOWNLOAD COMPLETES
+    if (serverTime) {
+        await db.run(`
+            INSERT INTO app_settings
+                (customer_id, domain_id, domain_name, user_id, "key", value)
+            VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+            ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+            DO UPDATE SET
+                value = excluded.value,
+                domain_name = excluded.domain_name,
+                updated_at = strftime('%s','now')
+        `, [
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            serverTime
+        ]);
+    }
+
+    event.sender.send("download-complete", {
+        source: SourceFrom,
+        status: "download"
+    });
+
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+    return true;
+}
+
+
 
 function extractRelativePath(serverPath, baseFolder, username) {
     if (!serverPath) return "";
@@ -1836,7 +1989,7 @@ async function downloadFile(item, fullLocalPath, apiUrl) {
     await streamPipeline(nodeStream, fileStream);
 }
 
-async function deleteLocalFilesLogic(event, args) {
+async function deleteLocalFilesLogic_old(event, args) {
     const { apiUrl, syncData } = args;
     const deleteFrom = "Centris Drive";
     const CHUNK_SIZE = 50;
@@ -1941,6 +2094,250 @@ async function deleteLocalFilesLogic(event, args) {
 
     setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
     return true;
+}
+
+async function deleteLocalFilesLogic(event, args) {
+    const { apiUrl, syncData, db } = args;
+    const deleteFrom = "Centris Drive";
+    const CHUNK_SIZE = 50;
+
+    // 🔥 Get delete data + server time
+    const response = await getServerDeletedData(args);
+    const deletedData = response.data || [];
+    const serverTime = response.server_time; // 👈 IMPORTANT
+
+    if (!Array.isArray(deletedData) || deletedData.length === 0) {
+        event.sender.send("delete-progress-complete", {
+            source: deleteFrom,
+            status: "no-delete"
+        });
+        setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+        return true;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const mappedDrivePath = path.join(drive + ":", baseFolder);
+    const userName = syncData.user_data.user_name;
+
+    const totalFiles = deletedData.length;
+    let completedFiles = 0;
+
+    event.sender.send("delete-progress-start", { total: totalFiles });
+
+    const chunks = chunkArray(deletedData, CHUNK_SIZE);
+
+    for (const chunk of chunks) {
+        const deletedIds = [];
+
+        for (const item of chunk) {
+            try {
+                const cleanLocation = extractRelativePath(
+                    item.location,
+                    baseFolder,
+                    userName
+                );
+
+                const fullLocalPath = path.join(mappedDrivePath, cleanLocation);
+                let deletedSuccessfully = false;
+
+                if (item.type === "file" && fs.existsSync(fullLocalPath)) {
+                    try {
+                        fs.unlinkSync(fullLocalPath);
+                        deletedSuccessfully = true;
+                    } catch (e) {
+                        console.error("❌ File delete failed:", fullLocalPath, e.message);
+                    }
+                }
+
+                else if (item.type === "folder" && fs.existsSync(fullLocalPath)) {
+                    try {
+                        fs.rmSync(fullLocalPath, { recursive: true, force: true });
+                        deletedSuccessfully = true;
+                    } catch (e) {
+                        console.error("❌ Folder delete failed:", fullLocalPath, e.message);
+                    }
+                }
+
+                if (deletedSuccessfully) {
+                    await removeFromTracker(cleanLocation);
+                }
+
+                deletedIds.push(item.id);
+
+                completedFiles++;
+                event.sender.send("delete-progress", {
+                    done: completedFiles,
+                    total: totalFiles,
+                    file: fullLocalPath,
+                    source: deleteFrom
+                });
+
+            } catch (err) {
+                console.error("Delete error:", item.location, err.message);
+            }
+
+            await new Promise(r => setImmediate(r));
+        }
+
+        if (deletedIds.length > 0) {
+            await removeDeletedataBulk(apiUrl, deletedIds);
+        }
+
+        await new Promise(r => setTimeout(r, 20));
+    }
+
+    // ✅ UPDATE LAST SYNC TIME (ONLY ON SUCCESS)
+    if (serverTime) {
+        await db.run(`
+            INSERT INTO app_settings
+                (customer_id, domain_id, domain_name, user_id, "key", value)
+            VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+            ON CONFLICT(customer_id, domain_id,domain_name, user_id, "key")
+            DO UPDATE SET
+                value = excluded.value,
+                domain_name = excluded.domain_name,
+                updated_at = strftime('%s','now')
+        `, [
+            syncData.customer_data.customer_id,
+            syncData.domain_data.domain_id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            serverTime
+        ]);
+    }
+
+    event.sender.send("delete-progress-complete", {
+        source: deleteFrom,
+        status: "delete"
+    });
+
+    setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+    return true;
+}
+
+function getLastSyncAtFromDB(syncData) {
+    try {
+        const db = getDB();
+
+        console.log(
+            'KING ->',
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id
+        );
+
+        const row = db.prepare(`
+            SELECT value
+            FROM app_settings
+            WHERE customer_id = ?
+              AND domain_id = ?
+              AND domain_name = ?
+              AND user_id = ?
+              AND \`key\` = ?
+            LIMIT 1
+        `).get(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            'last_sync_at'
+        );
+
+        console.log('ROW ->', row);
+
+        if (!row || row.value == null) {
+            console.log('QUEEN -> no last_sync_at found, defaulting to 0');
+            return 0;
+        }
+
+        const lastSyncAt = parseInt(String(row.value).trim(), 10);
+
+        if (Number.isNaN(lastSyncAt)) {
+            console.warn('⚠️ last_sync_at is invalid:', row.value);
+            return 0;
+        }
+
+        console.log('QUEEN -> last_sync_at =', lastSyncAt);
+        return lastSyncAt;
+
+    } catch (err) {
+        console.error('❌ getLastSyncAtFromDB error:', err);
+        return 0;
+    }
+}
+
+
+
+
+async function runServerToClientSync(event, syncData) {
+    console.log('running - qqqqq');
+    if (s2cSyncRunning) return; // prevent overlap
+    s2cSyncRunning = true;
+
+    console.log('running - kkkkk');
+
+    try {
+        const lastSyncAt = await getLastSyncAtFromDB(syncData);
+
+        const args = {
+            customer_id: syncData.customer_data.id,
+            domain_id: syncData.domain_data.id,
+            apiUrl: syncData.apiUrl,
+            db: getDB(),                  // 👈 pass db if required
+            syncData: {
+                ...syncData,
+                last_sync_at: lastSyncAt
+            }
+        };
+
+        // 1️⃣ Delete from server → client
+        await deleteLocalFilesLogic(event, args);
+        //  console.log('running - gggggg' + lastSyncAt);
+
+        // 2️⃣ Download from server → client
+        await downloadPendingFilesLogic(event, args);
+         console.log('running - jjjjjj' + lastSyncAt);
+
+    } finally {
+        s2cSyncRunning = false;
+    }
+}
+
+async function startServerPolling(event, syncData) {
+    console.log("🚀 startServerPolling called");
+    console.log('s2cPollingTimer - start ->', s2cPollingTimer);
+
+    if (s2cPollingTimer) {
+        console.log("⛔ Polling already running");
+        return;
+    }
+
+    console.log("▶ Running first sync");
+    await runServerToClientSync(event, syncData);
+
+    console.log("✅ First sync done");
+
+    s2cPollingTimer = setInterval(async () => {
+        console.log("⏱ Poll tick");
+        try {
+            await runServerToClientSync(event, syncData);
+        } catch (e) {
+            console.error("S2C poll error:", e);
+        }
+    }, 30_000);
+
+    console.log("🟢 Polling started, timer =", s2cPollingTimer);
+}
+
+
+async function stopServerPolling() {
+    console.log('s2cPollingTimer - stop -> ' + s2cPollingTimer);
+    if (s2cPollingTimer) {
+        clearInterval(s2cPollingTimer);
+        s2cPollingTimer = null;
+    }
 }
 
 
@@ -2387,9 +2784,9 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
      // Downloaded
     
-    await deleteLocalFilesLogic(event,args);
+    //await deleteLocalFilesLogic(event,args);
     //return true;
-    await downloadPendingFilesLogic(event,args);
+    //await downloadPendingFilesLogic(event,args);
     
     if (changedItems.length === 0 && deletedItems.length === 0) {
       return { success: true, message: "No  changes in " + deleteFrom +" to Upload." };
@@ -3579,6 +3976,14 @@ ipcMain.handle("stop-drive-watcher", async () => {
     stopDriveWatcher();
 });
 
+ipcMain.on("start-server-polling", (event, syncData) => {
+    startServerPolling(event,syncData);
+});
+
+ipcMain.handle("stop-server-polling", async () => {
+    stopServerPolling();
+});
+
 ipcMain.handle("get-session-user", async () => {
     try {
         const sessionFile = path.join(app.getPath("userData"), "session.json");
@@ -3711,7 +4116,7 @@ function getSyncEnabledFails(params = {}) {
         AND domain_id = ?
         AND domain_name = ?
         AND user_id = ?
-        AND key = 'sync_enabled'
+        AND "key" = 'sync_enabled'
     `);
 
     const row = stmt.get(customer_id, domain_id, domain_name, user_id);
@@ -3741,7 +4146,7 @@ function getSyncEnabled(params = {}) {
         AND domain_id = ?
         AND domain_name = ?
         AND user_id = ?
-        AND key = 'sync_enabled'
+        AND "key" = 'sync_enabled'
     `);
 
     const row = stmt.get(customer_id, domain_id, domain_name, user_id);
@@ -3767,9 +4172,9 @@ function setSyncErrorEnabled(
   return new Promise((resolve, reject) => {
     db.run(
       `INSERT INTO app_settings
-       (customer_id, domain_id,domain_name, user_id, key, value)
+       (customer_id, domain_id,domain_name, user_id, "key", value)
        VALUES (?, ?, ?, ?, 'sync_enabled', ?)
-       ON CONFLICT(customer_id, domain_id,domain_name, user_id, key)
+       ON CONFLICT(customer_id, domain_id,domain_name, user_id, "key")
        DO UPDATE SET
          value = excluded.value,
          updated_at = strftime('%s','now')`,
@@ -3790,9 +4195,9 @@ function setSyncEnabled({ customer_id, domain_id, domain_name, user_id },
     console.log(customer_id + ' = ' + domain_id + ' = ' + domain_name + ' = ' + key + ' = ' +  value);
   const stmt = db.prepare(`
     INSERT INTO app_settings
-      (customer_id, domain_id, domain_name, user_id, key, value)
+      (customer_id, domain_id, domain_name, user_id, "key", value)
     VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(customer_id, domain_id, user_id, key)
+    ON CONFLICT(customer_id, domain_id,domain_name, user_id, "key")
     DO UPDATE SET
       value = excluded.value,
       domain_name = excluded.domain_name,

@@ -74,12 +74,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
     stopDriveWatcher: () => ipcRenderer.invoke("stop-drive-watcher"),
+    startServerPolling: (syncData) => { ipcRenderer.send("start-server-polling", syncData)},
+    stopServerPolling: () => ipcRenderer.invoke("stop-server-polling"),
     getAllPaths: (rootDir) => ipcRenderer.invoke("get-all-paths", rootDir),
     searchPaths: (query) => ipcRenderer.invoke("search-paths", query),
     getSessionUser: () => ipcRenderer.invoke("get-session-user"),
     getSyncStatus: (params) => ipcRenderer.invoke("get-sync-status", params),
     setSyncStatus: (user,enabled ) => ipcRenderer.invoke("set-sync-status",  user,enabled),
-    onLogin: (user) => ipcRenderer.invoke("user-login-success", user)
+    onLogin: (user) => ipcRenderer.invoke("user-login-success", user),
+    checkSessionAndRedirect: (autoExpireVal) => ipcRenderer.invoke("check-session-and-redirect", autoExpireVal)
     //listFilesRecursively: async (dir) => await listFilesRecursively(dir)
 });
 

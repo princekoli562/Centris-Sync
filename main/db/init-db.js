@@ -35,22 +35,41 @@ function initDB() {
 
 
     /* ---------------- APP SETTINGS TABLE ---------------- */
-   db.exec(`
+  //  db.exec(`
+  //   CREATE TABLE IF NOT EXISTS app_settings (
+  //     customer_id INTEGER NOT NULL,
+  //     domain_id   INTEGER NOT NULL,
+  //     domain_name TEXT NOT NULL,
+  //     user_id     INTEGER NOT NULL,
+  //     key         TEXT NOT NULL,
+  //     value       TEXT NOT NULL,
+  //     updated_at  INTEGER DEFAULT (strftime('%s','now')),
+  //     PRIMARY KEY (customer_id, domain_id, domain_name, user_id, key)
+  //   );
+  // `);
+
+  // db.exec(`
+  //   CREATE INDEX IF NOT EXISTS idx_app_settings_user
+  //   ON app_settings(customer_id, domain_id,domain_name, user_id);
+  // `);
+
+    db.exec(`
     CREATE TABLE IF NOT EXISTS app_settings (
       customer_id INTEGER NOT NULL,
       domain_id   INTEGER NOT NULL,
       domain_name TEXT NOT NULL,
       user_id     INTEGER NOT NULL,
-      key         TEXT NOT NULL,
+      "key"       TEXT NOT NULL,
       value       TEXT NOT NULL,
+      created_at  INTEGER DEFAULT (strftime('%s','now')),
       updated_at  INTEGER DEFAULT (strftime('%s','now')),
-      PRIMARY KEY (customer_id, domain_id, user_id, key)
+      PRIMARY KEY (customer_id, domain_id, domain_name, user_id, "key")
     );
   `);
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_app_settings_user
-    ON app_settings(customer_id, domain_id, user_id);
+    ON app_settings(customer_id, domain_id, domain_name, user_id);
   `);
     
 

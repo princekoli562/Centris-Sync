@@ -238,7 +238,7 @@ const createWindow = async () => {
     });
 
 
-    async function handleSessionCheck() {
+    async function handleSessionCheck1() {
         if (!isSessionActive({ autoExpire: autoExpireVal }) && !redirectingToLogin) {
             redirectingToLogin = true;
             console.log("⚠️ Session expired — redirecting to login page...");
@@ -249,6 +249,7 @@ const createWindow = async () => {
             // ✅ wait for renderer to be ready
             win.webContents.once("did-finish-load", () => {
                 console.log("🧪 fs-changed after redirect");
+                win.webContents.openDevTools({ mode: 'detach' });
 
                 setTimeout(() => {
                 if (win && !win.isDestroyed()) {
@@ -264,6 +265,37 @@ const createWindow = async () => {
             redirectingToLogin = false;
         }
     }
+
+    async function handleSessionCheck() {
+        if (!isSessionActive({ autoExpire: autoExpireVal }) && !redirectingToLogin) {
+            redirectingToLogin = true;
+            console.log("⚠️ Session expired — redirecting to login page...");
+
+            try {
+            // Attach listener FIRST
+            win.webContents.once("did-finish-load", () => {
+                console.log("🧪 Renderer loaded after redirect");
+
+                // Open DevTools (works in DMG + Guest)
+                win.webContents.openDevTools({ mode: "detach" });
+
+                setTimeout(() => {
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send("fs-changed");
+                }
+                }, 500);
+            });
+
+            await win.loadFile(getHtmlPath("index.html"));
+
+            } catch (err) {
+            console.error("❌ Error loading login page:", err);
+            } finally {
+            redirectingToLogin = false;
+            }
+        }
+    }
+
 
 
     function getHtmlPath(file) {

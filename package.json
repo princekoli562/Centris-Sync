@@ -19,19 +19,23 @@
     "directories": {
       "output": "dist"
     },
-
     "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "assets/images/favicon.icns",
-
-      "identity": null,
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "sign": false
-    },
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["universal"]
+      },
+      {
+        "target": "zip",
+        "arch": ["universal"]
+      }
+    ],
+    "icon": "assets/images/favicon.icns",
+    "identity": null,
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "sign": false
+  },
 
     "win": {
       "target": ["nsis", "portable"],

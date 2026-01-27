@@ -34,30 +34,41 @@ jobs:
           name: windows-build
           path: dist/*
 
-  build_mac:
-    name: Build macOS
-    runs-on: macos-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CSC_IDENTITY_AUTO_DISCOVERY: false
-      ELECTRON_BUILDER_ARCH: universal
+build_mac:
+  name: Build macOS
+  runs-on: macos-latest
+  env:
+    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    CSC_IDENTITY_AUTO_DISCOVERY: false
+    ELECTRON_BUILDER_ARCH: universal
 
-    steps:
-      - uses: actions/checkout@v4
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
 
-      - run: npm ci
+    - name: Install dependencies
+      run: npm ci
 
-      - name: Clear electron-builder cache
-      - run: rm -rf ~/Library/Caches/electron-builder
+    - name: Install Rosetta (required for universal build)
+      run: softwareupdate --install-rosetta --agree-to-license
 
-      - run: npm run build:mac
+    - name: Clear electron-builder cache
+      run: rm -rf ~/Library/Caches/electron-builder
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-build
-          path: dist/*
+    - name: Build macOS app (unsigned, universal)
+      run: npm run build:mac
+
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mac-build
+        path: dist/*
+
+
+    
   

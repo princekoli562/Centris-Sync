@@ -9,7 +9,7 @@
   "scripts": {
     "start": "cross-env NODE_ENV=development electron .",
     "build": "cross-env NODE_ENV=production electron-builder",
-    "build:mac": "cross-env NODE_ENV=production electron-builder --mac dmg zip"
+    "build:mac": "cross-env NODE_ENV=production electron-builder --mac dmg zip --universal"
   },
 
   "build": {
@@ -19,17 +19,9 @@
     "directories": {
       "output": "dist"
     },
+
     "mac": {
-    "target": [
-        {
-          "target": "dmg",
-          "arch": ["universal"]
-        },
-        {
-          "target": "zip",
-          "arch": ["universal"]
-        }
-      ],
+      "target": ["dmg", "zip"],
       "icon": "assets/images/favicon.icns",
       "identity": null,
       "hardenedRuntime": false,

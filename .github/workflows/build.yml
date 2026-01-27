@@ -23,7 +23,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Windows app
         run: npm run build
@@ -33,12 +33,14 @@ jobs:
         with:
           name: windows-build
           path: dist/*
+  
 
   build_mac:
     name: Build macOS
     runs-on: macos-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_IDENTITY_AUTO_DISCOVERY: false   # 🔴 IMPORTANT
 
     steps:
       - name: Checkout repository
@@ -50,13 +52,15 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Clear electron-builder cache
         run: rm -rf ~/Library/Caches/electron-builder
 
-      - name: Build macOS app
-        run: DEBUG=electron-builder npm run build:mac
+      - name: Build macOS app (unsigned)
+        run: |
+          export CSC_IDENTITY_AUTO_DISCOVERY=false
+          npm run build:mac
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4

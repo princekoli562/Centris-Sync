@@ -5,49 +5,47 @@
   "main": "main.js",
   "author": "ViDoc Technologies Private Limited",
   "license": "MIT",
-
   "scripts": {
     "start": "cross-env NODE_ENV=development electron .",
     "build": "cross-env NODE_ENV=production electron-builder",
     "build:mac": "cross-env NODE_ENV=production electron-builder --mac dmg zip --universal"
   },
-
   "build": {
     "appId": "com.vidoc.centrissync",
     "productName": "Centris Drive",
-
     "directories": {
       "output": "dist"
     },
-
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "assets/images/favicon.icns",
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "sign": false
     },
-
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "requestedExecutionLevel": "requireAdministrator",
       "icon": "assets/images/favicon.ico"
     },
-
     "nsis": {
       "oneClick": false,
       "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true
     },
-
     "asar": true,
     "asarUnpack": [
       "preload.js",
       "node_modules/chokidar/**"
     ],
-
     "files": [
       "main/**/*",
       "main.js",
@@ -57,24 +55,22 @@
       "node_modules/**/*"
     ]
   },
-
   "devDependencies": {
     "cross-env": "^10.1.0",
-    "electron": "^39.1.0",
-    "electron-builder": "^24.0.0",
-    "electron-rebuild": "^3.2.9",
+    "electron": "^27.3.0",  
+    "electron-builder": "^26.5.0",
+    "electron-rebuild": "^2.0.3",
     "electron-reload": "^2.0.0-alpha.1"
   },
-
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",
-    "better-sqlite3": "^12.5.0",
+    "better-sqlite3": "^9.6.0",
     "bootstrap": "^5.3.8",
+    "chokidar": "^3.5.3",
     "crypto-js": "^4.2.0",
     "form-data": "^4.0.5",
     "jquery": "^3.7.1",
     "pdfjs-dist": "^5.4.449",
-    "sudo-prompt": "^9.2.1",
-    "chokidar": "^3.5.3"
+    "sudo-prompt": "^9.2.1"
   }
 }

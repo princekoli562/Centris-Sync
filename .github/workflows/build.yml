@@ -21,9 +21,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Rebuild native modules
-        run: npx @electron/rebuild -f -w better-sqlite3
-
       - name: Build Windows app
         run: npm run build
 
@@ -31,6 +28,7 @@ jobs:
         with:
           name: windows-build
           path: dist/*
+
 
   build_mac:
     runs-on: macos-latest
@@ -47,14 +45,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Rebuild native modules
-        run: npx @electron/rebuild -f -w better-sqlite3
-
       - name: Clear electron-builder cache
         run: rm -rf ~/Library/Caches/electron-builder
 
-      - name: Build macOS (unsigned)
-        run: npm run build:mac
+      - name: Build macOS Intel
+        run: npm run build:mac:intel
+
+      - name: Build macOS Apple Silicon
+        run: npm run build:mac:arm
 
       - uses: actions/upload-artifact@v4
         with:

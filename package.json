@@ -8,13 +8,11 @@
 
   "scripts": {
     "start": "cross-env NODE_ENV=development electron .",
-
     "build": "cross-env NODE_ENV=production electron-builder",
-
     "build:mac:intel": "cross-env NODE_ENV=production electron-builder --mac dmg zip --x64",
     "build:mac:arm": "cross-env NODE_ENV=production electron-builder --mac dmg zip --arm64",
-
-    "build:win": "cross-env NODE_ENV=production electron-builder --win"
+    "build:win": "cross-env NODE_ENV=production electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
 
   "build": {

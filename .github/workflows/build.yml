@@ -14,19 +14,18 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Rebuild native modules
-        run: npx electron-rebuild -f -w better-sqlite3
+        run: npx @electron/rebuild -f -w better-sqlite3
 
       - name: Build Windows app
         run: npm run build
@@ -44,24 +43,23 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Rebuild native modules
-        run: npx electron-rebuild -f -w better-sqlite3
+        run: npx @electron/rebuild -f -w better-sqlite3
 
       - name: Clear electron-builder cache
         run: rm -rf ~/Library/Caches/electron-builder
 
-      - name: Build macOS (universal)
+      - name: Build macOS (universal, unsigned)
         run: npm run build:mac
 
       - name: Upload macOS artifact

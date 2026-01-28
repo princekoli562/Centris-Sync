@@ -1,14 +1,16 @@
 {
   "name": "centris-drive",
   "version": "1.0.0",
-  "description": "Desktop app for syncing files between centris and windows/mac",
+  "description": "Desktop app for syncing files between Centris and Windows/macOS",
   "main": "main.js",
   "author": "ViDoc Technologies Private Limited",
   "license": "MIT",
   "scripts": {
     "start": "cross-env NODE_ENV=development electron .",
     "build": "cross-env NODE_ENV=production electron-builder",
-    "build:mac": "cross-env NODE_ENV=production electron-builder --mac dmg zip --universal"
+    "build:mac": "cross-env NODE_ENV=production electron-builder --mac dmg zip --universal",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "npm run rebuild"
   },
   "build": {
     "appId": "com.vidoc.centrissync",
@@ -17,11 +19,20 @@
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "main/**/*",
+      "main.js",
+      "preload.js",
+      "*.html",
+      "assets/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "preload.js",
+      "node_modules/chokidar/**"
+    ],
     "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
+      "target": ["dmg", "zip"],
       "icon": "assets/images/favicon.icns",
       "identity": null,
       "hardenedRuntime": false,
@@ -29,10 +40,7 @@
       "sign": false
     },
     "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
+      "target": ["nsis", "portable"],
       "requestedExecutionLevel": "requireAdministrator",
       "icon": "assets/images/favicon.ico"
     },
@@ -41,31 +49,18 @@
       "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true
-    },
-    "asar": true,
-    "asarUnpack": [
-      "preload.js",
-      "node_modules/chokidar/**"
-    ],
-    "files": [
-      "main/**/*",
-      "main.js",
-      "preload.js",
-      "*.html",
-      "assets/**/*",
-      "node_modules/**/*"
-    ]
+    }
   },
-  "devDependencies": {
+    "devDependencies": {
     "cross-env": "^10.1.0",
-    "electron": "^27.3.0",  
-    "electron-builder": "^26.5.0",
-    "electron-rebuild": "^2.0.3",
+    "electron": "^26.6.10",
+    "electron-builder": "^26.0.12",
+    "@electron/rebuild": "^4.0.1",
     "electron-reload": "^2.0.0-alpha.1"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",
-    "better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^12.5.0",
     "bootstrap": "^5.3.8",
     "chokidar": "^3.5.3",
     "crypto-js": "^4.2.0",

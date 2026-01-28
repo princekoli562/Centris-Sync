@@ -13,6 +13,7 @@
   "build": {
     "appId": "com.vidoc.centrissync",
     "productName": "Centris Drive",
+    "buildDependenciesFromSource": true,
     "directories": {
       "output": "dist"
     },

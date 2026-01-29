@@ -16,6 +16,8 @@ let watcher = null;
 let syncTimer = null;
 let debounceTimer = null;
 let autoExpireVal = false;
+const isWindows = process.platform === "win32";
+const isMac = process.platform === "darwin";
 
 //const dbPath = path.join(__dirname, "main", "db", "init-db.js");
 //const { initDB, getDB } = require("./main/db/init-db");
@@ -26,6 +28,8 @@ const { initDB, getDB } = require("./main/db/init-db.js");
 //const adminTasks  = require(path.join(__dirname, "assets/js/admin-task.js"));
 
 //console.log(process.env.NODE_ENV);
+
+console.log('PLATFORM - > ' + process.platform);
 
 
 if (process.env.NODE_ENV === "development") {
@@ -106,9 +110,21 @@ const preloadPath = isDev
     : path.join(process.resourcesPath, "app.asar.unpacked", "preload.js");
     
 
-const iconPath = isDev
-    ? path.join(__dirname, "assets/images/favicon.ico")
-    : path.join(process.resourcesPath, "app.asar" ,"assets/images/favicon.ico");
+// const iconPath = isDev
+//     ? path.join(__dirname, "assets/images/favicon.ico")
+//     : path.join(process.resourcesPath, "app.asar" ,"assets/images/favicon.ico");
+
+const iconPath = isWindows
+    ? (
+        isDev
+            ? path.join(__dirname, "assets/images/favicon.ico")
+            : path.join(process.resourcesPath, "app.asar", "assets/images/favicon.ico")
+      )
+    : (
+        isDev
+            ? path.join(__dirname, "assets/images/favicon.icns")
+            : path.join(process.resourcesPath, "app.asar", "assets/images/favicon.icns")
+      );
 
 // function sendLogToRenderer(message) {
 //   win = BrowserWindow.getAllWindows()[0];
@@ -148,6 +164,18 @@ const createWindow = async () => {
         },
         icon: iconPath
     });
+
+    // win = new BrowserWindow({
+    //     width: 800,
+    //     height: 600,
+    //     webPreferences: {
+    //         preload: preloadPath,
+    //         contextIsolation: true,
+    //         enableRemoteModule: false,
+    //         nodeIntegration: false
+    //     },
+    //     ...(isWindows ? { icon: iconPath } : {icon: iconPath}) // mac ignores this
+    // });
 
     // ✅ Use local session checker instead of win.electronAPI
     const sessionActive = isSessionActive({ autoExpire: autoExpireVal }); // function defined below
@@ -1130,7 +1158,7 @@ function getFolderSize(folderPath) {
 /* ------------------ MAIN FUNCTION ------------------ */
 function createSyncFolderAndDrive() {
     const homeDir = os.homedir();
-    const SYNC_FOLDER = path.join(homeDir, 'Centris-Drive');
+    const SYNC_FOLDER = path.join(homeDir, VOLUME_LABEL);
 
     // 1️⃣ Create folder if missing
     if (!fs.existsSync(SYNC_FOLDER)) {
@@ -1309,6 +1337,62 @@ function createAndMountVHDX() {
         } else {
             console.warn("⚠️ Could not detect mounted drive letter.");
         }
+}
+
+
+function createAndMountMacDisk() {
+    const homeDir = os.homedir();
+    const DISK_NAME = VOLUME_LABEL;
+    //const DISK_SIZE_GB = 20;
+
+    const SPARSE_PATH = path.join(homeDir, `${DISK_NAME}.sparsebundle`);
+    console.log(`💽 Disk image path: ${SPARSE_PATH}`);
+
+    if (!fs.existsSync(SPARSE_PATH)) {
+        console.log(`🪶 Creating ${VHDX_SIZE_MB}GB sparsebundle...`);
+
+        execSync(`
+            hdiutil create \
+            -size ${VHDX_SIZE_MB}g \
+            -type SPARSEBUNDLE \
+            -fs APFS \
+            -volname "${DISK_NAME}" \
+            "${SPARSE_PATH}"
+        `, { stdio: "inherit" });
+
+        console.log("✅ Disk image created");
+    }
+
+    console.log("📀 Attaching disk image...");
+    execSync(`hdiutil attach "${SPARSE_PATH}" -nobrowse`, { stdio: "inherit" });
+
+    const volumePath = path.join("/Volumes", DISK_NAME);
+
+    if (!fs.existsSync(volumePath)) {
+        console.error("❌ Failed to mount volume");
+        return;
+    }
+
+    console.log(`🔗 Mounted at ${volumePath}`);
+
+    // Create subfolder
+    const subFolder = path.join(volumePath, VOLUME_LABEL);
+    if (!fs.existsSync(subFolder)) {
+        fs.mkdirSync(subFolder, { recursive: true });
+        console.log(`📁 Subfolder created: ${subFolder}`);
+    }
+
+    // Apply custom volume icon
+    const iconPath = path.join(__dirname, "assets/images/drive.icns");
+    const volumeIconPath = path.join(volumePath, ".VolumeIcon.icns");
+
+    try {
+        fs.copyFileSync(iconPath, volumeIconPath);
+        execSync(`SetFile -a C "${volumePath}"`);
+        console.log("🎨 Custom volume icon applied");
+    } catch (err) {
+        console.warn("⚠️ Icon setup failed (SetFile requires Xcode tools)");
+    }
 }
 
 
@@ -1491,6 +1575,48 @@ function unmountVHDX() {
     }
 }
 
+function unmountMacDisk() {
+    const DISK_NAME = VOLUME_LABEL;
+    const volumePath = `/Volumes/${DISK_NAME}`;
+
+    console.log(`🔌 Detaching macOS disk: ${volumePath}`);
+
+    if (!fs.existsSync(volumePath)) {
+        console.log("❌ Volume not mounted!");
+        return;
+    }
+
+    try {
+        // Graceful detach
+        execSync(`hdiutil detach "${volumePath}"`, { stdio: "inherit" });
+        console.log("✅ Disk detached successfully!");
+    } catch (err) {
+        console.warn("⚠️ Normal detach failed, forcing...");
+
+        try {
+            execSync(`hdiutil detach "${volumePath}" -force`, { stdio: "inherit" });
+            console.log("✅ Disk force-detached successfully!");
+        } catch (fatal) {
+            console.error("❌ Failed to detach disk:", fatal.message);
+        }
+    }
+}
+
+
+function relaunchWithSudoMac() {
+    const appPath = app.getPath("exe");
+
+    spawn("osascript", [
+        "-e",
+        `do shell script "${appPath}" with administrator privileges`
+    ], {
+        detached: true,
+        stdio: "ignore"
+    });
+
+    app.quit();
+}
+
 app.whenReady().then(() => {
   //  win = new BrowserWindow({
   //       width: 800,
@@ -1527,10 +1653,34 @@ app.whenReady().then(() => {
     //
 	createWindow();
 	//const folderPath = createSyncFolderAndDrive();
-    if (!isAdmin()) {
-        relaunchAsAdmin();
-    } else {
+    // if (!isAdmin()) {
+    //     relaunchAsAdmin();
+    // } else {
+    //     createAndMountVHDX();
+    // }
+
+    if (process.platform === "win32") {
+        // Windows → needs Administrator
+        if (!isAdmin()) {
+            relaunchAsAdmin();
+            //return;
+        }
+
         createAndMountVHDX();
+    }
+
+    else if (process.platform === "darwin") {
+        // macOS → needs sudo
+        if (process.getuid && process.getuid() !== 0) {
+            relaunchWithSudoMac();
+            return;
+        }
+
+        createAndMountMacDisk();
+    }
+
+    else {
+        console.warn(`❌ Unsupported platform: ${process.platform}`);
     }
 
     //createSyncFolderAndDrive();
@@ -3990,8 +4140,15 @@ ipcMain.handle("create-vhdx", async () => {
 });
 
 ipcMain.on("user:logout", () => {
-    console.log("🔒 User logged out, unmounting VHDX...");
-    unmountVHDX();
+    console.log("🔒 User logged out, unmounting VHDX...");   
+    if (process.platform === "win32") {
+        unmountVHDX();
+    } else if (process.platform === "darwin") {
+        unmountMacDisk();
+    } else {
+        unmountVHDX();
+        console.warn("❌ Unsupported platform");
+    }
     killLeftoverProcesses();
     app.quit();
 });
@@ -4306,7 +4463,14 @@ function safeCleanup() {
         if (isDev) {
            // no mount mount
         }else{
-            unmountVHDX();
+            if (process.platform === "win32") {
+                unmountVHDX();
+            } else if (process.platform === "darwin") {
+                unmountMacDisk();
+            } else {
+                unmountVHDX();
+                console.warn("❌ Unsupported platform");
+            }
         }
     } catch (e) {
         console.warn("⚠️ Failed to unmount VHDX:", e.message);
@@ -4314,7 +4478,7 @@ function safeCleanup() {
 }
 
 
-function killLeftoverProcesses() {
+function killLeftoverProcesses1() {
     try {
         execSync('taskkill /F /IM electron.exe', { stdio: 'ignore' });
         console.log("🧹 Leftover Electron processes killed.");
@@ -4322,6 +4486,24 @@ function killLeftoverProcesses() {
         console.warn("⚠️ No leftover processes to kill.");
     }
 }
+
+
+
+function killLeftoverProcesses() {
+    try {
+        if (process.platform === "win32") {
+            execSync(`taskkill /F /IM "${path.basename(process.execPath)}"`, { stdio: "ignore" });
+        } 
+        else if (process.platform === "darwin") {
+            execSync(`pkill -f "${app.getName()}"`, { stdio: "ignore" });
+        }
+
+        console.log("🧹 Leftover app processes killed.");
+    } catch {
+        console.warn("⚠️ No leftover processes to kill.");
+    }
+}
+
 
 process.on('exit', () => {
   

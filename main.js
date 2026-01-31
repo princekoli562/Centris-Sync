@@ -411,7 +411,15 @@ async function startDriveWatcher(syncData) {
     const drive = cleanSegment(getMappedDriveLetter()); // "Z"
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
 
-    const DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    let DRIVE_ROOT = drive;//path.win32.normalize(`${drive}:\\${baseFolder}`);
+
+    if (process.platform === "win32") {
+        // Windows → add base folder
+        DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+        // macOS → mount path is already correct
+        DRIVE_ROOT = `${drive}/${baseFolder}`;
+    }
 
     console.log("👀 Watching (polling):", DRIVE_ROOT);
 
@@ -1147,7 +1155,7 @@ function getMappedDriveLetter(volumeLabel = "Centris-Drive") {
 
             for (const vol of volumes) {
                 if (vol.toLowerCase() === volumeLabel.toLowerCase()) {
-                    const mountPath = path.join(volumesPath, vol);
+                    const mountPath = path.join(volumesPath);
                     console.log(`✅ Found ${volumeLabel} mounted at ${mountPath}`);
                     return mountPath;
                 }

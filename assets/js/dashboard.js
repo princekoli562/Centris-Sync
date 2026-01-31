@@ -783,7 +783,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const fileContentBase64 = await window.electronAPI.readFileBase64(fullPath);
                 const stats = await window.electronAPI.fileStat(fullPath);
 
-                const destination = mappedDrive + "\\" + fileName;
+                const destination = mappedDrive + "/" + fileName;
 
                 // Copy file to mapped drive
                 await window.electronAPI.copyFile(fullPath, destination);
@@ -1943,7 +1943,7 @@ function buildBreadcrumb1(fullPath) {
     }).join(" › ");
 }
 
-function buildBreadcrumb(fullPath) {
+function buildBreadcrumbold(fullPath) {
     if (!fullPath) return "";
 
     // Normalize path
@@ -1952,6 +1952,37 @@ function buildBreadcrumb(fullPath) {
 
     return parts.map((p, i) => {
         const subPath = parts.slice(0, i + 1).join("/");
+
+        return `
+            <span class="crumb" data-path="${subPath}">
+                ${p}
+            </span>
+        `;
+    }).join(" › ");
+}
+
+function buildBreadcrumb(fullPath) {
+    if (!fullPath) return "";
+
+    // Normalize slashes
+    const normalized = fullPath.replace(/\\/g, "/");
+
+    const isMacRoot = normalized.startsWith("/");
+
+    // Split WITHOUT losing root
+    const parts = normalized.split("/").filter(p => p !== "");
+
+    return parts.map((p, i) => {
+
+        let subPath;
+
+        if (isMacRoot) {
+            // macOS/Linux: keep leading slash
+            subPath = "/" + parts.slice(0, i + 1).join("/");
+        } else {
+            // Windows: drive letter path
+            subPath = parts.slice(0, i + 1).join("/");
+        }
 
         return `
             <span class="crumb" data-path="${subPath}">

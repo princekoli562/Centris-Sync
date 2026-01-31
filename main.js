@@ -3731,6 +3731,14 @@ function removeDeletedChunk(keys) {
 
 ipcMain.handle('getMappedDrive', async () => {
     const drive = getMappedDriveLetter();
+
+    if (process.platform === "win32") {
+        // Windows → add base folder
+        //drive = path.win32.normalize(`${drive}`);
+    } else if (process.platform === "darwin") {
+        // macOS → mount path is already correct
+        drive = `/${drive}`;
+    }
     return drive || "A:\\";
 });
   
@@ -4140,7 +4148,7 @@ ipcMain.handle("getAppConfig", async () => {
 
     const config = {
         vhdx_name: VHDX_NAME,
-        drivePath,
+        drivePath :drivePath,
         driveCustDomPath: drivePath,
         userName: syncData.user_data.user_name,
         version: app.getVersion(),

@@ -1074,7 +1074,7 @@ function getMappedDrives1() {
 }
 
 
-function getMappedDriveLetter(volumeLabel = "Centris-Drive") {
+function getMappedDriveLetterFinal(volumeLabel = "Centris-Drive") {
     try {
         // Run WMIC to get drive letter and label
         const output = execSync(`wmic logicaldisk get Name,VolumeName`, { encoding: "utf8" });
@@ -1106,6 +1106,63 @@ function getMappedDriveLetter(volumeLabel = "Centris-Drive") {
 
     } catch (err) {
         console.error("❌ Error detecting Centris-Drive drive:", err);
+        return null;
+    }
+}
+
+function getMappedDriveLetter(volumeLabel = "Centris-Drive") {
+    try {
+        const platform = os.platform();
+
+        // 🪟 WINDOWS
+        if (platform === "win32") {
+            const output = execSync(`wmic logicaldisk get Name,VolumeName`, { encoding: "utf8" });
+
+            const lines = output
+                .split("\n")
+                .map(l => l.trim())
+                .filter(l => l && !l.startsWith("Name"));
+
+            for (const line of lines) {
+                const match = line.match(/^([A-Z]:)\s+(.*)$/i);
+                if (!match) continue;
+
+                const drive = match[1];
+                const label = match[2].trim();
+
+                if (label.toLowerCase() === volumeLabel.toLowerCase()) {
+                    console.log(`✅ Found ${volumeLabel} mounted at ${drive}\\`);
+                    return `${drive}\\`;
+                }
+            }
+
+            console.warn(`⚠️ Drive "${volumeLabel}" not found on Windows`);
+            return null;
+        }
+
+        // 🍎 macOS
+        if (platform === "darwin") {
+            const volumesPath = "/Volumes";
+            const volumes = fs.readdirSync(volumesPath);
+
+            for (const vol of volumes) {
+                if (vol.toLowerCase() === volumeLabel.toLowerCase()) {
+                    const mountPath = path.join(volumesPath, vol);
+                    console.log(`✅ Found ${volumeLabel} mounted at ${mountPath}`);
+                    return mountPath;
+                }
+            }
+
+            console.warn(`⚠️ Volume "${volumeLabel}" not found on macOS`);
+            return null;
+        }
+
+        // 🐧 Linux (optional)
+        console.warn(`⚠️ Platform "${platform}" not supported yet`);
+        return null;
+
+    } catch (err) {
+        console.error("❌ Error detecting Centris drive:", err);
         return null;
     }
 }

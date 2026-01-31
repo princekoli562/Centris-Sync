@@ -4095,16 +4095,50 @@ ipcMain.handle('shell:openItem', (ev, filePath) => {
 });
 
 
-ipcMain.handle('getAppConfig', async (event) => {
-    const drive = getMappedDriveLetter();
+// ipcMain.handle('getAppConfig', async (event) => {
+//     const drive = getMappedDriveLetter();
+//     const config = {
+//         vhdx_name: VHDX_NAME,
+//         drivePath: drive + '\\' + syncData.config_data.centris_drive,
+//         driveCustDomPath: drive +  '\\' + syncData.config_data.centris_drive,
+//         userName: syncData.user_data.user_name,
+//         version: app.getVersion(),
+//         vhdx_path : VHDX_PATH
+//     };
+//     return config;
+// });
+
+ipcMain.handle("getAppConfig", async () => {
+    const platform = os.platform();
+    let driveRoot = null;
+
+    if (platform === "win32") {
+        // Example: "F:\"
+        driveRoot = getMappedDriveLetter("Centris-Drive");
+    } else if (platform === "darwin") {
+        // Example: "/Volumes/Centris-Drive"
+        driveRoot = "/Volumes/Centris-Drive";
+    }
+
+    if (!driveRoot) {
+        throw new Error("Centris Drive not mounted");
+    }
+
+    // Build final paths safely
+    const drivePath =
+        platform === "win32"
+            ? path.win32.join(driveRoot, syncData.config_data.centris_drive)
+            : driveRoot;
+
     const config = {
         vhdx_name: VHDX_NAME,
-        drivePath: drive + '\\' + syncData.config_data.centris_drive,
-        driveCustDomPath: drive +  '\\' + syncData.config_data.centris_drive,
+        drivePath,
+        driveCustDomPath: drivePath,
         userName: syncData.user_data.user_name,
         version: app.getVersion(),
-        vhdx_path : VHDX_PATH
+        vhdx_path: VHDX_PATH
     };
+
     return config;
 });
 

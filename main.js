@@ -19,6 +19,8 @@ let autoExpireVal = false;
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
 
+app.disableHardwareAcceleration();
+
 //const dbPath = path.join(__dirname, "main", "db", "init-db.js");
 //const { initDB, getDB } = require("./main/db/init-db");
 const { initDB, getDB } = require("./main/db/init-db.js");
@@ -30,6 +32,17 @@ const { initDB, getDB } = require("./main/db/init-db.js");
 //console.log(process.env.NODE_ENV);
 
 console.log('PLATFORM - > ' + process.platform);
+console.log("🔥 MAIN FILE PATH:", __filename);
+console.log("🔥 CWD:", process.cwd());
+
+process.on("uncaughtException", err => {
+  console.error("❌ Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", err => {
+  console.error("❌ Unhandled Rejection:", err);
+});
+
 
 
 if (process.env.NODE_ENV === "development") {
@@ -105,8 +118,12 @@ let syncData = {
 
 const isDev = !app.isPackaged;
 
+// const preloadPathgg = isDev
+//     ? path.join(__dirname, "preload.js")
+//     : path.join(process.resourcesPath, "app.asar.unpacked", "preload.js");
+
 const preloadPath = isDev
-    ? path.join(__dirname, "preload.js")
+    ? path.join(process.cwd(), "preload.js")
     : path.join(process.resourcesPath, "app.asar.unpacked", "preload.js");
     
 
@@ -326,10 +343,17 @@ const createWindow = async () => {
 
 
 
-    function getHtmlPath(file) {
+    function getHtmlPath1(file) {
         return isDev
             ? path.join(__dirname, file)                // Dev folder
             : path.join(process.resourcesPath, "app.asar", file); // Packaged EXE
+    }
+
+    function getHtmlPath(file) {
+        if (isDev) {
+            return path.join(process.cwd(), file);
+        }
+        return path.join(process.resourcesPath, "app.asar", file);
     }
 
 };
@@ -1672,10 +1696,10 @@ app.whenReady().then(() => {
     else if (process.platform === "darwin") {
         // macOS → needs sudo
         if (process.getuid && process.getuid() !== 0) {
-            relaunchWithSudoMac();
-            return;
+            //relaunchWithSudoMac();
+            //return;
         }
-
+        console.log('prince -> ');
         createAndMountMacDisk();
     }
 

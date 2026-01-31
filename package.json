@@ -5,7 +5,6 @@
   "main": "main.js",
   "author": "ViDoc Technologies Private Limited",
   "license": "MIT",
-
   "scripts": {
     "start": "cross-env NODE_ENV=development electron .",
     "build": "cross-env NODE_ENV=production electron-builder",
@@ -14,15 +13,12 @@
     "build:win": "cross-env NODE_ENV=production electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
-
   "build": {
     "appId": "com.vidoc.centrissync",
     "productName": "Centris Drive",
-
     "directories": {
       "output": "dist"
     },
-
     "files": [
       "main/**/*",
       "main.js",
@@ -30,29 +26,30 @@
       "*.html",
       "assets/**/*"
     ],
-
     "asar": true,
-
     "asarUnpack": [
       "preload.js",
       "node_modules/chokidar/**"
     ],
-
     "mac": {
       "icon": "assets/images/favicon.icns",
       "identity": null,
       "sign": false,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
-
     "win": {
       "icon": "assets/images/favicon.ico",
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "requestedExecutionLevel": "requireAdministrator"
     },
-
     "nsis": {
       "oneClick": false,
       "perMachine": true,
@@ -60,14 +57,12 @@
       "allowToChangeInstallationDirectory": true
     }
   },
-
   "devDependencies": {
     "cross-env": "^10.1.0",
     "electron": "^26.6.10",
     "electron-builder": "^26.4.0",
     "electron-reload": "^2.0.0-alpha.1"
   },
-
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",
     "better-sqlite3": "^12.5.0",

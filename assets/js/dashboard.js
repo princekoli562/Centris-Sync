@@ -224,13 +224,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     //startAutoSync(syncData);
     //await window.electronAPI.getMappedDrive();//
     let currentDir = config.drivePath;
-    if (config.platform === "win32") {
-        // Example: "F:\"
-        currentDir = config.drivePath;
-    } else if (config.platform === "darwin") {
-        // Example: "/Volumes/Centris-Drive"
-        currentDir = config.drivePath + config.volume_label;
-    }
+    // if (config.platform === "win32") {
+    //     // Example: "F:\"
+    //     currentDir = config.drivePath;
+    // } else if (config.platform === "darwin") {
+    //     // Example: "/Volumes/Centris-Drive"
+    //     currentDir = config.drivePath + config.volume_label;
+    // }
     //let currentDir = Object.keys(mappedDir)[0];
     //console.log(mappedDrive);
     let local_stored = localStorage.getItem("customer_data");
@@ -439,6 +439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load the initial directory (triggered by your “Open Drive” button)
     $(document).on("click", "#openDrive", async function (e) {
         e.preventDefault();
+        console.log('NBS - ' + currentDir);
         await loadFiles(currentDir,true);
     });
 

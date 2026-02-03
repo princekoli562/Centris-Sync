@@ -2098,7 +2098,15 @@ async function downloadPendingFilesLogic(event, args) {
 
     const drive = cleanSegment(getMappedDriveLetter());
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-    const mappedDrivePath = path.join(drive + ":", baseFolder);
+    let mappedDrivePath = '';//path.join(drive + ":", baseFolder);
+    if (process.platform === "win32") {
+        // Windows → add base folder
+        mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+        // macOS → mount path is already correct
+        mappedDrivePath = `${drive}/${baseFolder}`;
+    }
+    
     const UserName = syncData.user_data.user_name;
 
     const totalFiles = pending.length;
@@ -2388,7 +2396,17 @@ async function deleteLocalFilesLogic(event, args) {
 
     const drive = cleanSegment(getMappedDriveLetter());
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-    const mappedDrivePath = path.join(drive + ":", baseFolder);
+    let mappedDrivePath = path.join(drive + ":", baseFolder);
+
+    if (process.platform === "win32") {
+        // Windows → add base folder
+        //mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);
+        mappedDrivePath = path.join(drive + ":", baseFolder);
+    } else if (process.platform === "darwin") {
+        // macOS → mount path is already correct
+        mappedDrivePath = `${drive}/${baseFolder}`;
+    }
+
     const userName = syncData.user_data.user_name;
 
     const totalFiles = deletedData.length;
@@ -3019,7 +3037,16 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // Mapped folder path (true final path)
     // ------------------------------------------------------------
     const drive_letter = getMappedDriveLetter();
-    const mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+    let mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+
+    if (process.platform === "win32") {
+        // Windows → add base folder
+        //mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);       
+        mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+    } else if (process.platform === "darwin") {
+        // macOS → mount path is already correct
+        mappedDrivePath = `${drive_letter}/${centrisFolder}`;
+    }
 
     // Load old tracker
     const previousSnapshot = await loadTracker(false);
@@ -4111,19 +4138,6 @@ ipcMain.handle('shell:openItem', (ev, filePath) => {
 });
 
 
-// ipcMain.handle('getAppConfig', async (event) => {
-//     const drive = getMappedDriveLetter();
-//     const config = {
-//         vhdx_name: VHDX_NAME,
-//         drivePath: drive + '\\' + syncData.config_data.centris_drive,
-//         driveCustDomPath: drive +  '\\' + syncData.config_data.centris_drive,
-//         userName: syncData.user_data.user_name,
-//         version: app.getVersion(),
-//         vhdx_path : VHDX_PATH
-//     };
-//     return config;
-// });
-
 ipcMain.handle("getAppConfig", async () => {
     const platform = os.platform();
     let driveRoot = null;
@@ -4133,7 +4147,7 @@ ipcMain.handle("getAppConfig", async () => {
         driveRoot = getMappedDriveLetter("Centris-Drive");
     } else if (platform === "darwin") {
         // Example: "/Volumes/Centris-Drive"
-        driveRoot = "/Volumes/Centris-Drive";
+        driveRoot = "/Volumes/" + volumeLabel;
     }
 
     if (!driveRoot) {

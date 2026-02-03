@@ -418,7 +418,7 @@ async function startDriveWatcher(syncData) {
         DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        DRIVE_ROOT = `${drive}/${baseFolder}`;
+        DRIVE_ROOT = `${drive}/${baseFolder}/${baseFolder}`;
     }
 
     console.log("👀 Watching (polling):", DRIVE_ROOT);
@@ -2104,7 +2104,7 @@ async function downloadPendingFilesLogic(event, args) {
         mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        mappedDrivePath = `${drive}/${baseFolder}`;
+        mappedDrivePath = `${drive}/${baseFolder}/${baseFolder}`;
     }
     
     const UserName = syncData.user_data.user_name;
@@ -2404,7 +2404,7 @@ async function deleteLocalFilesLogic(event, args) {
         mappedDrivePath = path.join(drive + ":", baseFolder);
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        mappedDrivePath = `${drive}/${baseFolder}`;
+        mappedDrivePath = `${drive}/${baseFolder}/${baseFolder}`;
     }
 
     const userName = syncData.user_data.user_name;
@@ -3045,7 +3045,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
         mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        mappedDrivePath = `${drive_letter}/${centrisFolder}`;
+        mappedDrivePath = `${drive_letter}/${centrisFolder}/${centrisFolder}/`;
     }
 
     // Load old tracker

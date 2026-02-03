@@ -4147,7 +4147,7 @@ ipcMain.handle("getAppConfig", async () => {
         driveRoot = getMappedDriveLetter("Centris-Drive");
     } else if (platform === "darwin") {
         // Example: "/Volumes/Centris-Drive"
-        driveRoot = "/Volumes/" + volumeLabel;
+        driveRoot = "/Volumes/" + VOLUME_LABEL;
     }
 
     if (!driveRoot) {

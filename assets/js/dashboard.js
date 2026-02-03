@@ -224,6 +224,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     //startAutoSync(syncData);
     //await window.electronAPI.getMappedDrive();//
     let currentDir = config.drivePath;
+    if (config.platform === "win32") {
+        // Example: "F:\"
+        currentDir = config.drivePath;
+    } else if (config.platform === "darwin") {
+        // Example: "/Volumes/Centris-Drive"
+        currentDir = config.drivePath + config.volume_label;
+    }
     //let currentDir = Object.keys(mappedDir)[0];
     //console.log(mappedDrive);
     let local_stored = localStorage.getItem("customer_data");
@@ -238,6 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         user_data = syncData.user_data; 
     }
     console.log(currentDir);
+    console.log(config.platform + ' = ' + config.volume_label);
      // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');

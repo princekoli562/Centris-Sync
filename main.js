@@ -4175,7 +4175,9 @@ ipcMain.handle("getAppConfig", async () => {
         driveCustDomPath: drivePath,
         userName: syncData.user_data.user_name,
         version: app.getVersion(),
-        vhdx_path: VHDX_PATH
+        vhdx_path: VHDX_PATH,
+        platform:platform,
+        volume_label:VOLUME_LABEL
     };
 
     return config;

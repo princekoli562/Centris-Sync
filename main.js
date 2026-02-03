@@ -31,6 +31,8 @@ const { initDB, getDB } = require("./main/db/init-db.js");
 
 //console.log(process.env.NODE_ENV);
 
+console.log('MMM - > ' + app.getPath("userData"));
+
 console.log('PLATFORM - > ' + process.platform);
 console.log("🔥 MAIN FILE PATH:", __filename);
 console.log("🔥 CWD:", process.cwd());
@@ -418,7 +420,7 @@ async function startDriveWatcher(syncData) {
         DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        DRIVE_ROOT = `${drive}/${baseFolder}/${baseFolder}`;
+        DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
     }
 
     console.log("👀 Watching (polling):", DRIVE_ROOT);
@@ -1453,9 +1455,14 @@ function createAndMountMacDisk() {
     }
 
     console.log("📀 Attaching disk image...");
-    execSync(`hdiutil attach "${SPARSE_PATH}" -nobrowse`, { stdio: "inherit" });
+    
 
     const volumePath = path.join("/Volumes", DISK_NAME);
+
+    if (!fs.existsSync(volumePath)) {
+        //execSync(`hdiutil attach "${bundlePath}" -nobrowse`);
+        execSync(`hdiutil attach "${SPARSE_PATH}" -nobrowse`, { stdio: "inherit" });
+    }
 
     if (!fs.existsSync(volumePath)) {
         console.error("❌ Failed to mount volume");
@@ -2104,7 +2111,7 @@ async function downloadPendingFilesLogic(event, args) {
         mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        mappedDrivePath = `${drive}/${baseFolder}/${baseFolder}`;
+        mappedDrivePath = `/${drive}/${baseFolder}/${baseFolder}`;
     }
     
     const UserName = syncData.user_data.user_name;
@@ -2128,7 +2135,8 @@ async function downloadPendingFilesLogic(event, args) {
                 );
 
                 const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
-
+                console.log('AAAA - ' + mappedDrivePath);
+                console.log('ZZZZ - ' + cleanLocation);
                 if (!fullLocalPath.startsWith(mappedDrivePath)) {
                     throw new Error("Path escape blocked");
                 }
@@ -2137,6 +2145,7 @@ async function downloadPendingFilesLogic(event, args) {
                     item.type === "file"
                         ? path.dirname(fullLocalPath)
                         : fullLocalPath;
+                console.log('Prince - ' + targetDir);
 
                 if (!fs.existsSync(targetDir)) {
                     fs.mkdirSync(targetDir, { recursive: true });
@@ -2404,7 +2413,7 @@ async function deleteLocalFilesLogic(event, args) {
         mappedDrivePath = path.join(drive + ":", baseFolder);
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        mappedDrivePath = `${drive}/${baseFolder}/${baseFolder}`;
+        mappedDrivePath = `/${drive}/${baseFolder}/${baseFolder}`;
     }
 
     const userName = syncData.user_data.user_name;
@@ -3045,7 +3054,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
         mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
     } else if (process.platform === "darwin") {
         // macOS → mount path is already correct
-        mappedDrivePath = `${drive_letter}/${centrisFolder}/${centrisFolder}/`;
+        mappedDrivePath = `/${drive_letter}/${centrisFolder}/${centrisFolder}/`;
     }
 
     // Load old tracker

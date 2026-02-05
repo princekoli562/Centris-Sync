@@ -173,43 +173,43 @@ function sendLogToRenderer(message) {
 
 //lll
 
-const originalLog = console.log;
+// const originalLog = console.log;
 
-console.log = (...args) => {
-    originalLog(...args);
+// console.log = (...args) => {
+//     originalLog(...args);
 
-    // Never forward logs while quitting
-    if (app.isQuitting) return;
+//     // Never forward logs while quitting
+//     if (app.isQuitting) return;
 
-    try {
-        if (
-            !win ||
-            win.isDestroyed() ||
-            !win.webContents ||
-            win.webContents.isDestroyed()
-        ) {
-            return;
-        }
+//     try {
+//         if (
+//             !win ||
+//             win.isDestroyed() ||
+//             !win.webContents ||
+//             win.webContents.isDestroyed()
+//         ) {
+//             return;
+//         }
 
-        const message = args
-            .map(a => {
-                if (typeof a === "object") {
-                    try {
-                        return JSON.stringify(a);
-                    } catch {
-                        return "[Object]";
-                    }
-                }
-                return String(a);
-            })
-            .join(" ");
+//         const message = args
+//             .map(a => {
+//                 if (typeof a === "object") {
+//                     try {
+//                         return JSON.stringify(a);
+//                     } catch {
+//                         return "[Object]";
+//                     }
+//                 }
+//                 return String(a);
+//             })
+//             .join(" ");
 
-        win.webContents.send("log", message);
+//         win.webContents.send("log", message);
 
-    } catch (err) {
-        originalLog("Log mirror error:", err.message);
-    }
-};
+//     } catch (err) {
+//         originalLog("Log mirror error:", err.message);
+//     }
+// };
 
 const createWindow = async () => {
     

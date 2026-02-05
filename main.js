@@ -160,16 +160,55 @@ function sendLogToRenderer(message) {
 }
 
 // Monkey-patch console.log to also send to renderer
-const originalLog = console.log;
-console.log = (...args) => {
-  originalLog(...args);
-  try {
-    sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
-  } catch (err) {
-    originalLog('Log mirror error:', err);
-  }
-};
+// const originalLog = console.log;
+// console.log = (...args) => {
+//   originalLog(...args);
+//   try {
+//     sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
+//   } catch (err) {
+//     originalLog('Log mirror error:', err);
+//   }
+// };
 //lll
+
+const originalLog = console.log;
+
+console.log = (...args) => {
+    originalLog(...args);
+
+    // Never forward logs while quitting
+    if (app.isQuitting) return;
+
+    try {
+        if (
+            !win ||
+            win.isDestroyed() ||
+            !win.webContents ||
+            win.webContents.isDestroyed()
+        ) {
+            return;
+        }
+
+        const message = args
+            .map(a => {
+                if (typeof a === "object") {
+                    try {
+                        return JSON.stringify(a);
+                    } catch {
+                        return "[Object]";
+                    }
+                }
+                return String(a);
+            })
+            .join(" ");
+
+        mainWindow.webContents.send("log", message);
+
+    } catch (err) {
+        originalLog("Log mirror error:", err.message);
+    }
+};
+
 const createWindow = async () => {
     
     win = new BrowserWindow({
@@ -4704,8 +4743,8 @@ app.on("before-quit", (event) => {
 
 
 app.on('window-all-closed', () => {
-	//if (process.platform !== 'darwin') {
+	if (process.platform !== 'darwin') {
 		app.quit();
-	//}
+	}
     
 });

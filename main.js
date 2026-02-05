@@ -4701,7 +4701,7 @@ function killLeftoverProcesses() {
             execSync(`pkill -f "${app.getName()}"`, { stdio: "ignore" });
         }
 
-        console.log("🧹 Leftover app processes killed.");
+        console.log("🧹 Leftover app processes killed." + process.platform);
     } catch {
         console.warn("⚠️ No leftover processes to kill.");
     }

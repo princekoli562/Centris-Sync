@@ -439,7 +439,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load the initial directory (triggered by your “Open Drive” button)
     $(document).on("click", "#openDrive", async function (e) {
         e.preventDefault();
-        console.log('NBS - ' + currentDir);
         await loadFiles(currentDir,true);
     });
 

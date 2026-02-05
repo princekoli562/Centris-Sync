@@ -18,6 +18,7 @@ let debounceTimer = null;
 let autoExpireVal = false;
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
+let cleanupDone = false;
 
 app.disableHardwareAcceleration();
 
@@ -4156,7 +4157,7 @@ ipcMain.handle("getAppConfig", async () => {
         driveRoot = getMappedDriveLetter("Centris-Drive");
     } else if (platform === "darwin") {
         // Example: "/Volumes/Centris-Drive"
-        driveRoot = "/Volumes/" + VOLUME_LABEL;
+        driveRoot = "/Volumes/" + VOLUME_LABEL ;
     }
 
     if (!driveRoot) {
@@ -4167,7 +4168,7 @@ ipcMain.handle("getAppConfig", async () => {
     const drivePath =
         platform === "win32"
             ? path.win32.join(driveRoot, syncData.config_data.centris_drive)
-            : driveRoot;
+            : driveRoot + "/" + VOLUME_LABEL;
 
     const config = {
         vhdx_name: VHDX_NAME,
@@ -4602,6 +4603,10 @@ function onUserSyncLogin(user) {
 // });
 
 function safeCleanup() {
+
+    if (cleanupDone) return;
+    cleanupDone = true;
+
     if (isDev) {
         console.log("🔧 Dev mode detected — skipping session cleanup and VHDX unmount.");
         return;
@@ -4632,6 +4637,7 @@ function safeCleanup() {
         console.warn("⚠️ Failed to unmount VHDX:", e.message);
     }
 }
+
 
 
 function killLeftoverProcesses1() {
@@ -4671,20 +4677,35 @@ process.on('exit', () => {
     }
 });
 
-app.on("before-quit", () => {
-  console.log("🧹 Cleaning old instances...");
-  try {
-    safeCleanup();
-    killLeftoverProcesses();
-  } catch (e) {
-    console.warn("⚠ Cleanup failed");
-  }
+// app.on("before-quit", () => {
+//   console.log("🧹 Cleaning old instances...");
+//   try {
+//     safeCleanup();
+//     killLeftoverProcesses();
+//   } catch (e) {
+//     console.warn("⚠ Cleanup failed");
+//   }
+// });
+
+app.on("before-quit", (event) => {
+    console.log("🧹 App before-quit");
+
+    // Prevent double execution
+    if (app.isQuitting) return;
+    app.isQuitting = true;
+
+    try {
+        safeCleanup();
+        killLeftoverProcesses();
+    } catch (e) {
+        console.warn("⚠️ Cleanup error:", e.message);
+    }
 });
 
 
 app.on('window-all-closed', () => {
-	if (process.platform !== 'darwin') {
+	//if (process.platform !== 'darwin') {
 		app.quit();
-	}
+	//}
     
 });

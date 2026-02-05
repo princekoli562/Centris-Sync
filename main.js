@@ -160,7 +160,7 @@ function sendLogToRenderer(message) {
 }
 
 // Monkey-patch console.log to also send to renderer
-<<<<<<< HEAD
+
 // const originalLog = console.log;
 // console.log = (...args) => {
 //   originalLog(...args);
@@ -170,19 +170,7 @@ function sendLogToRenderer(message) {
 //     originalLog('Log mirror error:', err);
 //   }
 // };
-=======
-const originalLog = console.log;
-console.log = (...args) => {
-  originalLog(...args);
-  try {
-    sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
-  } catch (err) {
-    originalLog('Log mirror error:', err);
-  }
-};
 
-
->>>>>>> 21e8e38 (update in mac pc- 3)
 //lll
 
 const originalLog = console.log;
@@ -216,7 +204,7 @@ console.log = (...args) => {
             })
             .join(" ");
 
-        mainWindow.webContents.send("log", message);
+        win.webContents.send("log", message);
 
     } catch (err) {
         originalLog("Log mirror error:", err.message);

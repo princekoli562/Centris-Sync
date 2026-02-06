@@ -64,20 +64,42 @@ window.electronAPI.onSyncProgress(({ done, total, file }) => {
 });
 
 
-window.electronAPI.onSyncStatus((_event, statusMsg) => {
-    console.log("📦 Sync status:", statusMsg);
+// window.electronAPI.onSyncStatus((_event, statusMsg) => {
+//     console.log("📦 Sync status:", statusMsg);
 
-    //progressLabel.textContent = statusMsg;
+//     //progressLabel.textContent = statusMsg;
 
-    // 🔹 If sync completed successfully, hide progress bar after 1 second
-    if (statusMsg.toLowerCase().includes('complete')) {
+//     // 🔹 If sync completed successfully, hide progress bar after 1 second
+//     if (statusMsg.toLowerCase().includes('complete')) {
+//         setTimeout(() => {
+//         progressContainer.style.display = 'none';
+//         progressBar.value = 0;
+//         progressLabel.textContent = 'Syncing... 0%';
+//         }, 5000); // 5 second delay
+//     }
+// });
+
+window.electronAPI.onSyncStatus((_event, payload) => {
+    if (!payload || typeof payload !== "object") return;
+
+    const status = String(payload.status || "").toLowerCase();
+    const message = payload.message || "";
+
+    console.log("📦 Sync status:", status, message);
+
+    // Update UI text
+    progressLabel.textContent = message;
+
+    // 🔹 If sync completed successfully
+    if (status === "success" && message.toLowerCase().includes("complete")) {
         setTimeout(() => {
-        progressContainer.style.display = 'none';
-        progressBar.value = 0;
-        progressLabel.textContent = 'Syncing... 0%';
-        }, 5000); // 5 second delay
+            progressContainer.style.display = "none";
+            progressBar.value = 0;
+            progressLabel.textContent = "Syncing... 0%";
+        }, 5000);
     }
 });
+
 
 window.electronAPI.onUploadProgressStart(({ total }) => {
     activeProgressType = "upload";
@@ -322,6 +344,70 @@ document.addEventListener('DOMContentLoaded', async () => {
         $('.tab-content').removeClass('active');
         $('#' + tab).addClass('active');
     });
+
+
+   let isDragging = false;
+let lastX = 0;
+let rafId = null;
+
+const $container = $("#main-content");
+const $fileList = $("#file-list");
+const $preview = $("#preview-panel");
+const $dragBar = $("#drag-bar");
+
+$dragBar.on("mousedown", function (e) {
+    e.preventDefault();
+    isDragging = true;
+    lastX = e.pageX;
+    $("body").addClass("dragging");
+});
+
+$(document).on("mousemove", function (e) {
+    if (!isDragging) return;
+    lastX = e.pageX;
+
+    // throttle with RAF
+    if (!rafId) {
+        rafId = requestAnimationFrame(updateLayout);
+    }
+});
+
+    $(document).on("mouseup mouseleave", function () {
+        stopDrag();
+    });
+
+    function updateLayout() {
+        rafId = null;
+        if (!isDragging) return;
+
+        const containerOffset = $container.offset().left;
+        const containerWidth = $container.width();
+        const dragBarWidth = $dragBar.width();
+
+        let newLeftWidth = lastX - containerOffset;
+
+        // limits
+        const min = 180;
+        const max = containerWidth - 240;
+
+        newLeftWidth = Math.max(min, Math.min(max, newLeftWidth));
+
+        // 🚀 minimal DOM writes
+        $fileList[0].style.width = newLeftWidth + "px";
+        $preview[0].style.width = (containerWidth - newLeftWidth - dragBarWidth) + "px";
+    }
+
+    function stopDrag() {
+        if (!isDragging) return;
+        isDragging = false;
+        $("body").removeClass("dragging");
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+    }
+
+
 
     // document.getElementById("stopSyncBtn").addEventListener("click", () => {
     //    // window.electronAPI.stopSync();
@@ -1969,6 +2055,7 @@ function buildBreadcrumbold(fullPath) {
     }).join(" › ");
 }
 
+
 function buildBreadcrumb(fullPath) {
     if (!fullPath) return "";
 
@@ -1980,25 +2067,37 @@ function buildBreadcrumb(fullPath) {
     // Split WITHOUT losing root
     const parts = normalized.split("/").filter(p => p !== "");
 
-    return parts.map((p, i) => {
+    // 👉 Skip logic
+    let startIndex = 0;
+    if (isMacRoot) {
+        startIndex = 2; // skip first two on mac/linux
+    } else {
+        startIndex = 1; // skip first on windows
+    }
 
-        let subPath;
+    return parts
+        .slice(startIndex)
+        .map((p, i) => {
 
-        if (isMacRoot) {
-            // macOS/Linux: keep leading slash
-            subPath = "/" + parts.slice(0, i + 1).join("/");
-        } else {
-            // Windows: drive letter path
-            subPath = parts.slice(0, i + 1).join("/");
-        }
+            let subPath;
 
-        return `
-            <span class="crumb" data-path="${subPath}">
-                ${p}
-            </span>
-        `;
-    }).join(" › ");
+            if (isMacRoot) {
+                // macOS/Linux: keep leading slash
+                subPath = "/" + parts.slice(0, startIndex + i + 1).join("/");
+            } else {
+                // Windows: drive letter path
+                subPath = parts.slice(0, startIndex + i + 1).join("/");
+            }
+
+            return `
+                <span class="crumb" data-path="${subPath}">
+                    ${p}
+                </span>
+            `;
+        })
+        .join(" › ");
 }
+
 
  // --- Render File List ---
 function renderFileList(selector, files) {

@@ -146,18 +146,34 @@ const iconPath = isWindows
             : path.join(process.resourcesPath, "app.asar", "assets/images/favicon.icns")
       );
 
-// function sendLogToRenderer(message) {
-//   win = BrowserWindow.getAllWindows()[0];
-//   if (win && win.webContents) {
-//     win.webContents.send('main-log', message);
-//   }
-// }
-
-function sendLogToRenderer(message) {
+function sendLogToRenderer1(message) {
   if (win && !win.isDestroyed() && win.webContents) {
     win.webContents.send('main-log', message);
   }
 }
+
+function sendLogToRenderer(callback,status, message) {
+    if (
+        app.isQuitting ||
+        !win ||
+        win.isDestroyed() ||
+        !win.webContents ||
+        win.webContents.isDestroyed()
+    ) {
+        return;
+    }
+
+    try {
+        win.webContents.send(callback, {
+            status,      // success | error | progress | info
+            message,     // human-readable text
+            timestamp: Date.now()
+        });
+    } catch {
+        // swallow silently
+    }
+}
+
 
 // Monkey-patch console.log to also send to renderer
 
@@ -173,43 +189,43 @@ function sendLogToRenderer(message) {
 
 //lll
 
-// const originalLog = console.log;
+const originalLog = console.log;
 
-// console.log = (...args) => {
-//     originalLog(...args);
+console.log = (...args) => {
+    originalLog(...args);
 
-//     // Never forward logs while quitting
-//     if (app.isQuitting) return;
+    // Never forward logs while quitting
+    if (app.isQuitting) return;
 
-//     try {
-//         if (
-//             !win ||
-//             win.isDestroyed() ||
-//             !win.webContents ||
-//             win.webContents.isDestroyed()
-//         ) {
-//             return;
-//         }
+    try {
+        if (
+            !win ||
+            win.isDestroyed() ||
+            !win.webContents ||
+            win.webContents.isDestroyed()
+        ) {
+            return;
+        }
 
-//         const message = args
-//             .map(a => {
-//                 if (typeof a === "object") {
-//                     try {
-//                         return JSON.stringify(a);
-//                     } catch {
-//                         return "[Object]";
-//                     }
-//                 }
-//                 return String(a);
-//             })
-//             .join(" ");
+        const message = args
+            .map(a => {
+                if (typeof a === "object") {
+                    try {
+                        return JSON.stringify(a);
+                    } catch {
+                        return "[Object]";
+                    }
+                }
+                return String(a);
+            })
+            .join(" ");
 
-//         win.webContents.send("log", message);
+        win.webContents.send("log", message);
 
-//     } catch (err) {
-//         originalLog("Log mirror error:", err.message);
-//     }
-// };
+    } catch (err) {
+        originalLog("Log mirror error:", err.message);
+    }
+};
 
 const createWindow = async () => {
     
@@ -326,36 +342,7 @@ const createWindow = async () => {
         return loadSession();
     });
 
-
     async function handleSessionCheck1() {
-        if (!isSessionActive({ autoExpire: autoExpireVal }) && !redirectingToLogin) {
-            redirectingToLogin = true;
-            console.log("⚠️ Session expired — redirecting to login page...");
-
-            try {
-            await win.loadFile(getHtmlPath('index.html'));
-
-            // ✅ wait for renderer to be ready
-            win.webContents.once("did-finish-load", () => {
-                console.log("🧪 fs-changed after redirect");
-                win.webContents.openDevTools({ mode: 'detach' });
-
-                setTimeout(() => {
-                if (win && !win.isDestroyed()) {
-                    win.webContents.send("fs-changed");
-                }
-                }, 1000);
-            });
-
-            } catch (err) {
-            console.error("Error loading login page:", err);
-            }
-
-            redirectingToLogin = false;
-        }
-    }
-
-    async function handleSessionCheck() {
         if (!isSessionActive({ autoExpire: autoExpireVal }) && !redirectingToLogin) {
             redirectingToLogin = true;
             console.log("⚠️ Session expired — redirecting to login page...");
@@ -370,7 +357,8 @@ const createWindow = async () => {
 
                 setTimeout(() => {
                 if (win && !win.isDestroyed()) {
-                    win.webContents.send("fs-changed");
+                    //win.webContents.send("fs-changed");
+                    sendLogToRenderer("fs-changed","success","FS changed.")
                 }
                 }, 500);
             });
@@ -385,7 +373,81 @@ const createWindow = async () => {
         }
     }
 
+    async function handleSessionCheck() {
+        // 🚫 ABSOLUTE FIRST GUARD
+        if (app.isQuitting) return;
 
+        if (
+            !isSessionActive({ autoExpire: autoExpireVal }) &&
+            !redirectingToLogin
+        ) {
+            redirectingToLogin = true;
+
+            // Native console only (safe)
+            process.stdout.write(
+                "⚠️ Session expired — redirecting to login page...\n"
+            );
+
+            try {
+                if (
+                    app.isQuitting ||
+                    !win ||
+                    win.isDestroyed() ||
+                    !win.webContents ||
+                    win.webContents.isDestroyed()
+                ) {
+                    return;
+                }
+
+                // Attach listener FIRST (but guarded)
+                const onLoad = () => {
+                    if (
+                        app.isQuitting ||
+                        !win ||
+                        win.isDestroyed() ||
+                        !win.webContents ||
+                        win.webContents.isDestroyed()
+                    ) {
+                        return;
+                    }
+
+                    // ⚠️ DevTools ONLY if not quitting
+                    if (!app.isQuitting) {
+                        win.webContents.openDevTools({ mode: "detach" });
+                    }
+
+                    setTimeout(() => {
+                        if (
+                            app.isQuitting ||
+                            !win ||
+                            win.isDestroyed() ||
+                            !win.webContents ||
+                            win.webContents.isDestroyed()
+                        ) {
+                            return;
+                        }
+                        sendLogToRenderer("fs-changed","success","FS changed.")
+                        //win.webContents.send("fs-changed");
+                    }, 500);
+                };
+
+                win.webContents.once("did-finish-load", onLoad);
+
+                // Load page ONLY if still safe
+                if (!app.isQuitting) {
+                    await win.loadFile(getHtmlPath("index.html"));
+                }
+
+            } catch (err) {
+                // Native log only — NO renderer logging
+                process.stderr.write(
+                    `❌ Error loading login page: ${err.message}\n`
+                );
+            } finally {
+                redirectingToLogin = false;
+            }
+        }
+    }
 
     function getHtmlPath1(file) {
         return isDev
@@ -489,8 +551,8 @@ async function startDriveWatcher(syncData) {
 
       debounceTimer = setTimeout(() => {
         if (win && !win.isDestroyed()) {
-          console.log("📤 fs-changed");
-          win.webContents.send("fs-changed");
+          console.log("📤 fs-changed");         
+          sendLogToRenderer("fs-changed","success","FS changed.")
         }
       }, 6000);
     };
@@ -1756,21 +1818,7 @@ function relaunchWithSudoMac() {
 }
 
 app.whenReady().then(() => {
-  //  win = new BrowserWindow({
-  //       width: 800,
-  //       height: 600,
-  //       webPreferences: {
-  //           preload: path.join(__dirname, 'preload.js'),
-  //           contextIsolation: true,
-  //           enableRemoteModule: false,
-  //           nodeIntegration: true // ❗ keep false for security
-  //       },
-  //       icon: path.join(__dirname, 'assets/images/favicon.ico')
-  //   });
-  // win.webContents.openDevTools({ mode: 'detach' });
-
-  //   // open main process debug window
-  //   win.webContents.debugger.attach('1.1');
+  
     const savedSession = loadSession();
 
     if (savedSession) {
@@ -3280,9 +3328,8 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // SAVE TRACKER
     //saveTracker(currentSnapshot);
 
-    //win = BrowserWindow.getFocusedWindow();
-    if (win) win.webContents.send("sync-status", "Auto sync complete.");
-
+    //win = BrowserWindow.getFocusedWindow();    
+    if (win) sendLogToRenderer("sync-status","success","Auto sync complete.");
     return { success: true, message: "Sync completed successfully" };
 
   } catch (err) {
@@ -4734,6 +4781,10 @@ app.on("before-quit", (event) => {
     // Prevent double execution
     if (app.isQuitting) return;
     app.isQuitting = true;
+
+    if (win && !win.isDestroyed()) {
+        win.webContents.removeAllListeners("did-finish-load");
+    }
 
     try {
         safeCleanup();

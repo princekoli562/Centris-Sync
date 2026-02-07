@@ -4746,9 +4746,10 @@ function killLeftoverProcesses() {
         } 
         else if (process.platform === "darwin") {
            // execSync(`pkill -f "${app.getName()}"`, { stdio: "ignore" });
-            if (childProcessPid) {
-                process.kill(childProcessPid, 'SIGTERM');
-            }
+            // if (childProcessPid) {
+            //     process.kill(childProcessPid, 'SIGTERM');
+            // }
+            return;
         }
 
         console.log("🧹 Leftover app processes killed." + process.platform);

@@ -4773,6 +4773,34 @@ process.on('exit', () => {
 
 app.on("before-quit",async (event) => {
     console.log("🧹 App before-quit");
+     console.log("🧪 ===== SHUTDOWN DEBUGGER =====");
+
+    const handles = process._getActiveHandles();
+    const requests = process._getActiveRequests();
+
+    console.log(`🔢 Active handles count: ${handles.length}`);
+    console.log(`🔢 Active requests count: ${requests.length}`);
+
+    console.log("\n📌 Active Handles:");
+    handles.forEach((h, i) => {
+        console.log(`\n[HANDLE ${i}]`);
+        console.log("Type:", h.constructor?.name || typeof h);
+        console.log("Details:", h);
+
+        // Extra hints
+        if (h._onTimeout) console.log("⏱ Timer handle (setTimeout/setInterval)");
+        if (h._handle?.owner) console.log("🔌 Socket handle");
+        if (h.close) console.log("📂 Closable resource");
+    });
+
+    console.log("\n📌 Active Requests:");
+    requests.forEach((r, i) => {
+        console.log(`\n[REQUEST ${i}]`);
+        console.log("Type:", r.constructor?.name || typeof r);
+        console.log("Details:", r);
+    });
+
+    console.log("🧪 ===== END DEBUGGER =====");
 
     // Prevent double execution
     if (app.isQuitting) return;

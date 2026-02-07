@@ -19,6 +19,7 @@ let autoExpireVal = false;
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
 let cleanupDone = false;
+global.__watchers = global.__watchers || [];
 
 if (isMac === "darwin") {
     app.disableHardwareAcceleration();
@@ -547,6 +548,8 @@ async function startDriveWatcher(syncData) {
         pollInterval: 100
       }
     });
+
+   global.__watchers.push(watcher);
 
     const notifyRenderer = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -4773,40 +4776,78 @@ process.on('exit', () => {
 
 app.on("before-quit",async (event) => {
     console.log("🧹 App before-quit");
-     console.log("🧪 ===== SHUTDOWN DEBUGGER =====");
+    //  console.log("🧪 ===== SHUTDOWN DEBUGGER =====");
 
-    const handles = process._getActiveHandles();
-    const requests = process._getActiveRequests();
+    // const handles = process._getActiveHandles();
+    // const requests = process._getActiveRequests();
 
-    console.log(`🔢 Active handles count: ${handles.length}`);
-    console.log(`🔢 Active requests count: ${requests.length}`);
+    // console.log(`🔢 Active handles count: ${handles.length}`);
+    // console.log(`🔢 Active requests count: ${requests.length}`);
 
-    console.log("\n📌 Active Handles:");
-    handles.forEach((h, i) => {
-        console.log(`\n[HANDLE ${i}]`);
-        console.log("Type:", h.constructor?.name || typeof h);
-        console.log("Details:", h);
+    // console.log("\n📌 Active Handles:");
+    // handles.forEach((h, i) => {
+    //     console.log(`\n[HANDLE ${i}]`);
+    //     console.log("Type:", h.constructor?.name || typeof h);
+    //     console.log("Details:", h);
 
-        // Extra hints
-        if (h._onTimeout) console.log("⏱ Timer handle (setTimeout/setInterval)");
-        if (h._handle?.owner) console.log("🔌 Socket handle");
-        if (h.close) console.log("📂 Closable resource");
-    });
+    //     // Extra hints
+    //     if (h._onTimeout) console.log("⏱ Timer handle (setTimeout/setInterval)");
+    //     if (h._handle?.owner) console.log("🔌 Socket handle");
+    //     if (h.close) console.log("📂 Closable resource");
+    // });
 
-    console.log("\n📌 Active Requests:");
-    requests.forEach((r, i) => {
-        console.log(`\n[REQUEST ${i}]`);
-        console.log("Type:", r.constructor?.name || typeof r);
-        console.log("Details:", r);
-    });
+    // console.log("\n📌 Active Requests:");
+    // requests.forEach((r, i) => {
+    //     console.log(`\n[REQUEST ${i}]`);
+    //     console.log("Type:", r.constructor?.name || typeof r);
+    //     console.log("Details:", r);
+    // });
 
-    console.log("🧪 ===== END DEBUGGER =====");
+    // console.log("🧪 ===== END DEBUGGER =====");
 
     // Prevent double execution
     if (app.isQuitting) return;
     app.isQuitting = true;
 
+    if (global.s2cPollingTimer) {
+        clearInterval(global.s2cPollingTimer);
+        global.s2cPollingTimer = null;
+        console.log("✅ Polling timer cleared");
+    }
+
     await stopServerPolling();   // server → client
+
+    // 2️⃣ Stop chokidar watchers
+    if (global.__watchers?.length) {
+        for (const w of global.__watchers) {
+            try {
+                w.removeAllListeners?.();
+                await w.close();
+
+                // macOS fsevents hard kill
+                if (w._closers) {
+                    w._closers.forEach(fn => {
+                        try { fn(); } catch(e) {}
+                    });
+                }
+
+            } catch (err) {
+                console.error("Watcher close error:", err);
+            }
+        }
+        global.__watchers.length = 0;
+        console.log("✅ Watchers fully destroyed");
+    }
+
+    // 3️⃣ Close windows
+    BrowserWindow.getAllWindows().forEach(w => w.destroy());
+
+    // 4️⃣ Final forced exit fallback
+    setTimeout(() => {
+        console.log("💀 Force exit fallback");
+        process.exit(0);
+    }, 800);
+
     await stopDriveWatcher();    // client → server
     closeDB();
 

@@ -836,8 +836,8 @@ $(document).on("mousemove", function (e) {
             // ===============================
             // 7. REFRESH VIEW + TRACKER UPDATE
             // ===============================
-            // loadFiles(mappedDrive, true);
-            // await wait(1000);
+            loadFiles(mappedDrive, true);
+            await wait(1000);
 
             // const oldSnapshot = await window.electronAPI.loadTracker(false);
             // const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
@@ -950,9 +950,9 @@ $(document).on("mousemove", function (e) {
             // }
 
             // 6️⃣ REFRESH FILE VIEW
-            // loadFiles(mappedDrive, true);
+            loadFiles(mappedDrive, true);
 
-            // await wait(500);
+            await wait(500);
 
             // // 7️⃣ UPDATE TRACKER SNAPSHOT
             // const oldSnapshot = await window.electronAPI.loadTracker(false);
@@ -1027,7 +1027,6 @@ $(document).on("mousemove", function (e) {
             }
               
         }
-        console.log(config.platform + ' = ' +mappedDrive);
         await loadFiles(mappedDrive,true);       
     });
 
@@ -1054,9 +1053,7 @@ $(document).on("mousemove", function (e) {
                 // Example: "/Volumes/Centris-Drive"
                 mappedDrive = mappedConfigDrive;
                 
-            }
-            console.log(config.platform + ' = ' +mappedDrive);
-               
+            }               
         }
         await loadFiles(mappedDrive,true);
     });

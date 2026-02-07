@@ -3895,7 +3895,7 @@ function removeDeletedChunk(keys) {
 // });
 
 ipcMain.handle('getMappedDrive', async () => {
-    const drive = getMappedDriveLetter();
+    var drive = getMappedDriveLetter();
 
     if (process.platform === "win32") {
         // Windows → add base folder

@@ -1027,6 +1027,7 @@ $(document).on("mousemove", function (e) {
             }
               
         }
+        console.log(config.platform + ' = ' +mappedDrive);
         await loadFiles(mappedDrive,true);       
     });
 
@@ -1048,10 +1049,13 @@ $(document).on("mousemove", function (e) {
             if (config.platform === "win32") {
                 // Get mapped drive dynamically
                 mappedDrive = await window.electronAPI.getMappedDrive(); 
+                
             } else if (config.platform === "darwin") {
                 // Example: "/Volumes/Centris-Drive"
                 mappedDrive = mappedConfigDrive;
+                
             }
+            console.log(config.platform + ' = ' +mappedDrive);
                
         }
         await loadFiles(mappedDrive,true);

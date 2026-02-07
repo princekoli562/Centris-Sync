@@ -3725,6 +3725,41 @@ ipcMain.handle("read-base64", async (e, p) => {
     return await fs.readFile(p, { encoding: "base64" });
 });
 
+async function readRecursive(targetPath) {
+    const stat = await fs.stat(targetPath);
+
+    // ✅ If file → return base64
+    if (stat.isFile()) {
+        const data = await fs.readFile(targetPath, { encoding: "base64" });
+        return {
+            type: "file",
+            name: path.basename(targetPath),
+            path: targetPath,
+            base64: data
+        };
+    }
+
+    // ✅ If directory → read contents
+    if (stat.isDirectory()) {
+        const items = await fs.readdir(targetPath);
+        const results = [];
+
+        for (const item of items) {
+            const fullPath = path.join(targetPath, item);
+            const child = await readRecursive(fullPath);
+            results.push(child);
+        }
+
+        return {
+            type: "folder",
+            name: path.basename(targetPath),
+            path: targetPath,
+            children: results
+        };
+    }
+}
+
+
 function fileMetadata(fullPath, rootPath) {
   const stat = fs.statSync(fullPath);
   return {
@@ -4840,8 +4875,8 @@ app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {
 		app.quit();
 	}else{
-        // app.quit();        // graceful
-        // app.exit(0);
+        app.quit();        // graceful
+        app.exit(0);
     }
     
 });

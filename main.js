@@ -4745,7 +4745,10 @@ function killLeftoverProcesses() {
             execSync(`taskkill /F /IM "${path.basename(process.execPath)}"`, { stdio: "ignore" });
         } 
         else if (process.platform === "darwin") {
-            execSync(`pkill -f "${app.getName()}"`, { stdio: "ignore" });
+           // execSync(`pkill -f "${app.getName()}"`, { stdio: "ignore" });
+            if (childProcessPid) {
+                process.kill(childProcessPid, 'SIGTERM');
+            }
         }
 
         console.log("🧹 Leftover app processes killed." + process.platform);
@@ -4798,6 +4801,9 @@ app.on("before-quit", (event) => {
 app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {
 		app.quit();
-	}
+	}else{
+        app.quit();        // graceful
+        app.exit(0);
+    }
     
 });

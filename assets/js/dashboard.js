@@ -711,9 +711,19 @@ $(document).on("mousemove", function (e) {
             let mappedDrive;
             const crumbs = document.querySelectorAll("#breadcrumb .crumb");
 
-            mappedDrive = crumbs.length > 0
+            let mappedConfigDrive = config.drivePath;
+
+             if (config.platform === "win32") {
+                // Example: "F:\"
+                mappedDrive = crumbs.length > 0
                 ? crumbs[crumbs.length - 1].getAttribute("data-path")
                 : await window.electronAPI.getMappedDrive();
+            } else if (config.platform === "darwin") {
+                // Example: "/Volumes/Centris-Drive"
+                mappedDrive = crumbs.length > 0
+                ? crumbs[crumbs.length - 1].getAttribute("data-path")
+                : mappedConfigDrive;
+            }
 
             if (!confirm(`Upload ${folderPaths.length} folder(s) to ${mappedDrive}?`)) return;
 
@@ -863,9 +873,24 @@ $(document).on("mousemove", function (e) {
             // 2️⃣ GET MAPPED DRIVE
             let mappedDrive;
             const crumbs = document.querySelectorAll('#breadcrumb .crumb');
-            mappedDrive = crumbs.length > 0
+
+            let mappedConfigDrive = config.drivePath;
+
+            if (config.platform === "win32") {
+                // Example: "F:\"
+                mappedDrive = crumbs.length > 0
                 ? crumbs[crumbs.length - 1].getAttribute("data-path")
                 : await window.electronAPI.getMappedDrive();
+            } else if (config.platform === "darwin") {
+                // Example: "/Volumes/Centris-Drive"
+                mappedDrive = crumbs.length > 0
+                ? crumbs[crumbs.length - 1].getAttribute("data-path")
+                : mappedConfigDrive;
+            }
+
+            // mappedDrive = crumbs.length > 0
+            //     ? crumbs[crumbs.length - 1].getAttribute("data-path")
+            //     : await window.electronAPI.getMappedDrive();
 
             if (!confirm(`Upload ${filePaths.length} file(s) to ${mappedDrive}?`)) return;
 
@@ -984,6 +1009,9 @@ $(document).on("mousemove", function (e) {
         $("#file-list").removeClass("list-view").addClass("grid-view");
         $("#file-list-header").addClass("hidden"); 
         var  mappedDrive = await window.electronAPI.getMappedDrive();
+
+        let mappedConfigDrive = config.drivePath;
+
         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
         if (crumbs.length > 0) {
             const lastCrumb = crumbs[crumbs.length - 1];
@@ -991,7 +1019,13 @@ $(document).on("mousemove", function (e) {
             console.log("mappedDrive path:", mappedDrive);
         }else{
             // Get mapped drive dynamically
-            mappedDrive = await window.electronAPI.getMappedDrive();    
+            if (config.platform === "win32") {
+                mappedDrive = await window.electronAPI.getMappedDrive();  
+            } else if (config.platform === "darwin") {
+                // Example: "/Volumes/Centris-Drive"
+                mappedDrive = mappedConfigDrive;
+            }
+              
         }
         await loadFiles(mappedDrive,true);       
     });
@@ -1004,14 +1038,21 @@ $(document).on("mousemove", function (e) {
         $("#file-list").removeClass("grid-view").addClass("list-view");
         $("#file-list-header").removeClass("hidden");
         var  mappedDrive = await window.electronAPI.getMappedDrive();
+        let mappedConfigDrive = config.drivePath;
         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
         if (crumbs.length > 0) {
             const lastCrumb = crumbs[crumbs.length - 1];
             mappedDrive = lastCrumb.getAttribute('data-path');
             console.log("mappedDrive path:", mappedDrive);
         }else{
-            // Get mapped drive dynamically
-            mappedDrive = await window.electronAPI.getMappedDrive();    
+            if (config.platform === "win32") {
+                // Get mapped drive dynamically
+                mappedDrive = await window.electronAPI.getMappedDrive(); 
+            } else if (config.platform === "darwin") {
+                // Example: "/Volumes/Centris-Drive"
+                mappedDrive = mappedConfigDrive;
+            }
+               
         }
         await loadFiles(mappedDrive,true);
     });

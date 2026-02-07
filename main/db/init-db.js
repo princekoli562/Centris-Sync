@@ -81,4 +81,28 @@ function getDB() {
     return db;
 }
 
-module.exports = { initDB, getDB };
+
+function closeDB() {
+    if (!db) return;
+
+    try {
+        console.log("🗄️ Closing SQLite DB...");
+
+        // Force WAL checkpoint (flush WAL to DB)
+        try {
+            db.pragma("wal_checkpoint(TRUNCATE)");
+        } catch (e) {
+            console.warn("⚠️ WAL checkpoint failed:", e.message);
+        }
+
+        db.close();   // ✅ closes file handles, WAL, SHM
+        db = null;
+
+        console.log("✅ SQLite DB closed cleanly");
+    } catch (e) {
+        console.error("❌ Failed to close DB:", e.message);
+    }
+}
+
+
+module.exports = { initDB, getDB ,closeDB };

@@ -20,11 +20,13 @@ const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
 let cleanupDone = false;
 
-app.disableHardwareAcceleration();
+if (isMac === "darwin") {
+    app.disableHardwareAcceleration();
+}
 
 //const dbPath = path.join(__dirname, "main", "db", "init-db.js");
 //const { initDB, getDB } = require("./main/db/init-db");
-const { initDB, getDB } = require("./main/db/init-db.js");
+const { initDB, getDB,closeDB } = require("./main/db/init-db.js");
 // console.log("DB PATH:", dbPath);
 // const { initDB,getDB } = require(dbPath);
 //const vhdxService = require(path.join(__dirname, "assets/js/vhdx-service.js"));
@@ -4762,29 +4764,23 @@ function killLeftoverProcesses() {
 process.on('exit', () => {
   
     try { 
-        safeCleanup();
+        //safeCleanup();
         console.log('💾 VHDX unmounted on exit.');
     } catch (e) {
         console.warn('⚠️ Failed to unmount VHDX on exit:', e.message);
     }
 });
 
-// app.on("before-quit", () => {
-//   console.log("🧹 Cleaning old instances...");
-//   try {
-//     safeCleanup();
-//     killLeftoverProcesses();
-//   } catch (e) {
-//     console.warn("⚠ Cleanup failed");
-//   }
-// });
-
-app.on("before-quit", (event) => {
+app.on("before-quit",async (event) => {
     console.log("🧹 App before-quit");
 
     // Prevent double execution
     if (app.isQuitting) return;
     app.isQuitting = true;
+
+    await stopServerPolling();   // server → client
+    await stopDriveWatcher();    // client → server
+    closeDB();
 
     if (win && !win.isDestroyed()) {
         win.webContents.removeAllListeners("did-finish-load");
@@ -4803,8 +4799,8 @@ app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {
 		app.quit();
 	}else{
-        app.quit();        // graceful
-        app.exit(0);
+        // app.quit();        // graceful
+        // app.exit(0);
     }
     
 });

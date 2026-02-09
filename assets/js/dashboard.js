@@ -1516,6 +1516,7 @@ async function triggerSync(syncData,manual = false) {
             console.error("Missing customer or domain or User data !");
             return;
         }
+        
 
         const result = await window.electronAPI.autoSync({
             customer_id: customer_data.id,

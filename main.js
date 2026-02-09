@@ -1054,13 +1054,16 @@ function normalizeServerPath(location) {
 
 async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
 
-    const res = await fetch(`${apiUrl}/api/get-pending-downloads`, {
+    const lastSyncAt = await getLastSyncAtFromDB(syncData);
+
+    const res = await fetch(`${apiUrl}/api/get-remaining-downloads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             customer_id,
             domain_id,
-            user_id: syncData.user_data.id
+            user_id: syncData.user_data.id,
+            last_sync_time: lastSyncAt
         }),
     });
 
@@ -1961,224 +1964,7 @@ function cleanSegment(s) {
 }
 
 
-async function downloadPendingFilesLogicNew(event, args) {
-    const { customer_id, domain_id, apiUrl, syncData } = args;
-    const SourceFrom = "Centris One";
-    const pending = await downloadServerPending(args);
-    if (!Array.isArray(pending) || pending.length === 0) {
-        event.sender.send("download-complete", {
-            source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
-            status: "no-download"
-        });
-        setTimeout(() => event.sender.send("download-hide"), 6000);
-        return true;
-    }
-
-    const drive = cleanSegment(getMappedDriveLetter());
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-    const mappedDrivePath = path.join(drive + ":", baseFolder);
-
-    let UserName = syncData.user_data.user_name;
-
-    const totalFiles = pending.length;
-    let completedFiles = 0;
-
-    event.sender.send("download-progress-start", { total: totalFiles });
-
-    for (const item of pending) {
-        
-        try {
-            // 1️⃣ Build safe local path
-            const cleanLocation = extractRelativePath(
-                item.location,
-                baseFolder,
-                UserName
-            );
-
-            const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
-
-            // 🔐 Safety check
-            if (!fullLocalPath.startsWith(mappedDrivePath)) {
-                throw new Error("Path escape blocked: " + fullLocalPath);
-            }
-
-            // 2️⃣ Ensure directory exists
-            const targetDir =
-                item.type === "file"
-                    ? path.dirname(fullLocalPath)
-                    : fullLocalPath;
-
-            if (!fs.existsSync(targetDir)) {
-                fs.mkdirSync(targetDir, { recursive: true });
-            }
-
-            // 3️⃣ Download FILE (streamed → no freeze)
-            if (item.type === "file") {
-                await downloadFile(item, fullLocalPath, apiUrl);
-            }
-
-            // 4️⃣ Update local tracker (AFTER successful write)
-            await updateSaveTracker(
-                fullLocalPath,
-                cleanLocation,
-                item
-            );
-
-            // 5️⃣ Mark downloaded on server (AFTER tracker success)
-            await markDownloaded(apiUrl, item.id);
-
-            // 6️⃣ Progress update
-            // event.sender.send("download-progress", {
-            //     done: i + 1,
-            //     total: pending.length,
-            //     file: item.location
-            // });
-
-            completedFiles++;
-            event.sender.send("download-progress", {
-                done: completedFiles,
-                total: totalFiles,
-                file: item.location,
-                filePercent: 100,
-            });
-
-        } catch (err) {
-            console.error("Download failed:", item.location, err.message);
-            // optional: retry / log / skip
-        }
-
-        // 🔥 Yield event loop → keeps Electron responsive
-        if (completedFiles % 2 === 0) {
-            await new Promise(r => setImmediate(r));
-        }
-    }
-
-
-     event.sender.send("download-complete", {
-        source: SourceFrom === "Centris One" ? "Centris One" : "Centris Drive",
-        status: "download"
-    });
-    setTimeout(() => event.sender.send("download-hide"), 6000);
-    return true;
-}
-
-async function downloadPendingFilesLogicOld(event, args) {
-    const { customer_id, domain_id, apiUrl, syncData } = args;
-    const SourceFrom = "Centris One";
-    const CHUNK_SIZE = 50;
-
-    const pending = await downloadServerPending(args);
-
-    if (!Array.isArray(pending) || pending.length === 0) {
-        event.sender.send("download-complete", {
-            source: SourceFrom,
-            status: "no-download"
-        });
-        setTimeout(() => event.sender.send("download-hide"), 6000);
-        return true;
-    }
-
-    const drive = cleanSegment(getMappedDriveLetter());
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-    const mappedDrivePath = path.join(drive + ":", baseFolder);
-    const UserName = syncData.user_data.user_name;
-
-    const totalFiles = pending.length;
-    let completedFiles = 0;
-
-    event.sender.send("download-progress-start", { total: totalFiles });
-
-    const chunks = chunkArray(pending, CHUNK_SIZE);
-
-    for (const chunk of chunks) {
-
-        const downloadedIds = []; // 👈 collect IDs per chunk
-
-        for (const item of chunk) {
-            try {
-                // 1️⃣ Resolve safe local path
-                const cleanLocation = extractRelativePath(
-                    item.location,
-                    baseFolder,
-                    UserName
-                );
-
-                const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
-
-                if (!fullLocalPath.startsWith(mappedDrivePath)) {
-                    throw new Error("Path escape blocked");
-                }
-
-                // 2️⃣ Ensure folder exists
-                const targetDir =
-                    item.type === "file"
-                        ? path.dirname(fullLocalPath)
-                        : fullLocalPath;
-
-                if (!fs.existsSync(targetDir)) {
-                    fs.mkdirSync(targetDir, { recursive: true });
-                }
-
-                // 3️⃣ Download file
-                if (item.type === "file") {
-                    await downloadFile(item, fullLocalPath, apiUrl);
-                }
-
-                // 4️⃣ Update local tracker
-                await updateSaveTracker(
-                    fullLocalPath,
-                    cleanLocation,
-                    item
-                );
-
-                downloadedIds.push(item.id);
-
-                completedFiles++;
-                event.sender.send("download-progress", {
-                    done: completedFiles,
-                    total: totalFiles,
-                    file: item.location,
-                    filePercent: Math.round(
-                        (completedFiles / totalFiles) * 100
-                    )
-                });
-
-            } catch (err) {
-                console.error("Download failed:", item.location, err.message);
-            }
-
-            // 🔥 yield event loop (keeps UI smooth)
-            await new Promise(r => setImmediate(r));
-        }
-
-        // ✅ BULK markDownloaded (per chunk)
-        if (downloadedIds.length > 0) {
-            await fetch(`${apiUrl}/api/markDownloadedBulk`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    customer_id,
-                    domain_id,
-                    user_id: syncData.user_data.id,
-                    ids: downloadedIds
-                })
-            });
-        }
-
-        // small pause between chunks
-        await new Promise(r => setTimeout(r, 10));
-    }
-
-    event.sender.send("download-complete", {
-        source: SourceFrom,
-        status: "download"
-    });
-
-    setTimeout(() => event.sender.send("download-hide"), 6000);
-    return true;
-}
-
-async function downloadPendingFilesLogic(event, args) {
+async function downloadPendingFilesLogicLast(event, args) {
     const { customer_id, domain_id, apiUrl, syncData, db } = args;
     const SourceFrom = "Centris One";
     const CHUNK_SIZE = 50;
@@ -2197,6 +1983,7 @@ async function downloadPendingFilesLogic(event, args) {
         setTimeout(() => event.sender.send("download-hide"), 6000);
         return true;
     }
+    
 
     const drive = cleanSegment(getMappedDriveLetter());
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
@@ -2320,6 +2107,293 @@ async function downloadPendingFilesLogic(event, args) {
     return true;
 }
 
+async function downloadPendingFilesLogic1111(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData, db } = args;
+    const SourceFrom = "Centris One";
+    console.log('SSSSSS');
+
+    let lastSyncAt = await getLastSyncAtFromDB(syncData);
+
+    let totalDownloaded = 0;
+    let totalFiles = 0;
+    let firstBatch = true;
+    console.log('AAAAAA');
+    while (true) {
+        console.log('VVVVVV');
+        const response = await downloadServerPending({
+            customer_id,
+            domain_id,
+            apiUrl,
+            syncData,
+            last_sync_time: lastSyncAt
+        });
+
+        const pending = response.pending || [];
+        const nextSyncTime = response.next_sync_time;
+        const totalRemaining = response.total_remaining || 0;
+
+        // no more data
+        if (!pending.length) break;
+
+        // 🔥 init progress bar only once
+        if (firstBatch) {
+            totalFiles = totalRemaining;
+            event.sender.send("download-progress-start", {
+                total: totalFiles
+            });
+            firstBatch = false;
+        }
+
+        const downloadedIds = [];
+
+        // ✅ process server batch sequentially
+        for (const item of pending) {
+            try {
+                downloadedIds.push(item.id);
+                totalDownloaded++;
+
+                // 🔥 progress update
+                event.sender.send("download-progress", {
+                    done: totalDownloaded,
+                    total: totalFiles,
+                    file: item.location,
+                    filePercent: Math.round((totalDownloaded / totalFiles) * 100)
+                });
+
+            } catch (err) {
+                console.error("Download failed:", item.location, err.message);
+            }
+
+            // allow event loop breathing
+            await new Promise(r => setImmediate(r));
+        }
+
+        // ✅ mark downloaded on server (batch)
+        if (downloadedIds.length > 0) {
+            await fetch(`${apiUrl}/api/markDownloadedBulk`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    customer_id,
+                    domain_id,
+                    user_id: syncData.user_data.id,
+                    ids: downloadedIds
+                })
+            });
+        }
+
+        // ✅ update cursor after batch
+        if (nextSyncTime) {
+            lastSyncAt = nextSyncTime;
+
+            await db.run(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `, [
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(nextSyncTime)
+            ]);
+        }
+
+        if (!response.has_more) break;
+    }
+
+    // 🔥 final state
+    event.sender.send("download-complete", {
+        source: SourceFrom,
+        status: totalDownloaded ? "download" : "no-download"
+    });
+
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+}
+
+async function downloadPendingFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData, db } = args;
+    const SourceFrom = "Centris One";
+    const CHUNK_SIZE = 50;
+
+    let lastSyncAt = await getLastSyncAtFromDB(syncData);
+
+    let totalDownloaded = 0;
+    let totalFiles = 0;
+    let firstBatch = true;
+
+    // =========================
+    // PATH SETUP
+    // =========================
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const UserName = syncData.user_data.user_name;
+
+    let mappedDrivePath = '';
+    if (process.platform === "win32") {
+        mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+        mappedDrivePath = `/${drive}/${baseFolder}/${baseFolder}`;
+    }
+
+    // =========================
+    // LOOP SERVER PAGINATION
+    // =========================
+    while (true) {
+
+        const response = await downloadServerPending({
+            customer_id,
+            domain_id,
+            apiUrl,
+            syncData,
+            last_sync_time: lastSyncAt
+        });
+
+        const pending = response.pending || [];
+        const nextSyncTime = response.next_sync_time;
+        const totalRemaining = response.total_remaining || 0;
+
+        // no more data
+        if (!pending.length) break;
+
+        // 🔥 init progress only once
+        if (firstBatch) {
+            totalFiles = totalRemaining;
+            event.sender.send("download-progress-start", { total: totalFiles });
+            firstBatch = false;
+        }
+
+        const chunks = chunkArray(pending, CHUNK_SIZE);
+
+        for (const chunk of chunks) {
+            const downloadedIds = [];
+
+            for (const item of chunk) {
+                try {
+                    // =========================
+                    // PATH BUILDING
+                    // =========================
+                    const cleanLocation = extractRelativePath(
+                        item.location,
+                        baseFolder,
+                        UserName
+                    );
+
+                    const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
+
+                    // 🔒 path escape protection
+                    if (!fullLocalPath.startsWith(mappedDrivePath)) {
+                        throw new Error("Path escape blocked");
+                    }
+
+                    const targetDir =
+                        item.type === "file"
+                            ? path.dirname(fullLocalPath)
+                            : fullLocalPath;
+
+                    if (!fs.existsSync(targetDir)) {
+                        fs.mkdirSync(targetDir, { recursive: true });
+                    }
+
+                    // =========================
+                    // DOWNLOAD
+                    // =========================
+                    if (item.type === "file") {
+                        await downloadFile(item, fullLocalPath, apiUrl);
+                    }
+
+                    // =========================
+                    // SAVE TRACKER
+                    // =========================
+                    await updateSaveTracker(
+                        fullLocalPath,
+                        cleanLocation,
+                        item
+                    );
+
+                    downloadedIds.push(item.id);
+                    totalDownloaded++;
+
+                    // =========================
+                    // PROGRESS
+                    // =========================
+                    event.sender.send("download-progress", {
+                        done: totalDownloaded,
+                        total: totalFiles,
+                        file: item.location,
+                        filePercent: Math.round(
+                            (totalDownloaded / totalFiles) * 100
+                        )
+                    });
+
+                } catch (err) {
+                    console.error("Download failed:", item.location, err.message);
+                }
+
+                // allow event loop breathing
+                await new Promise(r => setImmediate(r));
+            }
+
+            // =========================
+            // MARK DOWNLOADED (BULK)
+            // =========================
+            if (downloadedIds.length > 0) {
+                await fetch(`${apiUrl}/api/markDownloadedBulk`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        customer_id,
+                        domain_id,
+                        user_id: syncData.user_data.id,
+                        ids: downloadedIds
+                    })
+                });
+            }
+
+            await new Promise(r => setTimeout(r, 10));
+        }
+
+        // =========================
+        // UPDATE CURSOR (last_sync_at)
+        // =========================
+        if (nextSyncTime) {
+            lastSyncAt = nextSyncTime;
+
+            db.prepare(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `).run(
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(nextSyncTime)
+            );
+        }
+
+
+        if (!response.has_more) break;
+    }
+
+    // =========================
+    // FINAL STATE
+    // =========================
+    event.sender.send("download-complete", {
+        source: SourceFrom,
+        status: totalDownloaded ? "download" : "no-download"
+    });
+
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+}
 
 
 function extractRelativePath(serverPath, baseFolder, username) {
@@ -3059,8 +3133,8 @@ ipcMain.handle('createFolderInDrive', async (event, sourceFolderPath, mappedDriv
       throw new Error('Missing parameters');
     }
 
-    const rootFolderName = path.basename(sourceFolderPath);
-    const destRoot = path.join(mappedDrive, rootFolderName);
+    //const rootFolderName = path.basename(sourceFolderPath);
+    const destRoot = path.join(mappedDrive, sourceFolderPath);
 
     ensureDirSync(destRoot);
 
@@ -3141,6 +3215,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // Mapped folder path (true final path)
     // ------------------------------------------------------------
     const drive_letter = getMappedDriveLetter();
+    const db = getDB();
     let mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
 
     if (process.platform === "win32") {
@@ -3189,7 +3264,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     //await deleteLocalFilesLogic(event,args);
     //return true;
     //await downloadPendingFilesLogic(event,args);
-    
+   
     if (changedItems.length === 0 && deletedItems.length === 0) {
       return { success: true, message: "No  changes in " + deleteFrom +" to Upload." };
     }
@@ -3253,6 +3328,34 @@ ipcMain.handle("auto-sync", async (event, args) => {
             if (!res.ok) {
                 throw new Error("Upload failed");
             }
+
+            const data = await res.json();
+
+            if (data.last_upload_time) {
+                // save as last sync timestamp
+                //saveLastSyncTime(data.last_upload_time); 
+                nextSyncTime = data.last_upload_time;
+                console.log('nextSyncTime = > ' + nextSyncTime);
+                if (nextSyncTime) {
+                    lastSyncAt = nextSyncTime;
+
+                    db.prepare(`
+                        INSERT INTO app_settings
+                            (customer_id, domain_id, domain_name, user_id, "key", value)
+                        VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+                        ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                        DO UPDATE SET
+                            value = excluded.value,
+                            updated_at = strftime('%s','now')
+                    `).run(
+                        syncData.customer_data.id,
+                        syncData.domain_data.id,
+                        syncData.domain_data.domain_name,
+                        syncData.user_data.id,
+                        String(nextSyncTime)
+                    );
+                }
+            }            
 
             // ✅ SAVE TRACKER ITEM-BY-ITEM (AFTER SERVER SUCCESS)
             for (const item of payloadItems) {

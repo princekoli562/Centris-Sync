@@ -21,6 +21,12 @@ const isMac = process.platform === "darwin";
 let cleanupDone = false;
 global.__watchers = global.__watchers || [];
 
+
+// global.syncLock = {
+//     mode: null,        // "c2s" | "s2c" | null
+//     locked: false,
+// };
+
 if (isMac === "darwin") {
     app.disableHardwareAcceleration();
 }
@@ -495,15 +501,20 @@ function createTray() {
 
 let watcherRunning = false;
 
-async function startDriveWatcher(syncData) {
+async function startDriveWatcherOLD(syncData) {
   try {
+    // 🔐 Try lock
+    //if (!acquireLock("c2s")) return;
+
     if (!syncData?.config_data?.centris_drive) {
       console.warn("⚠️ Invalid syncData");
+      //releaseLock("c2s");
       return;
     }
 
     if (watcherRunning) {
       console.log("🟡 Drive watcher already running");
+      //releaseLock("c2s");
       return;
     }
 
@@ -574,8 +585,91 @@ async function startDriveWatcher(syncData) {
   } catch (err) {
     console.error("❌ startDriveWatcher failed:", err);
     watcherRunning = false;
+    //releaseLock("c2s");
   }
 }
+
+async function startDriveWatcher(syncData) {
+  try {
+    if (!syncData?.config_data?.centris_drive) {
+      console.warn("⚠️ Invalid syncData");
+      return;
+    }
+
+    if (watcherRunning) {
+      console.log("🟡 Drive watcher already running");
+      return;
+    }
+
+    if (watcher) {
+      await watcher.close();
+      watcher = null;
+    }
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    let DRIVE_ROOT = drive;
+
+    if (process.platform === "win32") {
+        DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+        DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
+    }
+
+    console.log("👀 Watching:", DRIVE_ROOT);
+
+    watcherRunning = true;
+
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 10,
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 2000,
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    global.__watchers.push(watcher);
+
+    const notifyRenderer = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+
+      debounceTimer = setTimeout(() => {
+        console.log("📤 FS changed → queue C2S");
+
+        SyncQueue.run("c2s", async () => {
+            sendLogToRenderer("fs-changed","success","FS changed.");
+            await runClientToServerSync(syncData);   // 🔥 queued upload
+        });
+
+      }, 6000);
+    };
+
+    watcher
+      .on("add", notifyRenderer)
+      .on("change", notifyRenderer)
+      .on("unlink", notifyRenderer)
+      .on("addDir", notifyRenderer)
+      .on("unlinkDir", notifyRenderer)
+      .on("ready", () => console.log("✅ Watcher ready"))
+      .on("error", err => console.error("❌ Watcher error:", err));
+
+  } catch (err) {
+    console.error("❌ startDriveWatcher failed:", err);
+    watcherRunning = false;
+  }
+}
+
 
 async function stopDriveWatcher() {
     try {
@@ -597,6 +691,7 @@ async function stopDriveWatcher() {
         }
 
         console.log("🛑 Drive watcher stopped");
+        //releaseLock("c2s");
 
     } catch (err) {
         console.error("❌ stopDriveWatcher failed:", err);
@@ -774,7 +869,7 @@ function loadTracker(onlyUnsynced = true) {
     }
 }
 
-function saveTracker(snapshot, syncedDefault = 1) {
+function saveTracker1(snapshot, syncedDefault = 1) {
     const db = getDB();
 
     const insert = db.prepare(`
@@ -810,6 +905,52 @@ function saveTracker(snapshot, syncedDefault = 1) {
 
     trx(snapshot);
 }
+
+function saveTracker(snapshot, syncedDefault = 1) {
+    const db = getDB();
+
+    const insert = db.prepare(`
+        INSERT INTO tracker (path, type, size, mtime, hash, synced)
+        VALUES (@path, @type, @size, @mtime, @hash, @synced)
+        ON CONFLICT(path) DO UPDATE SET
+            type   = excluded.type,
+            size   = excluded.size,
+            mtime  = excluded.mtime,
+            hash   = excluded.hash,
+
+            -- 🔥 critical: don't blindly overwrite sync state
+            synced = 
+                CASE 
+                    WHEN tracker.hash = excluded.hash 
+                         AND tracker.size = excluded.size
+                    THEN 1
+                    ELSE 0
+                END
+    `);
+
+    const trx = db.transaction((data) => {
+        for (const [path, value] of Object.entries(data)) {
+            insert.run({
+                path: normalizeTrackerPath(path),
+                type: value.type,
+                size: value.size ?? 0,
+                mtime: value.mtime ?? 0,
+                hash: value.hash ?? null,
+
+                // default synced only for fresh inserts
+                synced:
+                    Number.isInteger(value.synced)
+                        ? value.synced
+                        : Number.isInteger(syncedDefault)
+                            ? syncedDefault
+                            : 1
+            });
+        }
+    });
+
+    trx(snapshot);
+}
+
 
 
 function saveTrackerItem(value) {
@@ -1055,6 +1196,7 @@ function normalizeServerPath(location) {
 async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
 
     const lastSyncAt = await getLastSyncAtFromDB(syncData);
+    let lastSyncid = await getSettingFromDB(syncData, 'last_sync_id');
 
     const res = await fetch(`${apiUrl}/api/get-remaining-downloads`, {
         method: "POST",
@@ -1063,7 +1205,8 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
             customer_id,
             domain_id,
             user_id: syncData.user_data.id,
-            last_sync_time: lastSyncAt
+            last_sync_time: lastSyncAt,
+            last_sync_id:lastSyncid
         }),
     });
 
@@ -2221,6 +2364,7 @@ async function downloadPendingFilesLogic(event, args) {
     const CHUNK_SIZE = 50;
 
     let lastSyncAt = await getLastSyncAtFromDB(syncData);
+    let lastSyncid = await getSettingFromDB(syncData, 'last_sync_id');
 
     let totalDownloaded = 0;
     let totalFiles = 0;
@@ -2250,12 +2394,14 @@ async function downloadPendingFilesLogic(event, args) {
             domain_id,
             apiUrl,
             syncData,
-            last_sync_time: lastSyncAt
+            last_sync_time: lastSyncAt,
+            last_sync_id : lastSyncid
         });
 
         const pending = response.pending || [];
         const nextSyncTime = response.next_sync_time;
         const totalRemaining = response.total_remaining || 0;
+        const nextSyncId = response.next_sync_id;
 
         // no more data
         if (!pending.length) break;
@@ -2377,6 +2523,26 @@ async function downloadPendingFilesLogic(event, args) {
                 syncData.domain_data.domain_name,
                 syncData.user_data.id,
                 String(nextSyncTime)
+            );
+        }
+
+        if (nextSyncId >= 0) {
+            lastSyncId = nextSyncId;
+
+            db.prepare(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_id', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `).run(
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(lastSyncId)
             );
         }
 
@@ -2687,13 +2853,13 @@ function getLastSyncAtFromDB(syncData) {
     try {
         const db = getDB();
 
-        console.log(
-            'KING ->',
-            syncData.customer_data.id,
-            syncData.domain_data.id,
-            syncData.domain_data.domain_name,
-            syncData.user_data.id
-        );
+        // console.log(
+        //     'KING ->',
+        //     syncData.customer_data.id,
+        //     syncData.domain_data.id,
+        //     syncData.domain_data.domain_name,
+        //     syncData.user_data.id
+        // );
 
         const row = db.prepare(`
             SELECT value
@@ -2735,13 +2901,51 @@ function getLastSyncAtFromDB(syncData) {
     }
 }
 
+async function getSettingFromDB(syncData, key, defaultValue = 0) {
+    try {
+        const db = getDB();
 
+        const row = db.prepare(`
+            SELECT value
+            FROM app_settings
+            WHERE customer_id = ?
+              AND domain_id = ?
+              AND domain_name = ?
+              AND user_id = ?
+              AND "key" = ?
+            LIMIT 1
+        `).get(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            key
+        );
+
+        if (!row || row.value == null) {
+            return defaultValue;
+        }
+
+        const v = parseInt(String(row.value).trim(), 10);
+
+        if (Number.isNaN(v)) {
+            console.warn(`⚠️ ${key} is invalid:`, row.value);
+            return defaultValue;
+        }
+
+        return v;
+
+    } catch (err) {
+        console.error(`❌ getSettingFromDB(${key}) error:`, err);
+        return defaultValue;
+    }
+}
 
 
 async function runServerToClientSync(event, syncData) {
     console.log('running - qqqqq');
-    if (s2cSyncRunning) return; // prevent overlap
-    s2cSyncRunning = true;
+    //if (s2cSyncRunning) return; // prevent overlap
+    //s2cSyncRunning = true;
 
     console.log('running - kkkkk');
 
@@ -2768,16 +2972,19 @@ async function runServerToClientSync(event, syncData) {
          console.log('running - jjjjjj' + lastSyncAt);
 
     } finally {
-        s2cSyncRunning = false;
+        //s2cSyncRunning = false;
     }
 }
 
-async function startServerPolling(event, syncData) {
+async function startServerPollingOLD(event, syncData) {
     console.log("🚀 startServerPolling called");
     console.log('s2cPollingTimer - start ->', s2cPollingTimer);
 
+    //if (!acquireLock("s2c")) return;
+
     if (s2cPollingTimer) {
         console.log("⛔ Polling already running");
+        //releaseLock("s2c");
         return;
     }
 
@@ -2798,6 +3005,33 @@ async function startServerPolling(event, syncData) {
     console.log("🟢 Polling started, timer =", s2cPollingTimer);
 }
 
+async function startServerPolling(event, syncData) {
+    console.log("🚀 startServerPolling called");
+
+    if (s2cPollingTimer) {
+        console.log("⛔ Polling already running");
+        return;
+    }
+
+    console.log("▶ Queue first S2C sync");
+
+    // First sync (queued)
+    SyncQueue.run("s2c", async () => {
+        await runServerToClientSync(event, syncData);
+    });
+
+    s2cPollingTimer = setInterval(() => {
+        console.log("⏱ Poll tick → queue S2C");
+
+        SyncQueue.run("s2c", async () => {
+            await runServerToClientSync(event, syncData);
+        });
+
+    }, 30_000);
+
+    console.log("🟢 Polling started, timer =", s2cPollingTimer);
+}
+
 
 async function stopServerPolling() {
     console.log('s2cPollingTimer - stop -> ' + s2cPollingTimer);
@@ -2805,7 +3039,65 @@ async function stopServerPolling() {
         clearInterval(s2cPollingTimer);
         s2cPollingTimer = null;
     }
+    //releaseLock("s2c");
 }
+
+// ------------------------------
+// GLOBAL SYNC QUEUE MANAGER
+// ------------------------------
+
+const SyncQueue = {
+    c2sActive: false,
+    s2cActive: false,
+    queue: [],
+
+    pending: {
+        c2s: false,
+        s2c: false
+    },
+
+    async run(type, task) {
+        // If same type already queued → ignore
+        if (this.pending[type]) {
+            console.log(`🟡 ${type.toUpperCase()} already queued → skip enqueue`);
+            return;
+        }
+
+        // If something running → queue
+        if (this.c2sActive || this.s2cActive) {
+            this.pending[type] = true;
+            this.queue.push({ type, task });
+            console.log(`📥 Queued ${type.toUpperCase()}`);
+            return;
+        }
+
+        // Run immediately
+        if (type === "c2s") this.c2sActive = true;
+        if (type === "s2c") this.s2cActive = true;
+
+        try {
+            await task();
+        } catch (e) {
+            console.error(`❌ ${type.toUpperCase()} error:`, e);
+        } finally {
+            if (type === "c2s") this.c2sActive = false;
+            if (type === "s2c") this.s2cActive = false;
+            this.pending[type] = false;
+            this.process();
+        }
+    },
+
+    async process() {
+        if (this.c2sActive || this.s2cActive) return;
+        if (!this.queue.length) return;
+
+        const job = this.queue.shift();
+        this.pending[job.type] = false;
+        await this.run(job.type, job.task);
+    }
+};
+
+
 
 
 // ipcMain.handle("scanFolder", async (event, folderPath) => {
@@ -2829,7 +3121,7 @@ async function stopServerPolling() {
 // });
 
 
-async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+async function updateSaveTracker1(fullPath, cleanLocation, item = null) {
     const db = getDB();
 
     let stats;
@@ -2889,6 +3181,90 @@ async function updateSaveTracker(fullPath, cleanLocation, item = null) {
 
     console.log(`✅ Tracker updated → ${key}`);
 }
+
+async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+    const db = getDB();
+
+    let stats;
+    try {
+        stats = fs.statSync(fullPath);
+    } catch {
+        console.warn(`⚠️ Missing path (skip tracker): ${fullPath}`);
+        return;
+    }
+
+    const key = cleanLocation.replace(/\\/g, "/");
+
+    /* ============================
+       HASH LOGIC
+    ============================ */
+
+    // trust server hash first
+    let hash = item?.hash ?? null;
+
+    if (stats.isFile() && !hash) {
+        try {
+            hash = await hashFile(fullPath);
+        } catch (err) {
+            console.warn(`⚠️ Failed to hash: ${fullPath}`, err.message);
+        }
+    }
+
+    /* ============================
+       MTIME LOGIC
+    ============================ */
+
+    const mtime =
+        item?.mtime != null     // ✅ correct field
+            ? Number(item.mtime)
+            : stats.mtimeMs;
+
+    /* ============================
+       PRESERVE SERVER MTIME (SAFE)
+       only if different
+    ============================ */
+
+    if (stats.isFile() && item?.mtime != null) {
+        const localMtime = stats.mtimeMs;
+        const serverMtime = Number(item.mtime);
+
+        // only touch if really different
+        if (Math.abs(localMtime - serverMtime) > 5) {   // 5ms tolerance
+            try {
+                fs.utimesSync(fullPath, stats.atime, new Date(serverMtime));
+            } catch (err) {
+                console.warn(`⚠️ Failed utime: ${fullPath}`);
+            }
+        }
+    }
+
+    /* ============================
+       DB UPSERT
+    ============================ */
+
+    const stmt = db.prepare(`
+        INSERT INTO tracker (path, type, size, mtime, hash, synced)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            type   = excluded.type,
+            size   = excluded.size,
+            mtime  = excluded.mtime,
+            hash   = excluded.hash,
+            synced = 1
+    `);
+
+    stmt.run(
+        key,
+        stats.isDirectory() ? "folder" : "file",
+        stats.isFile() ? stats.size : 0,
+        stats.isDirectory() ? 0 : mtime,
+        hash,
+        1
+    );
+
+    console.log(`✅ Tracker updated → ${key}`);
+}
+
 
 
 async function markDownloaded(apiUrl, id) {
@@ -3074,6 +3450,10 @@ function ensureDirSync(dirPath) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
 }
+
+ipcMain.handle("get-setting-from-db", async (event, { syncData, key, defaultValue = 0 }) => {
+    return getSettingFromDB(syncData, key, defaultValue);    
+});
 
 ipcMain.handle("get-all-paths", async (event, rootDir) => {
     try {
@@ -3355,7 +3735,27 @@ ipcMain.handle("auto-sync", async (event, args) => {
                         String(nextSyncTime)
                     );
                 }
-            }            
+            }  
+            
+            if (data.last_upload_id >= 0) {
+                let lastSyncId = data.last_upload_id;
+
+                db.prepare(`
+                    INSERT INTO app_settings
+                        (customer_id, domain_id, domain_name, user_id, "key", value)
+                    VALUES (?, ?, ?, ?, 'last_sync_id', ?)
+                    ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                    DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = strftime('%s','now')
+                `).run(
+                    syncData.customer_data.id,
+                    syncData.domain_data.id,
+                    syncData.domain_data.domain_name,
+                    syncData.user_data.id,
+                    String(lastSyncId)
+                );
+            }
 
             // ✅ SAVE TRACKER ITEM-BY-ITEM (AFTER SERVER SUCCESS)
             for (const item of payloadItems) {
@@ -4620,13 +5020,13 @@ ipcMain.handle("set-sync-status", async (event, user, enabled) => {
   await setSyncEnabled(user, "sync_enabled", enabled ? "1" : "0");
 
   // Optional: update last_sync_at when enabling
-  if (enabled) {
-    await setSyncEnabled(
-      user,
-      "last_sync_at",
-      Math.floor(Date.now() / 1000).toString()
-    );
-  }
+//   if (enabled) {
+//     await setSyncEnabled(
+//       user,
+//       "last_sync_at",
+//       Math.floor(Date.now() / 1000).toString()
+//     );
+//   }
   console.log(user.apiUrl);
   // 2️⃣ Update server (user-wise)
   try {
@@ -4656,6 +5056,45 @@ ipcMain.handle("user-sync-update-success", async (event, user) => {
   return onUserSyncLogin(user);
 });
 
+ipcMain.handle("insert-setting-if-not-exists", async (event, user, key, value) => {
+  return insertIfNotExists(user, key, value);
+});
+
+ipcMain.handle("full-logout-cleanup", async () => {
+    console.log("📴 IPC: full-logout-cleanup called");
+    await fullLogoutCleanup();
+    return true;
+});
+
+
+
+function insertIfNotExists({ customer_id, domain_id, domain_name, user_id }, key, value) {
+  const db = getDB();
+
+  const exists = db.prepare(`
+    SELECT 1 FROM app_settings
+    WHERE customer_id = ?
+      AND domain_id = ?
+      AND domain_name = ?
+      AND user_id = ?
+      AND "key" = ?
+    LIMIT 1
+  `).get(customer_id, domain_id, domain_name, user_id, key);
+
+  if (!exists) {
+    db.prepare(`
+      INSERT INTO app_settings
+        (customer_id, domain_id, domain_name, user_id, "key", value)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(customer_id, domain_id, domain_name, user_id, key, value);
+
+    return true;   // inserted
+  }
+
+  return false;    // already exists
+}
+
+
 
 
 function isHiddenWindows(filePath) {
@@ -4675,36 +5114,6 @@ function addDriveLetter(drive, filePath) {
   // ensure begins with slash
   if (!filePath.startsWith('/')) filePath = '/' + filePath;
   return drive + filePath.replace(/\//g, '\\');
-}
-
-function getSyncEnabledFails(params = {}) {
-  const { customer_id, domain_id, domain_name, user_id } = params;
-  const db = getDB();
-
-  // default ON if params missing
-  if (!customer_id || !domain_id || !domain_name || !user_id) {
-    return true;
-  }
-
-  try {
-    const stmt = db.prepare(`
-      SELECT value FROM app_settings
-      WHERE customer_id = ?
-        AND domain_id = ?
-        AND domain_name = ?
-        AND user_id = ?
-        AND "key" = 'sync_enabled'
-    `);
-
-    const row = stmt.get(customer_id, domain_id, domain_name, user_id);
-
-    if (!row) return true;
-    return row.value === "1";
-
-  } catch (err) {
-    console.error("getSyncEnabled error:", err);
-    return true; // fail-safe default
-  }
 }
 
 function getSyncEnabled(params = {}) {
@@ -4736,32 +5145,6 @@ function getSyncEnabled(params = {}) {
     console.error("getSyncEnabled error:", err);
     return 1;
   }
-}
-
-
-
-function setSyncErrorEnabled(
-  { customer_id, domain_id,domain_name, user_id },
-  enabled
-) {
-  const db = getDB();
-
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO app_settings
-       (customer_id, domain_id,domain_name, user_id, "key", value)
-       VALUES (?, ?, ?, ?, 'sync_enabled', ?)
-       ON CONFLICT(customer_id, domain_id,domain_name, user_id, "key")
-       DO UPDATE SET
-         value = excluded.value,
-         updated_at = strftime('%s','now')`,
-      [customer_id, domain_id, domain_name , user_id, enabled ? "1" : "0"],
-      (err) => {
-        if (err) reject(err);
-        else resolve(true);
-      }
-    );
-  });
 }
 
 function setSyncEnabled({ customer_id, domain_id, domain_name, user_id },
@@ -4880,6 +5263,27 @@ function killLeftoverProcesses1() {
     }
 }
 
+function acquireLock(mode) {
+    if (global.syncLock.locked) {
+        console.log(`⛔ ${mode} blocked | Active mode = ${global.syncLock.mode}`);
+        return false;
+    }
+
+    global.syncLock.locked = true;
+    global.syncLock.mode = mode;
+    console.log(`🔒 Lock acquired by ${mode}`);
+    return true;
+}
+
+function releaseLock(mode) {
+    if (global.syncLock.mode === mode) {
+        console.log(`🔓 Lock released by ${mode}`);
+        global.syncLock.locked = false;
+        global.syncLock.mode = null;
+    }
+}
+
+
 
 
 function killLeftoverProcesses() {
@@ -4901,6 +5305,177 @@ function killLeftoverProcesses() {
     }
 }
 
+async function fullLogoutCleanup1() {
+    console.log("🧹 Starting full logout cleanup...");
+
+    // 1️⃣ Stop S2C polling
+    if (global.s2cPollingTimer) {
+        clearInterval(global.s2cPollingTimer);
+        global.s2cPollingTimer = null;
+        console.log("✅ S2C polling stopped");
+    }
+
+    // 2️⃣ Stop server polling logic (if separate handler exists)
+    if (typeof stopServerPolling === "function") {
+        try {
+            await stopServerPolling();
+            console.log("✅ Server polling stopped");
+        } catch (e) {
+            console.error("stopServerPolling error:", e);
+        }
+    }
+
+    // 3️⃣ Stop chokidar watchers (C2S)
+    if (global.__watchers?.length) {
+        console.log("🧹 Closing watchers...");
+        for (const w of global.__watchers) {
+            try {
+                w.removeAllListeners?.();
+                await w.close();
+
+                // macOS fsevents hard kill
+                if (w._closers) {
+                    w._closers.forEach(fn => {
+                        try { fn(); } catch(e) {}
+                    });
+                }
+            } catch (err) {
+                console.error("Watcher close error:", err);
+            }
+        }
+        global.__watchers.length = 0;
+        console.log("✅ Watchers destroyed");
+    }
+
+    // 4️⃣ Stop drive watcher logic (if wrapper exists)
+    if (typeof stopDriveWatcher === "function") {
+        try {
+            await stopDriveWatcher();
+            console.log("✅ Drive watcher stopped");
+        } catch (e) {
+            console.error("stopDriveWatcher error:", e);
+        }
+    }
+
+    // 5️⃣ Close DB safely
+    try {
+        closeDB();
+        console.log("✅ DB closed");
+    } catch (e) {
+        console.error("DB close error:", e);
+    }
+
+    // 6️⃣ Destroy windows
+    BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) w.destroy();
+    });
+
+    if (win && !win.isDestroyed()) {
+        win.webContents.removeAllListeners("did-finish-load");
+    }
+
+    // 7️⃣ Safe exit fallback
+    setTimeout(() => {
+        console.log("💀 Force exit fallback");
+        process.exit(0);
+    }, 2000);
+}
+
+
+async function fullLogoutCleanup() {
+    console.log("🧹 Starting logout cleanup...");
+
+    global.__IS_LOGGING_OUT = true;
+
+    /* ============================
+       STOP ALL POLLING TIMERS
+    ============================ */
+    const timers = [
+        "s2cPollingTimer",
+        "serverPollingTimer",
+        "drivePollingTimer",
+        "syncPollingTimer"
+    ];
+
+    for (const t of timers) {
+        if (global[t]) {
+            clearInterval(global[t]);
+            global[t] = null;
+            console.log(`✅ ${t} stopped`);
+        }
+    }
+
+    /* ============================
+       STOP SERVER POLLING
+    ============================ */
+    if (typeof stopServerPolling === "function") {
+        try {
+            await stopServerPolling();
+            console.log("✅ Server polling stopped");
+        } catch (e) {
+            console.error("stopServerPolling error:", e);
+        }
+    }
+
+    if (global.__serverPollingAbort) {
+        try {
+            global.__serverPollingAbort.abort();
+            console.log("✅ Server polling aborted");
+        } catch(e){}
+    }
+
+    /* ============================
+       STOP WATCHERS
+    ============================ */
+    if (Array.isArray(global.__watchers) && global.__watchers.length) {
+        console.log("🧹 Closing watchers:", global.__watchers.length);
+
+        for (const w of global.__watchers) {
+            try {
+                if (!w) continue;
+                if (w.removeAllListeners) w.removeAllListeners();
+                if (typeof w.close === "function") await w.close();
+
+                if (w._closers && Array.isArray(w._closers)) {
+                    for (const fn of w._closers) {
+                        try { fn(); } catch(e){}
+                    }
+                }
+            } catch (err) {
+                console.error("Watcher close error:", err);
+            }
+        }
+
+        global.__watchers = [];
+        console.log("✅ Watchers destroyed");
+    }
+
+    /* ============================
+       STOP DRIVE WATCHER
+    ============================ */
+    if (global.__driveWatcher?.close) {
+        try {
+            await global.__driveWatcher.close();
+            global.__driveWatcher = null;
+            console.log("✅ Drive watcher closed");
+        } catch (e) {
+            console.error("Drive watcher error:", e);
+        }
+    }
+
+    if (typeof stopDriveWatcher === "function") {
+        try {
+            await stopDriveWatcher();
+            console.log("✅ Drive watcher wrapper stopped");
+        } catch (e) {
+            console.error("stopDriveWatcher error:", e);
+        }
+    }
+
+    console.log("✅ Logout cleanup complete (jobs stopped, app still running)");
+}
+
+
 
 process.on('exit', () => {
   
@@ -4919,46 +5494,48 @@ app.on("before-quit",async (event) => {
     if (app.isQuitting) return;
     app.isQuitting = true;
 
-    if (global.s2cPollingTimer) {
-        clearInterval(global.s2cPollingTimer);
-        global.s2cPollingTimer = null;
-        console.log("✅ Polling timer cleared");
-    }
+   await fullLogoutCleanup();
 
-    await stopServerPolling();   // server → client
+    // if (global.s2cPollingTimer) {
+    //     clearInterval(global.s2cPollingTimer);
+    //     global.s2cPollingTimer = null;
+    //     console.log("✅ Polling timer cleared");
+    // }
 
-    // 2️⃣ Stop chokidar watchers
-    if (global.__watchers?.length) {
-        for (const w of global.__watchers) {
-            try {
-                w.removeAllListeners?.();
-                await w.close();
+    // await stopServerPolling();   // server → client
 
-                // macOS fsevents hard kill
-                if (w._closers) {
-                    w._closers.forEach(fn => {
-                        try { fn(); } catch(e) {}
-                    });
-                }
+    // // 2️⃣ Stop chokidar watchers
+    // if (global.__watchers?.length) {
+    //     for (const w of global.__watchers) {
+    //         try {
+    //             w.removeAllListeners?.();
+    //             await w.close();
 
-            } catch (err) {
-                console.error("Watcher close error:", err);
-            }
-        }
-        global.__watchers.length = 0;
-        console.log("✅ Watchers fully destroyed");
-    }
+    //             // macOS fsevents hard kill
+    //             if (w._closers) {
+    //                 w._closers.forEach(fn => {
+    //                     try { fn(); } catch(e) {}
+    //                 });
+    //             }
 
-    // 3️⃣ Close windows
-    BrowserWindow.getAllWindows().forEach(w => w.destroy());
+    //         } catch (err) {
+    //             console.error("Watcher close error:", err);
+    //         }
+    //     }
+    //     global.__watchers.length = 0;
+    //     console.log("✅ Watchers fully destroyed");
+    // }
 
-    // 4️⃣ Final forced exit fallback
-    setTimeout(() => {
-        console.log("💀 Force exit fallback");
-        process.exit(0);
-    }, 800);
+    // // 3️⃣ Close windows
+    // BrowserWindow.getAllWindows().forEach(w => w.destroy());
 
-    await stopDriveWatcher();    // client → server
+    // // 4️⃣ Final forced exit fallback
+    // setTimeout(() => {
+    //     console.log("💀 Force exit fallback");
+    //     process.exit(0);
+    // }, 800);
+
+    // await stopDriveWatcher();    // client → server
     closeDB();
 
     if (win && !win.isDestroyed()) {

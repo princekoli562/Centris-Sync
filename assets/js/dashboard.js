@@ -215,14 +215,14 @@ window.electronAPI.onDownloadHide(() => {
 // Online / Offline listener
 window.addEventListener("online", () => {
  console.log('On - > ' + sync_toggle.checked);
-  updateUI({ enabled: sync_toggle.checked, online: true });
+  updateUI({ enabled: sync_toggle.checked, online: true,syncData :syncData });
   checkServer(sync_toggle.checked,true); // 🔥 important
-  startPing();
+  startPing(syncData);
 });
 
 window.addEventListener("offline", () => {
     console.log('Off - > ' + sync_toggle.checked);
-  updateUI({ enabled: sync_toggle.checked, online: false,server: false });
+  updateUI({ enabled: sync_toggle.checked, online: false,server: false,syncData :syncData });
   stopPing();
 });
 
@@ -288,10 +288,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const syncEnabled = await window.electronAPI.getSyncStatus(currentUser);
 
     if (navigator.onLine) {
-        checkServer(syncEnabled,navigator.onLine);
-        startPing();
+        checkServer(syncEnabled,navigator.onLine,syncData);
+        startPing(syncData);
     }else{
-        updateUI({enabled: syncEnabled, online: navigator.onLine });
+        updateUI({enabled: syncEnabled, online: navigator.onLine,syncData });
     }
 
     if (syncEnabled) {
@@ -993,9 +993,10 @@ $(document).on("mousemove", function (e) {
 
     $(document).on("click", ".logout-icon", async function (e) {
         if (confirm("Logout this user?")) {
+            await window.electronAPI.fullLogoutCleanup();
             SessionLogout();
             const autoExpireVal = true; // or from storage/config
-            const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);
+            const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);            
             // call API / IPC / AJAX here
         }
     });
@@ -1312,10 +1313,10 @@ $(document).on("mousemove", function (e) {
         // Save toggle state to DB / main process
         await window.electronAPI.setSyncStatus(currentUser, enabled);
 
-        updateUI({ enabled, online: navigator.onLine });
+        updateUI({ enabled, online: navigator.onLine,syncData });
 
         if (enabled) {
-            startPing();
+            startPing(syncData);
             window.electronAPI.startServerPolling(syncData);
             window.electronAPI.startDriveWatcher(syncData);
 
@@ -2565,7 +2566,7 @@ function isFile(name) {
     return /\.[a-z0-9]+$/i.test(name);
 }
 
-function updateUI({ enabled, online, server = true }) {
+function updateUI2({ enabled, online, server = true }) {
     sync_toggle.checked = enabled;
     if (!enabled) {
         sync_indicator.className = "sync-dot red";
@@ -2594,7 +2595,85 @@ function updateUI({ enabled, online, server = true }) {
     sync_icon.classList.remove("syncing");
 }
 
-async function checkServer(syncEnabled,online) {
+async function updateUI({ enabled, online, server = true, syncData }) {
+    sync_toggle.checked = enabled;
+
+    // -----------------------
+    // SYNC DISABLED
+    // -----------------------
+    if (!enabled) {
+        sync_indicator.className = "sync-dot red";
+        sync_text.innerText = "Sync Disabled";
+        sync_icon.classList.remove("syncing");
+        return;
+    }
+
+    // -----------------------
+    // OFFLINE
+    // -----------------------
+    if (!online) {
+        sync_indicator.className = "sync-dot orange";
+        sync_text.innerText = "Offline · Waiting for connection";
+        sync_icon.classList.remove("syncing");
+        return;
+    }
+
+    // -----------------------
+    // SERVER DOWN
+    // -----------------------
+    if (!server) {
+        sync_indicator.className = "sync-dot orange";
+        sync_text.innerText = "Server Unreachable · Waiting";
+        sync_icon.classList.remove("syncing");
+        return;
+    }
+
+    // -----------------------
+    // SYNC ENABLED (SHOW LAST SYNC TIME)
+    // -----------------------
+    let lastSyncAt = 0;
+
+    try {
+        if (syncData) {
+            lastSyncAt = await window.electronAPI.getSettingFromDB(syncData, 'last_sync_at', 0);
+        }
+    } catch (e) {
+        console.error('❌ Failed to read last_sync_at', e);
+    }
+
+    let text = "Sync Enabled · Up to date";
+
+    if (lastSyncAt && lastSyncAt > 0) {
+        const formatted = formatUnixTimestamp(lastSyncAt);
+        text = `Sync Enabled · Last sync: ${formatted}`;
+    } else {
+        text = "Sync Enabled · Never synced";
+    }
+
+    sync_indicator.className = "sync-dot green";
+    sync_text.innerText = text;
+    sync_icon.classList.remove("syncing");
+}
+
+
+function formatUnixTimestamp(ts) {
+    if (!ts || ts <= 0) return 'Never';
+
+    const d = new Date(ts * 1000);
+
+    return d.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+}
+
+
+async function checkServer(syncEnabled,online,syncData) {
   try {
     const res = await fetch(`${apiUrl}/api/ping`, {
       method: "GET",
@@ -2610,24 +2689,26 @@ async function checkServer(syncEnabled,online) {
       enabled: syncEnabled,
       online: online,
       server: true,
-      serverTime: data.data?.server_time
+      serverTime: data.data?.server_time,
+      syncData :syncData
     });
 
   } catch (err) {
     updateUI({
       enabled: syncEnabled,
       online: online,
-      server: false
+      server: false,
+      syncData :syncData
     });
   }
 }
 
 
-function startPing() {
+function startPing(syncData) {
   if (pingInterval) return;
 
   pingInterval = setInterval(() => {
-    checkServer(sync_toggle.checked, navigator.onLine);
+    checkServer(sync_toggle.checked, navigator.onLine,syncData);
   }, 15_000);
 }
 

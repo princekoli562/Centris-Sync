@@ -62,9 +62,42 @@ document.getElementById('sync').addEventListener('click', async () => {
             apiUrl:apiUrl
         };
 
+        const BASELINE_TS = Math.floor(new Date("1900-01-01T00:00:00Z").getTime() / 1000);
+
+        // offset in minutes (negative for UTC+ zones)
+        const offsetMinutes = new Date().getTimezoneOffset(); 
+        // convert to seconds
+        const offsetSeconds = offsetMinutes * 60;
+
+        // convert UTC → local time
+        const BASELINE_LOCAL = BASELINE_TS - offsetSeconds;
 
         await window.electronAPI.setSyncStatus(user_sync_data,1);
 
+        const insertedTime = await window.electronAPI.insertSettingIfNotExists(
+            user_sync_data,
+            "last_sync_at",
+            BASELINE_LOCAL
+        );
+
+        const insertedId = await window.electronAPI.insertSettingIfNotExists(
+            user_sync_data,
+            "last_sync_id",
+            0
+        );
+
+        if (insertedTime) {
+            await window.electronAPI.setSyncStatus(user_sync_data, "last_sync_at", BASELINE_LOCAL);    
+        } else {
+            console.log("ℹ️ sync cursor already exists");
+        }
+
+        if (insertedId) {
+            await window.electronAPI.setSyncStatus(user_sync_data, "last_sync_id", 0);    
+        } else {
+            console.log("ℹ️ sync cursor already exists");
+        }
+        
         window.secureAPI.send('navigate', 'home');
         localStorage.setItem('secret_key', secret_key);
         localStorage.setItem('secret_gen_key', secret_gen_key);

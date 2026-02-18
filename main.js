@@ -18,6 +18,8 @@ let debounceTimer = null;
 let autoExpireVal = false;
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
+// const uuid = require("uuid");
+// const uuidv4 = uuid.v4;
 let cleanupDone = false;
 global.__watchers = global.__watchers || [];
 
@@ -179,6 +181,7 @@ function sendLogToRenderer(callback,status, message) {
             timestamp: Date.now()
         });
     } catch {
+        process.stderr.write(`IPC send failed [${callback}]: ${err.message}\n`);
         // swallow silently
     }
 }
@@ -228,13 +231,16 @@ console.log = (...args) => {
                 return String(a);
             })
             .join(" ");
-
-        win.webContents.send("log", message);
+        //sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
+        //win.webContents.send("log", message);
+        sendLogToRenderer("main-log", "info", message);
 
     } catch (err) {
         originalLog("Log mirror error:", err.message);
     }
 };
+
+
 
 const createWindow = async () => {
     
@@ -276,7 +282,7 @@ const createWindow = async () => {
 
     //✅ Handle close — minimize to tray, not quit
     win.on('close', (event) => {
-        if (!app.isQuiting) {
+        if (!app.isQuitting) {
         event.preventDefault();
         win.hide(); // keep running in tray
         return false;
@@ -488,7 +494,7 @@ function createTray() {
     {
       label: 'Exit',
       click: () => {
-        app.isQuiting = true;
+        app.isQuitting = true;
         app.quit();
       },
     },
@@ -596,14 +602,9 @@ async function startDriveWatcher(syncData) {
       return;
     }
 
-    if (watcherRunning) {
+    if (watcher) {
       console.log("🟡 Drive watcher already running");
       return;
-    }
-
-    if (watcher) {
-      await watcher.close();
-      watcher = null;
     }
 
     if (debounceTimer) {
@@ -624,8 +625,6 @@ async function startDriveWatcher(syncData) {
 
     console.log("👀 Watching:", DRIVE_ROOT);
 
-    watcherRunning = true;
-
     watcher = chokidar.watch(DRIVE_ROOT, {
       persistent: true,
       ignoreInitial: true,
@@ -645,11 +644,11 @@ async function startDriveWatcher(syncData) {
       if (debounceTimer) clearTimeout(debounceTimer);
 
       debounceTimer = setTimeout(() => {
-        console.log("📤 FS changed → queue C2S");
+        console.log("📤 FS changed → enqueue C2S");
 
         SyncQueue.run("c2s", async () => {
-            sendLogToRenderer("fs-changed","success","FS changed.");
-            await runClientToServerSync(syncData);   // 🔥 queued upload
+          sendLogToRenderer("fs-changed","success","FS changed.");
+          await runClientToServerSync(syncData);
         });
 
       }, 6000);
@@ -666,9 +665,9 @@ async function startDriveWatcher(syncData) {
 
   } catch (err) {
     console.error("❌ startDriveWatcher failed:", err);
-    watcherRunning = false;
   }
 }
+
 
 
 async function stopDriveWatcher() {
@@ -1193,10 +1192,9 @@ function normalizeServerPath(location) {
     return parts.slice(index).join("/");
 }
 
-async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
+async function downloadServerPending({ customer_id, domain_id, apiUrl,last_sync_time,last_sync_id,device_id , syncData }) {
 
-    const lastSyncAt = await getLastSyncAtFromDB(syncData);
-    let lastSyncid = await getSettingFromDB(syncData, 'last_sync_id');
+    //const lastSyncAt = await getLastSyncAtFromDB(syncData);
 
     const res = await fetch(`${apiUrl}/api/get-remaining-downloads`, {
         method: "POST",
@@ -1205,15 +1203,16 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData 
             customer_id,
             domain_id,
             user_id: syncData.user_data.id,
-            last_sync_time: lastSyncAt,
-            last_sync_id:lastSyncid
+            last_sync_time: last_sync_time,
+            last_sync_id:last_sync_id,
+            device_id:device_id
         }),
     });
 
     const raw = await res.text();
 
     console.log("🔥 RAW RESPONSE 🔥");
-    //console.log(raw);
+    console.log(raw);
     //JSON.parse(raw).pending;
 
     return JSON.parse(raw);
@@ -2258,6 +2257,8 @@ async function downloadPendingFilesLogicWorking(event, args) {
 
     let lastSyncAt = await getLastSyncAtFromDB(syncData);
     let lastSyncid = await getSettingFromDB(syncData, 'last_sync_id');
+    let device_id = await getSettingFromDB(syncData, 'device_id');
+    console.log('device_id - ' + device_id);
 
     let totalDownloaded = 0;
     let totalFiles = 0;
@@ -2286,9 +2287,10 @@ async function downloadPendingFilesLogicWorking(event, args) {
             customer_id,
             domain_id,
             apiUrl,
-            syncData,
             last_sync_time: lastSyncAt,
-            last_sync_id : lastSyncid
+            last_sync_id : lastSyncid,
+            device_id : device_id,
+            syncData
         });
 
         const pending = response.pending || [];
@@ -2454,15 +2456,25 @@ async function downloadPendingFilesLogicWorking(event, args) {
     setTimeout(() => event.sender.send("download-hide"), 6000);
 }
 
-async function downloadPendingFilesLogic(event, args) {
+async function downloadPendingFilesLogicOLDD(event, args) {
     const { customer_id, domain_id, apiUrl, syncData, db } = args;
 
     const SOURCE = "Centris One";
-    const CHUNK_SIZE = 50;        // API batch
-    const CONCURRENCY = 6;        // parallel downloads
+    const CHUNK_SIZE = 50;
+    const CONCURRENCY = 6;
 
-    let lastSyncAt = await getLastSyncAtFromDB(syncData);
+    // 🔐 global locks
+    global.downloadingPaths = global.downloadingPaths || new Set();
+    global.uploadingPaths   = global.uploadingPaths   || new Set();
+
+    // 🔥 ONLY status cursor
     let lastSyncId = await getSettingFromDB(syncData, 'last_sync_id');
+      console.log('lastSyncid = ' + lastSyncId);
+    let device_id = await getSettingFromDB(syncData, 'device_id');
+    console.log('device_id - ' + device_id);
+
+    if (!lastSyncId) lastSyncId = 0;
+    console.log('lastSyncId = ' + lastSyncId);
 
     let totalDownloaded = 0;
     let totalFiles = 0;
@@ -2491,19 +2503,19 @@ async function downloadPendingFilesLogic(event, args) {
             customer_id,
             domain_id,
             apiUrl,
-            syncData,
             last_sync_time: lastSyncAt,
-            last_sync_id: lastSyncId
+            last_sync_id: lastSyncId,            
+            device_id:device_id,
+            syncData,
         });
 
         const pending = response.pending || [];
-        const nextSyncTime = response.next_sync_time;
         const nextSyncId = response.next_sync_id;
+        const nextSyncTime = response.next_sync_time;
         const totalRemaining = response.total_remaining || 0;
 
         if (!pending.length) break;
 
-        // 🔥 Init UI progress once
         if (firstBatch) {
             totalFiles = totalRemaining;
             event.sender.send("download-progress-start", { total: totalFiles });
@@ -2512,27 +2524,32 @@ async function downloadPendingFilesLogic(event, args) {
 
         const chunks = chunkArray(pending, CHUNK_SIZE);
 
-        // =========================
-        // PROCESS CHUNKS
-        // =========================
         for (const chunk of chunks) {
 
             const tasks = chunk.map(item => async () => {
+                let fullLocalPath = null;
+
                 try {
-                    // -------------------------
-                    // PATH BUILD
-                    // -------------------------
                     const cleanLocation = extractRelativePath(
                         item.location,
                         baseFolder,
                         UserName
                     );
 
-                    const fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
+                    fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
 
-                    // 🔒 Security: path escape protection
+                    // 🔒 path escape protection
                     if (!fullLocalPath.startsWith(mappedDrivePath)) {
                         throw new Error("Path escape blocked");
+                    }
+
+                    // 🚫 echo prevention
+                    if (global.uploadingPaths.has(fullLocalPath)) {
+                        return { ok: true, skipped: true, status_id: item.status_id };
+                    }
+
+                    if (global.downloadingPaths.has(fullLocalPath)) {
+                        return { ok: true, skipped: true, status_id: item.status_id };
                     }
 
                     const targetDir =
@@ -2544,47 +2561,43 @@ async function downloadPendingFilesLogic(event, args) {
                         fs.mkdirSync(targetDir, { recursive: true });
                     }
 
-                    // -------------------------
+                    // =========================
                     // DOWNLOAD
-                    // -------------------------
+                    // =========================
                     if (item.type === "file") {
-                        await downloadFile(item, fullLocalPath, apiUrl);
+                        global.downloadingPaths.add(fullLocalPath);
+                        try {
+                            await downloadFile(item, fullLocalPath, apiUrl);
+                        } finally {
+                            global.downloadingPaths.delete(fullLocalPath);
+                        }
                     }
 
-                    // -------------------------
-                    // TRACKER UPDATE
-                    // -------------------------
-                    await updateSaveTracker(
-                        fullLocalPath,
-                        cleanLocation,
-                        item
-                    );
+                    await updateSaveTracker(fullLocalPath, cleanLocation, item);
 
-                    return { ok: true, id: item.id, location: item.location };
+                    return { ok: true, status_id: item.status_id, location: item.location };
 
                 } catch (err) {
                     console.error("❌ Download failed:", item.location, err.message);
-                    return { ok: false, id: item.id, location: item.location };
+                    if (fullLocalPath) global.downloadingPaths.delete(fullLocalPath);
+                    return { ok: false, status_id: item.status_id, location: item.location };
                 }
             });
 
-            // 🔥 Parallel execution with limit
             const results = await runWithConcurrency(tasks, CONCURRENCY);
 
-            const downloadedIds = [];
+            const downloadedStatusIds = [];
 
             for (const r of results) {
-                if (r.ok) {
-                    downloadedIds.push(r.id);
+                if (r.ok && !r.skipped) {
+                    downloadedStatusIds.push(r.document_id);
                     totalDownloaded++;
 
                     event.sender.send("download-progress", {
                         done: totalDownloaded,
                         total: totalFiles,
                         file: r.location,
-                        filePercent: Math.round(
-                            (totalDownloaded / totalFiles) * 100
-                        )
+                        filePercent: Math.round((totalDownloaded / totalFiles) * 100)
                     });
                 }
             }
@@ -2592,25 +2605,22 @@ async function downloadPendingFilesLogic(event, args) {
             // =========================
             // BULK MARK DOWNLOADED
             // =========================
-            if (downloadedIds.length > 0) {
+            if (downloadedStatusIds.length > 0) {
                 await fetch(`${apiUrl}/api/markDownloadedBulk`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        customer_id,
-                        domain_id,
-                        user_id: syncData.user_data.id,
-                        ids: downloadedIds
+                        device_id: device_id,   // 🔥 REQUIRED
+                        status_ids: downloadedStatusIds  // 🔥 status_id, not document_id
                     })
                 });
             }
 
-            // allow event loop breathing
             await new Promise(r => setTimeout(r, 10));
         }
 
         // =========================
-        // UPDATE CURSORS
+        // UPDATE CURSOR (last_sync_at)
         // =========================
         if (nextSyncTime) {
             lastSyncAt = nextSyncTime;
@@ -2632,6 +2642,9 @@ async function downloadPendingFilesLogic(event, args) {
             );
         }
 
+        // =========================
+        // UPDATE CURSOR
+        // =========================
         if (nextSyncId >= 0) {
             lastSyncId = nextSyncId;
 
@@ -2665,6 +2678,226 @@ async function downloadPendingFilesLogic(event, args) {
 
     setTimeout(() => event.sender.send("download-hide"), 6000);
 }
+
+async function downloadPendingFilesLogic(event, args) {
+    const { customer_id, domain_id, apiUrl, syncData, db } = args;
+
+    const SOURCE = "Centris One";
+    const CHUNK_SIZE = 50;
+    const CONCURRENCY = 6;
+
+    global.downloadingPaths = global.downloadingPaths || new Set();
+    global.uploadingPaths   = global.uploadingPaths   || new Set();
+
+    let lastSyncId = await getSettingFromDB(syncData, 'last_sync_id');
+    let lastSyncAt = await getSettingFromDB(syncData, 'last_sync_at');
+    let device_id  = await getSettingFromDB(syncData, 'device_id');
+
+    if (!lastSyncId) lastSyncId = 0;
+    if (!lastSyncAt) lastSyncAt = 0;
+
+    let totalDownloaded = 0;
+    let totalFiles = 0;
+    let firstBatch = true;
+
+    /* =========================
+       PATH SETUP
+    ========================= */
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const UserName = syncData.user_data.user_name;
+
+    let mappedDrivePath = '';
+    if (process.platform === "win32") {
+        mappedDrivePath = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else {
+        mappedDrivePath = `/${drive}/${baseFolder}`;
+    }
+
+    /* =========================
+       SERVER LOOP
+    ========================= */
+    while (true) {
+
+        const response = await downloadServerPending({
+            customer_id,
+            domain_id,
+            apiUrl,
+            last_sync_time: lastSyncAt,
+            last_sync_id: lastSyncId,
+            device_id,
+            syncData,
+        });
+
+        const pending = response.pending || [];
+        const nextSyncId = response.next_sync_id;
+        const nextSyncTime = response.next_sync_time;
+        const totalRemaining = response.total_remaining || 0;
+
+        if (!pending.length) break;
+
+        if (firstBatch) {
+            totalFiles = totalRemaining;
+            event.sender.send("download-progress-start", { total: totalFiles });
+            firstBatch = false;
+        }
+
+        const chunks = chunkArray(pending, CHUNK_SIZE);
+
+        for (const chunk of chunks) {
+
+            const tasks = chunk.map(item => async () => {
+                let fullLocalPath = null;
+
+                try {
+                    const cleanLocation = extractRelativePath(
+                        item.location,
+                        baseFolder,
+                        UserName
+                    );
+
+                    fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
+
+                    if (!fullLocalPath.startsWith(mappedDrivePath)) {
+                        throw new Error("Path escape blocked");
+                    }
+
+                    if (global.uploadingPaths.has(fullLocalPath)) return { ok: true, skipped: true };
+                    if (global.downloadingPaths.has(fullLocalPath)) return { ok: true, skipped: true };
+
+                    const targetDir =
+                        item.type === "file"
+                            ? path.dirname(fullLocalPath)
+                            : fullLocalPath;
+
+                    if (!fs.existsSync(targetDir)) {
+                        fs.mkdirSync(targetDir, { recursive: true });
+                    }
+
+                    if (item.type === "file") {
+                        global.downloadingPaths.add(fullLocalPath);
+                        try {
+                            await downloadFile(item, fullLocalPath, apiUrl);
+                        } finally {
+                            global.downloadingPaths.delete(fullLocalPath);
+                        }
+                    }
+
+                    await updateSaveTracker(fullLocalPath, cleanLocation, item);
+
+                    return {
+                        ok: true,
+                        status_id: item.status_id,   // 🔥 child table ID
+                        location: item.location
+                    };
+
+                } catch (err) {
+                    if (fullLocalPath) global.downloadingPaths.delete(fullLocalPath);
+                    console.error("❌ Download failed:", item.location, err.message);
+                    return { ok: false, status_id: item.status_id };
+                }
+            });
+
+            const results = await runWithConcurrency(tasks, CONCURRENCY);
+
+            const downloadedStatusIds = [];
+
+            for (const r of results) {
+                if (r.ok && !r.skipped) {
+                    downloadedStatusIds.push(r.status_id);   // ✅ child PK
+                    totalDownloaded++;
+
+                    event.sender.send("download-progress", {
+                        done: totalDownloaded,
+                        total: totalFiles,
+                        file: r.location,
+                        filePercent: Math.round((totalDownloaded / totalFiles) * 100)
+                    });
+                }
+            }
+
+            /* =========================
+               MARK CHILD ROWS SYNCED
+            ========================= */
+            if (downloadedStatusIds.length > 0) {
+                await fetch(`${apiUrl}/api/markDownloadedBulk`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        device_id: device_id,
+                        status_ids: downloadedStatusIds   // 🔥 child IDs
+                    })
+                });
+            }
+
+            await new Promise(r => setTimeout(r, 10));
+        }
+
+        /* =========================
+           UPDATE CURSORS
+        ========================= */
+        // =========================
+        // UPDATE CURSOR (last_sync_at)
+        // =========================
+        if (nextSyncTime) {
+            lastSyncAt = nextSyncTime;
+
+            db.prepare(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `).run(
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(nextSyncTime)
+            );
+        }
+
+        // =========================
+        // UPDATE CURSOR
+        // =========================
+        if (nextSyncId >= 0) {
+            lastSyncId = nextSyncId;
+
+            db.prepare(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_id', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `).run(
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(lastSyncId)
+            );
+        }
+
+        if (!response.has_more) break;
+    }
+
+    /* =========================
+       FINAL UI
+    ========================= */
+    event.sender.send("download-complete", {
+        source: SOURCE,
+        status: totalDownloaded ? "download" : "no-download"
+    });
+
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+}
+
+
+
 
 async function runWithConcurrency(tasks, limit = 6) {
     const results = [];
@@ -2724,7 +2957,7 @@ function extractRelativePath(serverPath, baseFolder, username) {
 
 async function downloadFile(item, fullLocalPath, apiUrl) {
 
-    const res = await fetch(`${apiUrl}/api/download-file/${item.id}`, {
+    const res = await fetch(`${apiUrl}/api/download-file/${item.document_id}`, {
         method: "POST" // 🔥 MUST MATCH ROUTE
     });
 
@@ -3029,7 +3262,7 @@ function getLastSyncAtFromDB(syncData) {
     }
 }
 
-async function getSettingFromDB(syncData, key, defaultValue = 0) {
+async function getSettingFromDBOld(syncData, key, defaultValue = 0) {
     try {
         const db = getDB();
 
@@ -3069,11 +3302,50 @@ async function getSettingFromDB(syncData, key, defaultValue = 0) {
     }
 }
 
+async function getSettingFromDB(syncData, key, defaultValue = null) {
+    try {
+        const db = getDB();
 
-async function runServerToClientSync(event, syncData) {
+        const row = db.prepare(`
+            SELECT value
+            FROM app_settings
+            WHERE customer_id = ?
+              AND domain_id   = ?
+              AND domain_name = ?
+              AND user_id     = ?
+              AND "key"       = ?
+            LIMIT 1
+        `).get(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            key
+        );
+
+        if (!row || row.value == null) {
+            return defaultValue;
+        }
+
+        // ✅ Always return raw string
+        return String(row.value);
+
+    } catch (err) {
+        console.error(`❌ getSettingFromDB(${key}) error:`, err);
+        return defaultValue;
+    }
+}
+
+
+
+async function runServerToClientSync11(event, syncData) {
     console.log('running - qqqqq');
-    //if (s2cSyncRunning) return; // prevent overlap
-    //s2cSyncRunning = true;
+    if (s2cSyncRunning) return; // prevent overlap
+    if (watcherRunning) {
+        return;
+    } 
+
+    s2cSyncRunning = true;
 
     console.log('running - kkkkk');
 
@@ -3100,11 +3372,43 @@ async function runServerToClientSync(event, syncData) {
          console.log('running - jjjjjj' + lastSyncAt);
 
     } finally {
-        //s2cSyncRunning = false;
+        s2cSyncRunning = false;
     }
 }
 
-async function startServerPollingOLD(event, syncData) {
+async function runServerToClientSync(event, syncData) {
+    console.log('🔁 S2C sync started');
+
+    try {
+        const lastSyncAt = await getLastSyncAtFromDB(syncData);
+
+        const args = {
+            customer_id: syncData.customer_data.id,
+            domain_id: syncData.domain_data.id,
+            apiUrl: syncData.apiUrl,
+            db: getDB(),
+            syncData: {
+                ...syncData,
+                last_sync_at: lastSyncAt
+            }
+        };
+
+        // 1️⃣ Delete from server → client
+        await deleteLocalFilesLogic(event, args);
+
+        // 2️⃣ Download from server → client
+        await downloadPendingFilesLogic(event, args);
+
+        console.log('✅ S2C sync finished');
+
+    } catch (err) {
+        console.error('❌ S2C sync failed', err);
+    }
+}
+
+
+
+async function startServerPolling(event, syncData) {
     console.log("🚀 startServerPolling called");
     console.log('s2cPollingTimer - start ->', s2cPollingTimer);
 
@@ -3133,7 +3437,7 @@ async function startServerPollingOLD(event, syncData) {
     console.log("🟢 Polling started, timer =", s2cPollingTimer);
 }
 
-async function startServerPolling(event, syncData) {
+async function startServerPolling2(event, syncData) {
     console.log("🚀 startServerPolling called");
 
     if (s2cPollingTimer) {
@@ -3160,6 +3464,64 @@ async function startServerPolling(event, syncData) {
     console.log("🟢 Polling started, timer =", s2cPollingTimer);
 }
 
+async function startServerPollingnew(event, syncData) {
+    console.log("🚀 startServerPolling called");
+
+    if (s2cPollingTimer) {
+        console.log("⛔ Polling already running");
+        return;
+    }
+
+    // ❗ If watcher already running, DO NOT run immediate S2C
+    if (watcherRunning) {
+        console.log("⏸ Watcher running → skip initial S2C sync");
+    } else {
+        console.log("▶ Queue first S2C sync");
+
+        SyncQueue.run("s2c", async () => {
+            await runServerToClientSync(event, syncData);
+        });
+    }
+
+    // Start polling timer
+    s2cPollingTimer = setInterval(() => {
+        console.log("⏱ Poll tick → queue S2C");
+
+        SyncQueue.run("s2c", async () => {
+            await runServerToClientSync(event, syncData);
+        });
+
+    }, 30_000);
+
+    console.log("🟢 Polling started, timer =", s2cPollingTimer);
+}
+
+// async function startServerPolling(event, syncData) {
+//     console.log("🚀 startServerPolling called");
+
+//     if (s2cPollingTimer) {
+//         console.log("⛔ Polling already running");
+//         return;
+//     }
+
+//     // Always queue first S2C (no watcher blocking)
+//     SyncQueue.run("s2c", async () => {
+//         await runServerToClientSync(event, syncData);
+//     });
+
+//     s2cPollingTimer = setInterval(() => {
+//         console.log("⏱ Poll tick → enqueue S2C");
+
+//         SyncQueue.run("s2c", async () => {
+//             await runServerToClientSync(event, syncData);
+//         });
+
+//     }, 30_000);
+
+//     console.log("🟢 Polling started");
+// }
+
+
 
 async function stopServerPolling() {
     console.log('s2cPollingTimer - stop -> ' + s2cPollingTimer);
@@ -3174,26 +3536,66 @@ async function stopServerPolling() {
 // GLOBAL SYNC QUEUE MANAGER
 // ------------------------------
 
+// const SyncQueue = {
+//     c2sActive: false,
+//     s2cActive: false,
+//     queue: [],
+
+//     pending: {
+//         c2s: false,
+//         s2c: false
+//     },
+
+//     async run(type, task) {
+//         // If same type already queued → ignore
+//         if (this.pending[type]) {
+//             console.log(`🟡 ${type.toUpperCase()} already queued → skip enqueue`);
+//             return;
+//         }
+
+//         // If something running → queue
+//         if (this.c2sActive || this.s2cActive) {
+//             this.pending[type] = true;
+//             this.queue.push({ type, task });
+//             console.log(`📥 Queued ${type.toUpperCase()}`);
+//             return;
+//         }
+
+//         // Run immediately
+//         if (type === "c2s") this.c2sActive = true;
+//         if (type === "s2c") this.s2cActive = true;
+
+//         try {
+//             await task();
+//         } catch (e) {
+//             console.error(`❌ ${type.toUpperCase()} error:`, e);
+//         } finally {
+//             if (type === "c2s") this.c2sActive = false;
+//             if (type === "s2c") this.s2cActive = false;
+//             this.pending[type] = false;
+//             this.process();
+//         }
+//     },
+
+//     async process() {
+//         if (this.c2sActive || this.s2cActive) return;
+//         if (!this.queue.length) return;
+
+//         const job = this.queue.shift();
+//         this.pending[job.type] = false;
+//         await this.run(job.type, job.task);
+//     }
+// };
+
 const SyncQueue = {
     c2sActive: false,
     s2cActive: false,
     queue: [],
 
-    pending: {
-        c2s: false,
-        s2c: false
-    },
-
     async run(type, task) {
-        // If same type already queued → ignore
-        if (this.pending[type]) {
-            console.log(`🟡 ${type.toUpperCase()} already queued → skip enqueue`);
-            return;
-        }
 
         // If something running → queue
         if (this.c2sActive || this.s2cActive) {
-            this.pending[type] = true;
             this.queue.push({ type, task });
             console.log(`📥 Queued ${type.toUpperCase()}`);
             return;
@@ -3210,7 +3612,6 @@ const SyncQueue = {
         } finally {
             if (type === "c2s") this.c2sActive = false;
             if (type === "s2c") this.s2cActive = false;
-            this.pending[type] = false;
             this.process();
         }
     },
@@ -3220,10 +3621,52 @@ const SyncQueue = {
         if (!this.queue.length) return;
 
         const job = this.queue.shift();
-        this.pending[job.type] = false;
         await this.run(job.type, job.task);
     }
 };
+
+
+// const SyncQueue = {
+//     active: false,                 // global lock
+//     queue: [],
+//     queuedTypes: new Set(),        // prevents duplicates
+
+//     async run(type, task) {
+//         // Collapse duplicate requests of same type
+//         if (this.queuedTypes.has(type)) {
+//             console.log(`🟡 ${type.toUpperCase()} already queued → collapsed`);
+//             return;
+//         }
+
+//         this.queue.push({ type, task });
+//         this.queuedTypes.add(type);
+//         console.log(`📥 Queued ${type.toUpperCase()}`);
+
+//         this.process();
+//     },
+
+//     async process() {
+//         if (this.active) return;
+//         if (!this.queue.length) return;
+
+//         const job = this.queue.shift();
+//         this.queuedTypes.delete(job.type);
+
+//         this.active = true;
+//         console.log(`▶ Running ${job.type.toUpperCase()}`);
+
+//         try {
+//             await job.task();
+//         } catch (e) {
+//             console.error(`❌ ${job.type.toUpperCase()} error:`, e);
+//         } finally {
+//             this.active = false;
+//             console.log(`✅ Finished ${job.type.toUpperCase()}`);
+//             this.process(); // next job
+//         }
+//     }
+// };
+
 
 
 
@@ -3669,7 +4112,7 @@ ipcMain.handle("copyFileToDrive", async (event, src, relPath, mappedDrive) => {
 });
 
 
-ipcMain.handle("auto-sync", async (event, args) => {
+ipcMain.handle("auto-sync-new", async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
   const centrisFolder = syncData.config_data.centris_drive; // ex: Centris-Drive
@@ -3722,6 +4165,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
     // ------------------------------------------------------------
     // Mapped folder path (true final path)
     // ------------------------------------------------------------
+    let device_id = await getSettingFromDB(syncData, 'device_id');
     const drive_letter = getMappedDriveLetter();
     const db = getDB();
     let mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
@@ -3829,6 +4273,8 @@ ipcMain.handle("auto-sync", async (event, args) => {
                     customer_id,
                     domain_id,
                     user_id,
+                    device_id:device_id,
+                    source: "client",
                     changed_items: payloadItems
                 })
             });
@@ -3973,6 +4419,263 @@ ipcMain.handle("auto-sync", async (event, args) => {
     return { success: false, message: err.message };
   }
 });
+
+// ===============================
+// AUTO-SYNC (REWRITTEN, SAFE VERSION)
+// ===============================
+
+// ---- GLOBAL FILE STATE LOCKS ----
+const uploadingPaths = new Set();
+const downloadingPaths = new Set();
+
+ipcMain.handle("auto-sync", async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  const centrisFolder = syncData.config_data.centris_drive; // ex: Centris-Drive
+  const user_id = syncData.user_data.id;
+
+  let device_id = await getSettingFromDB(syncData, 'device_id');
+
+  // ------------------------------------------------------------
+  // Helpers
+  // ------------------------------------------------------------
+  function stripCentrisPrefix(relPath) {
+    if (!relPath) return relPath;
+    relPath = relPath.replace(/\\/g, "/").trim();
+    const folder = centrisFolder.replace(/\\/g, "/");
+    while (relPath.toLowerCase().startsWith(folder.toLowerCase() + "/")) {
+      relPath = relPath.substring(folder.length + 1);
+    }
+    return relPath;
+  }
+
+  function normalizeSnapshotPath(fullPath, baseFolder) {
+    let rel = fullPath.replace(/\\/g, "/");
+    baseFolder = baseFolder.replace(/\\/g, "/");
+    if (rel.toLowerCase().startsWith(baseFolder.toLowerCase())) {
+      rel = rel.substring(baseFolder.length);
+    }
+    return stripCentrisPrefix(rel);
+  }
+
+  function getFileType(fullPath) {
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) return "dir";
+      if (stat.isFile()) return "file";
+      return "unknown";
+    } catch {
+      return "missing";
+    }
+  }
+
+  try {
+    // ------------------------------------------------------------
+    // Resolve drive path
+    // ------------------------------------------------------------
+    const drive_letter = getMappedDriveLetter();
+    const db = getDB();
+    let mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+
+    if (process.platform === "darwin") {
+      mappedDrivePath = `/${drive_letter}/${centrisFolder}/${centrisFolder}/`;
+    }
+
+    // ------------------------------------------------------------
+    // Load tracker & snapshot
+    // ------------------------------------------------------------
+    const previousSnapshot = await loadTracker(false);
+    const rawSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+
+    let normalizedPrevious = {};
+    for (const key in previousSnapshot) {
+      const cleaned = normalizeSnapshotPath(key, mappedDrivePath);
+      normalizedPrevious[cleaned] = previousSnapshot[key];
+    }
+
+    let currentSnapshot = {};
+    for (const rawKey in rawSnapshot) {
+      const cleanKey = normalizeSnapshotPath(rawKey, mappedDrivePath);
+      currentSnapshot[cleanKey] = rawSnapshot[rawKey];
+    }
+
+    // ------------------------------------------------------------
+    // DIFF
+    // ------------------------------------------------------------
+    let changedItems = findNewOrChangedFiles(currentSnapshot, normalizedPrevious).filter(Boolean);
+    let deletedItems = Object.keys(normalizedPrevious).filter(p => !currentSnapshot[p]).filter(Boolean);
+
+    // ------------------------------------------------------------
+    // FILTER: remove files currently downloading (S2C)
+    // ------------------------------------------------------------
+    changedItems = changedItems.filter(p => !downloadingPaths.has(p));
+    deletedItems = deletedItems.filter(p => !downloadingPaths.has(p));
+
+    // Downloaded
+    
+    //await deleteLocalFilesLogic(event,args);
+    //return true;
+    //await downloadPendingFilesLogic(event,args);
+
+    if (changedItems.length === 0 && deletedItems.length === 0) {
+      return { success: true, message: "No local changes to upload." };
+    }
+
+    // ------------------------------------------------------------
+    // UPLOAD
+    // ------------------------------------------------------------
+    if (changedItems.length > 0) {
+      const uploadChunks = chunkArray(changedItems, 50);
+      event.sender.send("upload-progress-start", { total: changedItems.length });
+
+      let processed = 0;
+
+      for (const chunkPaths of uploadChunks) {
+
+        // ---- mark upload locks ----
+        for (const p of chunkPaths) uploadingPaths.add(p);
+
+        const payloadItems = await Promise.all(
+          chunkPaths.map(async relPath => {
+            const fullLocalPath = path.join(mappedDrivePath, relPath).replace(/\\/g, "/");
+            const type = getFileType(fullLocalPath);
+            const is_dir = type === "dir";
+
+            let content = null;
+            if (!is_dir) content = await fs.promises.readFile(fullLocalPath, "base64");
+
+            return {
+              path: relPath,
+              is_dir,
+              content,
+              size: currentSnapshot[relPath]?.size || 0,
+              mtime: currentSnapshot[relPath]?.mtime || 0,
+              hash: currentSnapshot[relPath]?.hash || null
+            };
+          })
+        );
+
+        const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            device_id:device_id,
+            changed_items: payloadItems,
+            source: "client"
+          })
+        });
+
+        if (!res.ok) throw new Error("Upload failed");
+
+        const data = await res.json();
+
+        // ---- update sync state ----
+        if (data.last_upload_time) {
+          db.prepare(`INSERT INTO app_settings
+            (customer_id, domain_id, domain_name, user_id, "key", value)
+            VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+            ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+            DO UPDATE SET value = excluded.value, updated_at = strftime('%s','now')
+          `).run(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            String(data.last_upload_time)
+          );
+        }
+
+        if (data.last_upload_id >= 0) {
+          db.prepare(`INSERT INTO app_settings
+            (customer_id, domain_id, domain_name, user_id, "key", value)
+            VALUES (?, ?, ?, ?, 'last_sync_id', ?)
+            ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+            DO UPDATE SET value = excluded.value, updated_at = strftime('%s','now')
+          `).run(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            String(data.last_upload_id)
+          );
+        }
+
+        // ---- save tracker + unlock ----
+        for (const item of payloadItems) {
+          saveTrackerItem({
+            path: normalizeTrackerPath(item.path),
+            type: item.is_dir ? "folder" : "file",
+            size: item.size,
+            mtime: item.mtime,
+            hash: item.hash,
+            synced: 1
+          });
+          uploadingPaths.delete(item.path);
+        }
+
+        processed += chunkPaths.length;
+        event.sender.send("upload-progress", { done: processed, total: changedItems.length });
+      }
+
+      event.sender.send("upload-progress-complete");
+      setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
+    }
+
+    // ------------------------------------------------------------
+    // DELETE
+    // ------------------------------------------------------------
+    if (deletedItems.length > 0) {
+      const delChunks = chunkArray(deletedItems, 50);
+      event.sender.send("delete-progress-start", { total: deletedItems.length });
+
+      let processed = 0;
+
+      for (const chunk of delChunks) {
+
+        // filter uploading files
+        const safeChunk = chunk.filter(p => !uploadingPaths.has(p));
+        if (!safeChunk.length) continue;
+
+        const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            deleted_items: safeChunk,
+            root_path: mappedDrivePath,
+            source: "client"
+          })
+        });
+
+        if (!res.ok) throw new Error("Server delete failed");
+
+        for (const relPath of safeChunk) {
+          await removeFromTracker(relPath);
+        }
+
+        processed += safeChunk.length;
+        event.sender.send("delete-progress", { done: processed, total: deletedItems.length });
+      }
+
+      event.sender.send("delete-progress-complete");
+      setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+    }
+
+    if (win) sendLogToRenderer("sync-status","success","Auto sync complete.");
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (err) {
+    console.error("AUTO-SYNC ERROR:", err);
+    return { success: false, message: err.message };
+  }
+});
+
 
 // function makeRelativePath(fullPath, rootPath) {
 //     return fullPath
@@ -4146,9 +4849,9 @@ ipcMain.handle("auto-sync-failed", async (event, args) => {
               AND t.path IS NULL
         `).all();
 
-        await deleteLocalFilesLogic(event,args);
+        //await deleteLocalFilesLogic(event,args);
        
-        await downloadPendingFilesLogic(event,args);
+        //await downloadPendingFilesLogic(event,args);
 
         // --------------------------------------------------
         // NO CHANGES
@@ -4203,6 +4906,8 @@ ipcMain.handle("auto-sync-failed", async (event, args) => {
                         customer_id,
                         domain_id,
                         user_id,
+                        device_id:device_id,
+                        source: "client",
                         changed_items: payload
                     })
                 });
@@ -5179,6 +5884,11 @@ ipcMain.handle("set-sync-status", async (event, user, enabled) => {
   return true;
 });
 
+ipcMain.handle("get-device-id", async (event, syncData) => {
+    const device_id = await getDeviceId(syncData);  // db = your sqlite instance
+    return device_id;
+});
+
 
 ipcMain.handle("user-sync-update-success", async (event, user) => {
   return onUserSyncLogin(user);
@@ -5411,6 +6121,46 @@ function releaseLock(mode) {
     }
 }
 
+async function getDeviceId(syncData){
+
+    const db = getDB();
+
+    const row = db.prepare(`
+        SELECT value 
+        FROM app_settings 
+        WHERE key = 'device_id'
+          AND customer_id = ?
+          AND domain_id   = ?
+          AND domain_name = ?
+          AND user_id     = ?
+        LIMIT 1
+    `).get(
+        syncData.customer_id,
+        syncData.domain_id,
+        syncData.domain_name,
+        syncData.user_id
+    );
+
+    if (row?.value) return row.value;
+
+    const device_id = uuidv4();
+
+    db.prepare(`
+        INSERT INTO app_settings
+            (customer_id, domain_id, domain_name, user_id, "key", value)
+        VALUES (?, ?, ?, ?, 'device_id', ?)
+    `).run(
+        syncData.customer_id,
+        syncData.domain_id,
+        syncData.domain_name,
+        syncData.user_id,
+        device_id
+    );
+
+    return device_id;
+}
+
+
 
 
 
@@ -5507,6 +6257,10 @@ async function fullLogoutCleanup1() {
         console.log("💀 Force exit fallback");
         process.exit(0);
     }, 2000);
+}
+
+function uuidv4(){
+    return crypto.randomUUID();
 }
 
 

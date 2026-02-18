@@ -74,6 +74,8 @@ document.getElementById('sync').addEventListener('click', async () => {
 
         await window.electronAPI.setSyncStatus(user_sync_data,1);
 
+        const device_id = await window.electronAPI.getDeviceId(user_sync_data);
+
         const insertedTime = await window.electronAPI.insertSettingIfNotExists(
             user_sync_data,
             "last_sync_at",

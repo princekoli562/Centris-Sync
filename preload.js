@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkSessionAndRedirect: (autoExpireVal) => ipcRenderer.invoke("check-session-and-redirect", autoExpireVal),
     insertSettingIfNotExists: (user, key, value) => ipcRenderer.invoke("insert-setting-if-not-exists", user, key, value),
     fullLogoutCleanup: () => ipcRenderer.invoke("full-logout-cleanup"),
+    getDeviceId: (syncData) => ipcRenderer.invoke("get-device-id", syncData),
     getSettingFromDB: (syncData, key, defaultValue = 0) => {
         return ipcRenderer.invoke("get-setting-from-db", {
             syncData,

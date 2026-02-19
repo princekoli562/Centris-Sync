@@ -4666,7 +4666,13 @@ ipcMain.handle("auto-sync", async (event, args) => {
         event.sender.send("delete-progress", { done: processed, total: deletedItems.length });
       }
 
-      event.sender.send("delete-progress-complete");
+      event.sender.send("delete-progress-complete",{
+            source: "client",
+            status: "done"
+            }
+        );
+
+          
       setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
     }
 

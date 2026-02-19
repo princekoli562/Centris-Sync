@@ -120,6 +120,7 @@ let syncConfigData = null;
 let redirectingToLogin = false;
 let s2cPollingTimer = null;
 let s2cSyncRunning = false;
+const DeviceFile = path.join(app.getPath("userData"), "device_id.json");
 //global.isSyncCancelled = false;
 
 let syncData = {
@@ -1192,9 +1193,9 @@ function normalizeServerPath(location) {
     return parts.slice(index).join("/");
 }
 
-async function downloadServerPending({ customer_id, domain_id, apiUrl,last_sync_time,last_sync_id,device_id , syncData }) {
+async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
 
-    //const lastSyncAt = await getLastSyncAtFromDB(syncData);
+    //const lastSyncAt = await getLastSyncAtFromDB(syncData);   
 
     const res = await fetch(`${apiUrl}/api/get-remaining-downloads`, {
         method: "POST",
@@ -1203,9 +1204,9 @@ async function downloadServerPending({ customer_id, domain_id, apiUrl,last_sync_
             customer_id,
             domain_id,
             user_id: syncData.user_data.id,
-            last_sync_time: last_sync_time,
-            last_sync_id:last_sync_id,
-            device_id:device_id
+            last_sync_time: syncData.last_sync_at,
+            last_sync_id:syncData.last_sync_id,
+            device_id:syncData.device_id
         }),
     });
 
@@ -1225,7 +1226,8 @@ async function getServerDeletedData({ customer_id, domain_id, apiUrl, syncData }
         body: JSON.stringify({
             customer_id,
             domain_id,
-            user_id: syncData.user_data.id
+            user_id: syncData.user_data.id,
+            device_id :syncData.device_id
         }),
     });
 
@@ -2688,10 +2690,10 @@ async function downloadPendingFilesLogic(event, args) {
 
     global.downloadingPaths = global.downloadingPaths || new Set();
     global.uploadingPaths   = global.uploadingPaths   || new Set();
-
-    let lastSyncId = await getSettingFromDB(syncData, 'last_sync_id');
-    let lastSyncAt = await getSettingFromDB(syncData, 'last_sync_at');
-    let device_id  = await getSettingFromDB(syncData, 'device_id');
+    
+    let lastSyncAt = syncData.last_sync_at;
+    let lastSyncId = syncData.last_sync_id;
+    let device_id  =  syncData.device_id;
 
     if (!lastSyncId) lastSyncId = 0;
     if (!lastSyncAt) lastSyncAt = 0;
@@ -2722,10 +2724,7 @@ async function downloadPendingFilesLogic(event, args) {
         const response = await downloadServerPending({
             customer_id,
             domain_id,
-            apiUrl,
-            last_sync_time: lastSyncAt,
-            last_sync_id: lastSyncId,
-            device_id,
+            apiUrl,            
             syncData,
         });
 
@@ -3088,7 +3087,7 @@ async function deleteLocalFilesLogic(event, args) {
     // 🔥 Get delete data + server time
     const response = await getServerDeletedData(args);
     const deletedData = response.data || [];
-    const serverTime = response.server_time; // 👈 IMPORTANT
+    const serverTime = response.server_time; // 👈 IMPORTANT    
 
     if (!Array.isArray(deletedData) || deletedData.length === 0) {
         event.sender.send("delete-progress-complete", {
@@ -3157,7 +3156,7 @@ async function deleteLocalFilesLogic(event, args) {
                     await removeFromTracker(cleanLocation);
                 }
 
-                deletedIds.push(item.id);
+                deletedIds.push(item.status_id);
 
                 completedFiles++;
                 event.sender.send("delete-progress", {
@@ -3381,6 +3380,8 @@ async function runServerToClientSync(event, syncData) {
 
     try {
         const lastSyncAt = await getLastSyncAtFromDB(syncData);
+        let lastSyncId = await getSettingFromDB(syncData, 'last_sync_id');
+        let device_id  = await getSettingFromDB(syncData, 'device_id');
 
         const args = {
             customer_id: syncData.customer_data.id,
@@ -3389,7 +3390,9 @@ async function runServerToClientSync(event, syncData) {
             db: getDB(),
             syncData: {
                 ...syncData,
-                last_sync_at: lastSyncAt
+                last_sync_at: lastSyncAt,
+                last_sync_id:lastSyncId,
+                device_id:device_id
             }
         };
 
@@ -4646,6 +4649,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
             customer_id,
             domain_id,
             user_id,
+            device_id,
             deleted_items: safeChunk,
             root_path: mappedDrivePath,
             source: "client"
@@ -6121,7 +6125,7 @@ function releaseLock(mode) {
     }
 }
 
-async function getDeviceId(syncData){
+async function getDeviceIdOLD(syncData){
 
     const db = getDB();
 
@@ -6160,8 +6164,102 @@ async function getDeviceId(syncData){
     return device_id;
 }
 
+async function getDeviceId(syncData) {
 
+    const db = getDB();
 
+    // ============================
+    // 1️⃣ Try DB first
+    // ============================
+    const row = db.prepare(`
+        SELECT value 
+        FROM app_settings 
+        WHERE key = 'device_id'
+          AND customer_id = ?
+          AND domain_id   = ?
+          AND domain_name = ?
+          AND user_id     = ?
+        LIMIT 1
+    `).get(
+        syncData.customer_id,
+        syncData.domain_id,
+        syncData.domain_name,
+        syncData.user_id
+    );
+
+    if (row?.value && row.value.trim() !== "") {
+        const device_id = row.value.trim();
+
+        // 🔐 Ensure file exists for security/persistence
+        if (!fs.existsSync(DeviceFile)) {
+            try {
+                fs.writeFileSync(DeviceFile, JSON.stringify({ device_id }, null, 2), "utf8");
+            } catch (e) {
+                console.error("❌ Failed to create device_id.json:", e.message);
+            }
+        }
+
+        return device_id; // ✅ DB wins
+    }
+
+    // ============================
+    // 2️⃣ Try file
+    // ============================
+    if (fs.existsSync(DeviceFile)) {
+        try {
+            const fileData = JSON.parse(fs.readFileSync(DeviceFile, "utf8"));
+
+            if (fileData?.device_id && String(fileData.device_id).trim() !== "") {
+
+                const device_id = String(fileData.device_id).trim();
+
+                // 🔁 Sync back to DB if missing there
+                db.prepare(`
+                    INSERT INTO app_settings
+                        (customer_id, domain_id, domain_name, user_id, "key", value)
+                    VALUES (?, ?, ?, ?, 'device_id', ?)
+                    ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                    DO UPDATE SET value = excluded.value
+                `).run(
+                    syncData.customer_id,
+                    syncData.domain_id,
+                    syncData.domain_name,
+                    syncData.user_id,
+                    device_id
+                );
+
+                return device_id; // ✅ File fallback
+            }
+        } catch (e) {
+            console.error("❌ device_id.json corrupted, regenerating...");
+        }
+    }
+
+    // ============================
+    // 3️⃣ Generate new
+    // ============================
+    const device_id = uuidv4();
+
+    // Save to DB
+    db.prepare(`
+        INSERT INTO app_settings
+            (customer_id, domain_id, domain_name, user_id, "key", value)
+        VALUES (?, ?, ?, ?, 'device_id', ?)
+        ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+        DO UPDATE SET value = excluded.value
+    `).run(
+        syncData.customer_id,
+        syncData.domain_id,
+        syncData.domain_name,
+        syncData.user_id,
+        device_id
+    );
+
+    // Save to file
+    fs.writeFileSync(DeviceFile, JSON.stringify({ device_id }, null, 2), "utf8");
+
+    return device_id;
+}
 
 
 function killLeftoverProcesses() {

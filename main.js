@@ -18,10 +18,15 @@ let debounceTimer = null;
 let autoExpireVal = false;
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
+let lastIpcLogTime = 0;
+const IPC_LOG_INTERVAL = 200;   // ms
+const MAX_LOG_SIZE = 1000;
 // const uuid = require("uuid");
 // const uuidv4 = uuid.v4;
 let cleanupDone = false;
+let s2cContext = null;
 global.__watchers = global.__watchers || [];
+let ACTIVE_SYNC = null;
 
 
 // global.syncLock = {
@@ -164,7 +169,7 @@ function sendLogToRenderer1(message) {
   }
 }
 
-function sendLogToRenderer(callback,status, message) {
+function sendLogToRenderer2(callback,status, message) {
     if (
         app.isQuitting ||
         !win ||
@@ -184,6 +189,52 @@ function sendLogToRenderer(callback,status, message) {
     } catch {
         process.stderr.write(`IPC send failed [${callback}]: ${err.message}\n`);
         // swallow silently
+    }
+}
+
+function sendLogToRenderer(channel, status, message) {
+    // Hard safety guards
+    if (
+        app.isQuitting ||
+        !win ||
+        win.isDestroyed() ||
+        !win.webContents ||
+        win.webContents.isDestroyed()
+    ) return;
+
+    try {
+        // Throttle IPC spam
+        const now = Date.now();
+        if (now - lastIpcLogTime < IPC_LOG_INTERVAL) return;
+        lastIpcLogTime = now;
+
+        // Normalize message
+        if (typeof message !== "string") {
+            try {
+                message = JSON.stringify(message);
+            } catch {
+                message = "[Unserializable Object]";
+            }
+        }
+
+        // Size limit
+        if (message.length > MAX_LOG_SIZE) {
+            message = message.slice(0, MAX_LOG_SIZE) + "...[truncated]";
+        }
+
+        win.webContents.send(channel, {
+            status,      
+            message,     
+            timestamp: now
+        });
+
+    } catch (err) {
+        // Never throw, never cascade
+        try {
+            process.stderr.write(
+                `IPC send failed [${channel}]: ${err?.message || err}\n`
+            );
+        } catch {}
     }
 }
 
@@ -357,37 +408,7 @@ const createWindow = async () => {
     ipcMain.handle('load-session', async () => {
         return loadSession();
     });
-
-    async function handleSessionCheck1() {
-        if (!isSessionActive({ autoExpire: autoExpireVal }) && !redirectingToLogin) {
-            redirectingToLogin = true;
-            console.log("⚠️ Session expired — redirecting to login page...");
-
-            try {
-            // Attach listener FIRST
-            win.webContents.once("did-finish-load", () => {
-                console.log("🧪 Renderer loaded after redirect");
-
-                // Open DevTools (works in DMG + Guest)
-                win.webContents.openDevTools({ mode: "detach" });
-
-                setTimeout(() => {
-                if (win && !win.isDestroyed()) {
-                    //win.webContents.send("fs-changed");
-                    sendLogToRenderer("fs-changed","success","FS changed.")
-                }
-                }, 500);
-            });
-
-            await win.loadFile(getHtmlPath("index.html"));
-
-            } catch (err) {
-            console.error("❌ Error loading login page:", err);
-            } finally {
-            redirectingToLogin = false;
-            }
-        }
-    }
+    
 
     async function handleSessionCheck() {
         // 🚫 ABSOLUTE FIRST GUARD
@@ -508,93 +529,21 @@ function createTray() {
 
 let watcherRunning = false;
 
-async function startDriveWatcherOLD(syncData) {
+async function runExclusiveSync(type, fn) {
+  // Wait until no active sync
+  while (ACTIVE_SYNC !== null) {
+    await new Promise(res => setTimeout(res, 200));
+  }
+
+  ACTIVE_SYNC = type;
+
   try {
-    // 🔐 Try lock
-    //if (!acquireLock("c2s")) return;
-
-    if (!syncData?.config_data?.centris_drive) {
-      console.warn("⚠️ Invalid syncData");
-      //releaseLock("c2s");
-      return;
-    }
-
-    if (watcherRunning) {
-      console.log("🟡 Drive watcher already running");
-      //releaseLock("c2s");
-      return;
-    }
-
-    if (watcher) {
-      await watcher.close();
-      watcher = null;
-    }
-
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-
-    const drive = cleanSegment(getMappedDriveLetter()); // "Z"
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    let DRIVE_ROOT = drive;//path.win32.normalize(`${drive}:\\${baseFolder}`);
-
-    if (process.platform === "win32") {
-        // Windows → add base folder
-        DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
-    } else if (process.platform === "darwin") {
-        // macOS → mount path is already correct
-        DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
-    }
-
-    console.log("👀 Watching (polling):", DRIVE_ROOT);
-
-    watcherRunning = true;
-
-    watcher = chokidar.watch(DRIVE_ROOT, {
-      persistent: true,
-      ignoreInitial: true,
-      depth: 10,
-
-      usePolling: true,
-      interval: 1000,
-      binaryInterval: 2000,
-
-      awaitWriteFinish: {
-        stabilityThreshold: 2000,
-        pollInterval: 100
-      }
-    });
-
-   global.__watchers.push(watcher);
-
-    const notifyRenderer = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-
-      debounceTimer = setTimeout(() => {
-        if (win && !win.isDestroyed()) {
-          console.log("📤 fs-changed");         
-          sendLogToRenderer("fs-changed","success","FS changed.")
-        }
-      }, 6000);
-    };
-
-    watcher
-      .on("add", notifyRenderer)
-      .on("change", notifyRenderer)
-      .on("unlink", notifyRenderer)
-      .on("addDir", notifyRenderer)
-      .on("unlinkDir", notifyRenderer)
-      .on("ready", () => console.log("✅ Watcher ready"))
-      .on("error", err => console.error("❌ Watcher error:", err));
-
-  } catch (err) {
-    console.error("❌ startDriveWatcher failed:", err);
-    watcherRunning = false;
-    //releaseLock("c2s");
+    await fn();
+  } finally {
+    ACTIVE_SYNC = null;
   }
 }
+
 
 async function startDriveWatcher(syncData) {
   try {
@@ -603,9 +552,12 @@ async function startDriveWatcher(syncData) {
       return;
     }
 
+    // ✅ Always close existing watcher properly
     if (watcher) {
-      console.log("🟡 Drive watcher already running");
-      return;
+      try {
+        await watcher.close();
+      } catch {}
+      watcher = null;
     }
 
     if (debounceTimer) {
@@ -619,9 +571,9 @@ async function startDriveWatcher(syncData) {
     let DRIVE_ROOT = drive;
 
     if (process.platform === "win32") {
-        DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
     } else if (process.platform === "darwin") {
-        DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
+      DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
     }
 
     console.log("👀 Watching:", DRIVE_ROOT);
@@ -629,31 +581,44 @@ async function startDriveWatcher(syncData) {
     watcher = chokidar.watch(DRIVE_ROOT, {
       persistent: true,
       ignoreInitial: true,
-      depth: 10,
-      usePolling: true,
-      interval: 1000,
-      binaryInterval: 2000,
+
+      // ✅ MEMORY SAFE SETTINGS
+      depth: 3,                 // not 10
+      usePolling: false,        // ❗ critical
       awaitWriteFinish: {
-        stabilityThreshold: 2000,
-        pollInterval: 100
+        stabilityThreshold: 1000,
+        pollInterval: 200
       }
     });
 
-    global.__watchers.push(watcher);
+    let debounceTimerLocal = null;
 
     const notifyRenderer = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
+      if (debounceTimerLocal) clearTimeout(debounceTimerLocal);
 
-      debounceTimer = setTimeout(() => {
-        console.log("📤 FS changed → enqueue C2S");
-
+      debounceTimerLocal = setTimeout(() => {
         SyncQueue.run("c2s", async () => {
-          sendLogToRenderer("fs-changed","success","FS changed.");
+          sendLogToRenderer("fs-changed", "success", "FS changed.");
           await runClientToServerSync(syncData);
         });
-
-      }, 6000);
+      }, 5000);
     };
+
+    // const notifyRenderer = () => {
+    //     if (debounceTimerLocal) clearTimeout(debounceTimerLocal);
+
+    //     debounceTimerLocal = setTimeout(() => {
+    //         SyncQueue.run("c2s", async () => {
+
+    //         // ⛔ Wait if poller running
+    //         await runExclusiveSync("c2s", async () => {
+    //             sendLogToRenderer("fs-changed", "success", "FS changed.");
+    //             await runClientToServerSync(syncData);
+    //         });
+
+    //         });
+    //     }, 5000);
+    // };
 
     watcher
       .on("add", notifyRenderer)
@@ -869,44 +834,7 @@ function loadTracker(onlyUnsynced = true) {
     }
 }
 
-function saveTracker1(snapshot, syncedDefault = 1) {
-    const db = getDB();
-
-    const insert = db.prepare(`
-        INSERT INTO tracker (path, type, size, mtime, hash, synced)
-        VALUES (@path, @type, @size, @mtime, @hash, @synced)
-        ON CONFLICT(path) DO UPDATE SET
-            type   = excluded.type,
-            size   = excluded.size,
-            mtime  = excluded.mtime,
-            hash   = excluded.hash,
-            synced = excluded.synced
-    `);
-
-    const trx = db.transaction((data) => {
-        for (const [path, value] of Object.entries(data)) {
-            insert.run({
-                path: normalizeTrackerPath(path),
-                type: value.type,
-                size: value.size ?? 0,
-                mtime: value.mtime ?? 0,
-                hash: value.hash ?? null,
-
-                // 🔒 HARD GUARANTEE: synced is NEVER null
-                synced:
-                    Number.isInteger(value.synced)
-                        ? value.synced
-                        : Number.isInteger(syncedDefault)
-                            ? syncedDefault
-                            : 1
-            });
-        }
-    });
-
-    trx(snapshot);
-}
-
-function saveTracker(snapshot, syncedDefault = 1) {
+function saveTrackerHash(snapshot, syncedDefault = 1) {
     const db = getDB();
 
     const insert = db.prepare(`
@@ -951,6 +879,39 @@ function saveTracker(snapshot, syncedDefault = 1) {
     trx(snapshot);
 }
 
+function saveTracker(snapshot, syncedDefault = 1) {
+    const db = getDB();
+
+    const insert = db.prepare(`
+        INSERT INTO tracker (path, type, size, mtime, synced)
+        VALUES (@path, @type, @size, @mtime, @synced)
+        ON CONFLICT(path) DO UPDATE SET
+            type   = excluded.type,
+            size   = excluded.size,
+            mtime  = excluded.mtime,
+            synced = excluded.synced
+    `);
+
+    const trx = db.transaction((data) => {
+        for (const [path, value] of Object.entries(data)) {
+            insert.run({
+                path: normalizeTrackerPath(path),
+                type: value.type,
+                size: value.size ?? 0,
+                mtime: value.mtime ?? 0,
+                synced:
+                    Number.isInteger(value.synced)
+                        ? value.synced
+                        : Number.isInteger(syncedDefault)
+                            ? syncedDefault
+                            : 1
+            });
+        }
+    });
+
+    trx(snapshot);
+}
+
 
 
 function saveTrackerItem(value) {
@@ -976,47 +937,7 @@ function saveTrackerItem(value) {
 }
 
 
-async function getDirectorySnapshotFirst(dir, oldSnap = {}, baseDir = dir) {
-    const snapshot = {};
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        let relPath = normalizePath(path.relative(baseDir, fullPath));
-        relPath = relPath.replace(/\\/g, "/");
-      // console.log('mm -> ' +relPath );
-        const stats = fs.statSync(fullPath);
-
-        if (!relPath) continue;
-
-        if (entry.isDirectory()) {
-            snapshot[relPath] = {
-                type: "folder",
-                mtime: 0,//stats.mtimeMs,
-            };
-
-            Object.assign(snapshot, await getDirectorySnapshot(fullPath, oldSnap, baseDir));
-        } else {
-            let prev = oldSnap[relPath];
-            let hash = prev?.hash || null;
-
-            if (!prev || prev.mtime !== stats.mtimeMs) {
-                hash = await hashFile(fullPath);
-            }
-
-            snapshot[relPath] = {
-                type: "file",
-                size: stats.size,
-                mtime: stats.mtimeMs,
-                hash,
-            };
-        }
-    }
-
-    return snapshot;
-}
-
-async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
+async function getDirectorySnapshotNEW(dir, oldSnap = {}, baseDir = dir) {
     const snapshot = {};
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -1061,9 +982,119 @@ async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
     return snapshot;
 }
 
+async function getDirectorySnapshotRemoveHash(dir, oldSnap = {}, baseDir = dir) {
+    const snapshot = {};
+
+    async function walk(currentDir) {
+        let entries;
+        try {
+            entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+        } catch (e) {
+            return;
+        }
+
+        for (const entry of entries) {
+            const fullPath = path.join(currentDir, entry.name);
+            let relPath = normalizePath(path.relative(baseDir, fullPath))
+                .replace(/\\/g, "/");
+
+            if (!relPath) continue;
+
+            let stats;
+            try {
+                stats = await fs.promises.stat(fullPath);
+            } catch {
+                continue;
+            }
+
+            if (entry.isDirectory()) {
+                snapshot[relPath] = {
+                    type: "folder",
+                    mtime: 0,
+                    size: 0,
+                    hash: null
+                };
+
+                await walk(fullPath);
+
+            } else if (entry.isFile()) {
+                const prev = oldSnap[relPath];
+
+                // fast compare (NO hashing)
+                const same =
+                    prev &&
+                    prev.mtime === stats.mtimeMs &&
+                    prev.size === stats.size;
+
+                snapshot[relPath] = {
+                    type: "file",
+                    size: stats.size,
+                    mtime: stats.mtimeMs,
+                    hash: same ? prev.hash : null   // keep old hash if unchanged
+                };
+            }
+        }
+    }
+
+    await walk(dir);
+    return snapshot;
+}
+
+async function getDirectorySnapshot(dir, oldSnap = {}, baseDir = dir) {
+    const snapshot = {};
+
+    async function walk(currentDir) {
+        let entries;
+        try {
+            entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+
+        for (const entry of entries) {
+            const fullPath = path.join(currentDir, entry.name);
+
+            let relPath = normalizePath(path.relative(baseDir, fullPath))
+                .replace(/\\/g, "/");
+
+            if (!relPath) continue;
+
+            let stats;
+            try {
+                stats = await fs.promises.stat(fullPath);
+            } catch {
+                continue;
+            }
+
+            // ---------------- Folder ----------------
+            if (entry.isDirectory()) {
+                snapshot[relPath] = {
+                    type: "folder",
+                    size: 0,
+                    mtime: 0        // 🔒 constant
+                };
+
+                await walk(fullPath);
+            }
+
+            // ---------------- File ----------------
+            else if (entry.isFile()) {
+                snapshot[relPath] = {
+                    type: "file",
+                    size: stats.size,
+                    mtime: stats.mtimeMs
+                };
+            }
+        }
+    }
+
+    await walk(dir);
+    return snapshot;
+}
 
 
-function findNewOrChangedFiles(current, previous) {
+
+function findNewOrChangedFilesOld(current, previous) {
     const changed = [];
 
     for (const path in current) {
@@ -1092,32 +1123,45 @@ function findNewOrChangedFiles(current, previous) {
 }
 
 
-function findNewOrChangedFilesPrince(current, previous) {
+function findNewOrChangedFiles(current, previous) {
     const changed = [];
 
-    for (const key in current) {
-        const curr = current[key];
-        const prev = previous[key];
+    for (const path in current) {
+        const curr = current[path];
+        const prev = previous[path];
 
+        // 🆕 New
         if (!prev) {
-            changed.push(key);
+            curr.synced = 0;
+            changed.push(path);
             continue;
         }
 
-         // Skip folders from previous snapshot too
-        if (prev.type === "folder") continue;
-
-        if (curr.mtime !== prev.mtime) {
-            changed.push(key);
+        // 🔁 Type change
+        if (curr.type !== prev.type) {
+            curr.synced = 0;
+            changed.push(path);
             continue;
         }
-        if (curr.hash !== prev.hash) {
-            changed.push(key);
+
+        // 📁 Folder → NEVER reupload unless new
+        if (curr.type === "folder") {
+            continue;   // 🔥 important
+        }
+
+        // 📄 File diff
+        if (
+            curr.mtime !== prev.mtime ||
+            curr.size  !== prev.size
+        ) {
+            curr.synced = 0;
+            changed.push(path);
         }
     }
 
     return changed;
 }
+
 
 
 function normalizeTrackerPath(p) {
@@ -1196,6 +1240,18 @@ function normalizeServerPath(location) {
 async function downloadServerPending({ customer_id, domain_id, apiUrl, syncData }) {
 
     //const lastSyncAt = await getLastSyncAtFromDB(syncData);   
+
+    setInterval(async () => {
+        const mem = await process.getProcessMemoryInfo();
+        const node = process.memoryUsage();
+
+        console.log({
+            rssMB: (mem.residentSet/1024).toFixed(1),
+            privateMB: (mem.private/1024).toFixed(1),
+            heapMB: (node.heapUsed/1024/1024).toFixed(1),
+            extMB: (node.external/1024/1024).toFixed(1)
+        });
+    }, 5000);
 
     const res = await fetch(`${apiUrl}/api/get-remaining-downloads`, {
         method: "POST",
@@ -2034,6 +2090,7 @@ app.whenReady().then(() => {
 	// 		createWindow();
 	// 	}
 	// });
+    
 
     app.on('activate', () => {
         if (!win || win.isDestroyed()) {
@@ -2731,7 +2788,11 @@ async function downloadPendingFilesLogic(event, args) {
         const pending = response.pending || [];
         const nextSyncId = response.next_sync_id;
         const nextSyncTime = response.next_sync_time;
-        const totalRemaining = response.total_remaining || 0;
+        const totalRemaining = response.total_remaining;
+
+        // if (totalRemaining > maxTotalSeen) {
+        //     maxTotalSeen = totalRemaining;   // always keep max
+        // }
 
         if (!pending.length) break;
 
@@ -2740,6 +2801,7 @@ async function downloadPendingFilesLogic(event, args) {
             event.sender.send("download-progress-start", { total: totalFiles });
             firstBatch = false;
         }
+        
 
         const chunks = chunkArray(pending, CHUNK_SIZE);
 
@@ -3375,34 +3437,52 @@ async function runServerToClientSync11(event, syncData) {
     }
 }
 
-async function runServerToClientSync(event, syncData) {
-    console.log('🔁 S2C sync started');
+// async function runServerToClientSync(event, syncData) {
+//     console.log('🔁 S2C sync started');
 
+//     try {
+//         const lastSyncAt = await getLastSyncAtFromDB(syncData);
+//         let lastSyncId = await getSettingFromDB(syncData, 'last_sync_id');
+//         let device_id  = await getSettingFromDB(syncData, 'device_id');
+
+//         const args = {
+//             customer_id: syncData.customer_data.id,
+//             domain_id: syncData.domain_data.id,
+//             apiUrl: syncData.apiUrl,
+//             db: getDB(),
+//             syncData: {
+//                 ...syncData,
+//                 last_sync_at: lastSyncAt,
+//                 last_sync_id:lastSyncId,
+//                 device_id:device_id
+//             }
+//         };
+
+//         // 1️⃣ Delete from server → client
+//         await deleteLocalFilesLogic(event, args);
+
+//         // 2️⃣ Download from server → client
+//         await downloadPendingFilesLogic(event, args);
+
+//         console.log('✅ S2C sync finished');
+
+//     } catch (err) {
+//         console.error('❌ S2C sync failed', err);
+//     }
+// }
+
+async function runServerToClientSync(syncContext) {
     try {
-        const lastSyncAt = await getLastSyncAtFromDB(syncData);
-        let lastSyncId = await getSettingFromDB(syncData, 'last_sync_id');
-        let device_id  = await getSettingFromDB(syncData, 'device_id');
+        const lastSyncAt = await getLastSyncAtFromDB(syncContext.syncData);
+        const lastSyncId = await getSettingFromDB(syncContext.syncData, 'last_sync_id');
+        const device_id  = await getSettingFromDB(syncContext.syncData, 'device_id');
 
-        const args = {
-            customer_id: syncData.customer_data.id,
-            domain_id: syncData.domain_data.id,
-            apiUrl: syncData.apiUrl,
-            db: getDB(),
-            syncData: {
-                ...syncData,
-                last_sync_at: lastSyncAt,
-                last_sync_id:lastSyncId,
-                device_id:device_id
-            }
-        };
+        syncContext.syncData.last_sync_at = lastSyncAt;
+        syncContext.syncData.last_sync_id = lastSyncId;
+        syncContext.syncData.device_id    = device_id;
 
-        // 1️⃣ Delete from server → client
-        await deleteLocalFilesLogic(event, args);
-
-        // 2️⃣ Download from server → client
-        await downloadPendingFilesLogic(event, args);
-
-        console.log('✅ S2C sync finished');
+        await deleteLocalFilesLogic(syncContext.event, syncContext);
+        await downloadPendingFilesLogic(syncContext.event, syncContext);
 
     } catch (err) {
         console.error('❌ S2C sync failed', err);
@@ -3412,6 +3492,61 @@ async function runServerToClientSync(event, syncData) {
 
 
 async function startServerPolling(event, syncData) {
+
+    if (s2cPollingTimer) return;
+
+    // ✅ Single shared context (no closure recreation)
+    s2cContext = {
+        event,
+        syncData,
+        customer_id: syncData.customer_data.id,
+        domain_id: syncData.domain_data.id,
+        apiUrl: syncData.apiUrl,
+        db: getDB()   // ✅ single DB handle
+    };
+
+    // First sync
+    await runServerToClientSync(s2cContext);
+
+    s2cPollingTimer = setInterval(async () => {
+        try {
+            await runServerToClientSync(s2cContext);
+        } catch (e) {
+            console.error("S2C poll error:", e);
+        }
+    }, 30_000);
+}
+
+async function startServerPolling2(event, syncData) {
+
+  if (s2cPollingTimer) return;
+
+  s2cContext = {
+    event,
+    syncData,
+    customer_id: syncData.customer_data.id,
+    domain_id: syncData.domain_data.id,
+    apiUrl: syncData.apiUrl,
+    db: getDB()
+  };
+
+  // First sync
+  await SyncQueue.run("s2c", async () => {
+    await runExclusiveSync("s2c", async () => {
+      await runServerToClientSync(s2cContext);
+    });
+  });
+
+  s2cPollingTimer = setInterval(async () => {
+    SyncQueue.run("s2c", async () => {
+      await runExclusiveSync("s2c", async () => {
+        await runServerToClientSync(s2cContext);
+      });
+    });
+  }, 30_000);
+}
+
+async function startServerPollingNewwst(event, syncData) {
     console.log("🚀 startServerPolling called");
     console.log('s2cPollingTimer - start ->', s2cPollingTimer);
 
@@ -3440,7 +3575,7 @@ async function startServerPolling(event, syncData) {
     console.log("🟢 Polling started, timer =", s2cPollingTimer);
 }
 
-async function startServerPolling2(event, syncData) {
+async function startServerPolling3(event, syncData) {
     console.log("🚀 startServerPolling called");
 
     if (s2cPollingTimer) {
@@ -3498,32 +3633,6 @@ async function startServerPollingnew(event, syncData) {
 
     console.log("🟢 Polling started, timer =", s2cPollingTimer);
 }
-
-// async function startServerPolling(event, syncData) {
-//     console.log("🚀 startServerPolling called");
-
-//     if (s2cPollingTimer) {
-//         console.log("⛔ Polling already running");
-//         return;
-//     }
-
-//     // Always queue first S2C (no watcher blocking)
-//     SyncQueue.run("s2c", async () => {
-//         await runServerToClientSync(event, syncData);
-//     });
-
-//     s2cPollingTimer = setInterval(() => {
-//         console.log("⏱ Poll tick → enqueue S2C");
-
-//         SyncQueue.run("s2c", async () => {
-//             await runServerToClientSync(event, syncData);
-//         });
-
-//     }, 30_000);
-
-//     console.log("🟢 Polling started");
-// }
-
 
 
 async function stopServerPolling() {
@@ -3756,7 +3865,7 @@ async function updateSaveTracker1(fullPath, cleanLocation, item = null) {
     console.log(`✅ Tracker updated → ${key}`);
 }
 
-async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+async function updateSaveTrackerHASH(fullPath, cleanLocation, item = null) {
     const db = getDB();
 
     let stats;
@@ -3838,6 +3947,153 @@ async function updateSaveTracker(fullPath, cleanLocation, item = null) {
 
     console.log(`✅ Tracker updated → ${key}`);
 }
+
+async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+    const db = getDB();
+
+    let stats;
+    try {
+        stats = await fs.promises.stat(fullPath);
+    } catch {
+        console.warn(`⚠️ Missing path (skip tracker): ${fullPath}`);
+        return;
+    }
+
+    const key = cleanLocation.replace(/\\/g, "/");
+
+    /* -----------------------------
+       MTIME LOGIC (MILLISECONDS)
+    ----------------------------- */
+
+    let mtimeMs;
+
+    if (stats.isFile()) {
+        if (item?.mtime != null) {
+            // server-provided mtime (seconds → ms)
+            mtimeMs = Number(item.mtime) * 1000;
+        } else {
+            // local file mtime in ms
+            mtimeMs = stats.mtimeMs;   // ✅ native ms
+        }
+    } else {
+        // folders never track mtime
+        mtimeMs = 0;  // ✅ rule
+    }
+
+    /* -----------------------------
+       PRESERVE SERVER MTIME
+       (FILES ONLY, MS BASED)
+    ----------------------------- */
+
+    if (stats.isFile() && item?.mtime != null) {
+        const localMtimeMs  = stats.mtimeMs;
+        const serverMtimeMs = Number(item.mtime) * 1000;
+
+        // adjust only if real difference (>1500ms)
+        if (Math.abs(localMtimeMs - serverMtimeMs) > 1500) {
+            try {
+                const newTime = new Date(serverMtimeMs); // ms
+                await fs.promises.utimes(fullPath, stats.atime, newTime);
+            } catch {
+                console.warn(`⚠️ Failed utime: ${fullPath}`);
+            }
+        }
+    }
+
+    /* -----------------------------
+       DB UPSERT (NO HASH)
+    ----------------------------- */
+
+    const stmt = db.prepare(`
+        INSERT INTO tracker (path, type, size, mtime, synced)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            type   = excluded.type,
+            size   = excluded.size,
+            mtime  = excluded.mtime,
+            synced = 1
+    `);
+
+    stmt.run(
+        key,
+        stats.isDirectory() ? "folder" : "file",
+        stats.isFile() ? stats.size : 0,
+        mtimeMs,   // ✅ mtimeMs stored
+        1
+    );
+
+    console.log(`✅ Tracker updated → ${key}`);
+}
+
+// async function updateSaveTracker(fullPath, cleanLocation, item = null) {
+//     const db = getDB();
+
+//     let stats;
+//     try {
+//         stats = await fs.promises.stat(fullPath);
+//     } catch {
+//         console.warn(`⚠️ Missing path (skip tracker): ${fullPath}`);
+//         return;
+//     }
+
+//     const key = cleanLocation.replace(/\\/g, "/");
+
+//     /* =========================
+//        MTIME (MILLISECONDS ONLY)
+//     ========================= */
+
+//     let mtime = 0;
+
+//     if (stats.isFile()) {
+//         if (item?.mtime != null) {
+//             // server mtime must be MS
+//             mtime = Math.floor(Number(item.mtime));
+//         } else {
+//             // local fs mtime MS
+//             mtime = Math.floor(stats.mtimeMs);   // ✅ ms integer
+//         }
+//     } else {
+//         mtime = 0; // folders
+//     }
+
+//     /* =========================
+//        PRESERVE SERVER MTIME (MS)
+//     ========================= */
+
+//     if (stats.isFile() && item?.mtime != null) {
+//         const localMtimeMs  = Math.floor(stats.mtimeMs);
+//         const serverMtimeMs = Math.floor(Number(item.mtime));
+
+//         // adjust only if real diff (>= 1000ms)
+//         if (Math.abs(localMtimeMs - serverMtimeMs) >= 1000) {
+//             try {
+//                 const newTime = new Date(serverMtimeMs); // ms
+//                 await fs.promises.utimes(fullPath, stats.atime, newTime);
+//             } catch {
+//                 console.warn(`⚠️ utime failed: ${fullPath}`);
+//             }
+//         }
+//     }
+
+//     /* =========================
+//        TRACKER UPSERT
+//     ========================= */
+
+//     db.prepare(`
+//         INSERT INTO tracker (path, type, size, mtime, synced)
+//         VALUES (?, ?, ?, ?, 1)
+//         ON CONFLICT(path) DO UPDATE SET
+//             type   = excluded.type,
+//             size   = excluded.size,
+//             mtime  = excluded.mtime,
+//             synced = 1
+//     `).run(
+//         key,
+//         stats.isDirectory() ? "folder" : "file",
+//         stats.isFile() ? stats.size : 0,
+//         mtime
+//     );
+// }
 
 
 
@@ -4424,14 +4680,14 @@ ipcMain.handle("auto-sync-new", async (event, args) => {
 });
 
 // ===============================
-// AUTO-SYNC (REWRITTEN, SAFE VERSION)
+// AUTO-1-SYNC (REWRITTEN, SAFE VERSION)
 // ===============================
 
 // ---- GLOBAL FILE STATE LOCKS ----
 const uploadingPaths = new Set();
 const downloadingPaths = new Set();
 
-ipcMain.handle("auto-sync", async (event, args) => {
+ipcMain.handle("auto-sync-working", async (event, args) => {
   const { customer_id, domain_id, apiUrl, syncData } = args;
 
   const centrisFolder = syncData.config_data.centris_drive; // ex: Centris-Drive
@@ -4686,6 +4942,257 @@ ipcMain.handle("auto-sync", async (event, args) => {
   }
 });
 
+ipcMain.handle("auto-sync", async (event, args) => {
+  const { customer_id, domain_id, apiUrl, syncData } = args;
+
+  const centrisFolder = syncData.config_data.centris_drive;
+  const user_id = syncData.user_data.id;
+  const db = getDB();
+
+  let device_id = await getSettingFromDB(syncData, "device_id");
+
+  /* ------------------------------------------------------------
+     Helpers
+  ------------------------------------------------------------ */
+
+  function stripCentrisPrefix(relPath) {
+    if (!relPath) return relPath;
+    relPath = relPath.replace(/\\/g, "/").trim();
+    const folder = centrisFolder.replace(/\\/g, "/");
+    while (relPath.toLowerCase().startsWith(folder.toLowerCase() + "/")) {
+      relPath = relPath.substring(folder.length + 1);
+    }
+    return relPath;
+  }
+
+  function normalizeSnapshotPath(fullPath, baseFolder) {
+    let rel = fullPath.replace(/\\/g, "/");
+    baseFolder = baseFolder.replace(/\\/g, "/");
+    if (rel.toLowerCase().startsWith(baseFolder.toLowerCase())) {
+      rel = rel.substring(baseFolder.length);
+    }
+    return stripCentrisPrefix(rel);
+  }
+
+  try {
+    /* ------------------------------------------------------------
+       Resolve drive path
+    ------------------------------------------------------------ */
+
+    const drive_letter = getMappedDriveLetter();
+    let mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+
+    if (process.platform === "darwin") {
+      mappedDrivePath = `/${drive_letter}/${centrisFolder}/${centrisFolder}/`;
+    }
+
+    /* ------------------------------------------------------------
+       Load tracker snapshot
+    ------------------------------------------------------------ */
+
+    const previousSnapshot = await loadTracker(false);
+
+    /* ------------------------------------------------------------
+       Build snapshot (optimized, no hash, folder mtime=0)
+    ------------------------------------------------------------ */
+
+    const rawSnapshot = await getDirectorySnapshot(mappedDrivePath, previousSnapshot);
+
+    /* ------------------------------------------------------------
+       Normalize paths
+    ------------------------------------------------------------ */
+
+    const normalize = p => normalizeSnapshotPath(p, mappedDrivePath);
+
+    let prev = {};
+    for (const k in previousSnapshot) prev[normalize(k)] = previousSnapshot[k];
+
+    let curr = {};
+    for (const k in rawSnapshot) curr[normalize(k)] = rawSnapshot[k];
+
+    /* ------------------------------------------------------------
+       DIFF
+    ------------------------------------------------------------ */
+
+    let changedItems = findNewOrChangedFiles(curr, prev);
+    let deletedItems = Object.keys(prev).filter(p => !curr[p]);
+
+    /* ------------------------------------------------------------
+       FILTER LOCKED PATHS
+    ------------------------------------------------------------ */
+
+    changedItems = changedItems.filter(p => !uploadingPaths.has(p) && !downloadingPaths.has(p));
+    deletedItems = deletedItems.filter(p => !uploadingPaths.has(p) && !downloadingPaths.has(p));
+
+    if (!changedItems.length && !deletedItems.length) {
+      return { success: true, message: "No local changes." };
+    }
+
+    /* ------------------------------------------------------------
+       UPLOAD
+    ------------------------------------------------------------ */
+
+    if (changedItems.length) {
+      const chunks = chunkArray(changedItems, 50);
+      event.sender.send("upload-progress-start", { total: changedItems.length });
+
+      let done = 0;
+
+      for (const chunk of chunks) {
+        chunk.forEach(p => uploadingPaths.add(p));
+
+        const payloadItems = await Promise.all(
+          chunk.map(async relPath => {
+            const fullLocalPath = path.join(mappedDrivePath, relPath).replace(/\\/g, "/");
+
+            let stat;
+            try {
+              stat = await fs.promises.stat(fullLocalPath);
+            } catch {
+              return null;
+            }
+
+            const is_dir = stat.isDirectory();
+            let content = null;
+
+            if (!is_dir) {
+              content = await fs.promises.readFile(fullLocalPath, "base64");
+            }
+
+            return {
+              path: relPath,
+              is_dir,
+              content,
+              size: is_dir ? 0 : stat.size,
+              mtime: is_dir ? 0 : stat.mtimeMs   // ✅ folder mtime forced 0
+            };
+          })
+        );
+
+        const cleanPayload = payloadItems.filter(Boolean);
+
+        const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            device_id,
+            changed_items: cleanPayload,
+            source: "client"
+          })
+        });
+
+        if (!res.ok) throw new Error("Upload failed");
+
+        const data = await res.json();
+
+         // ---- update sync state ----
+        if (data.last_upload_time) {
+          db.prepare(`INSERT INTO app_settings
+            (customer_id, domain_id, domain_name, user_id, "key", value)
+            VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+            ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+            DO UPDATE SET value = excluded.value, updated_at = strftime('%s','now')
+          `).run(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            String(data.last_upload_time)
+          );
+        }
+
+        if (data.last_upload_id >= 0) {
+          db.prepare(`INSERT INTO app_settings
+            (customer_id, domain_id, domain_name, user_id, "key", value)
+            VALUES (?, ?, ?, ?, 'last_sync_id', ?)
+            ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+            DO UPDATE SET value = excluded.value, updated_at = strftime('%s','now')
+          `).run(
+            syncData.customer_data.id,
+            syncData.domain_data.id,
+            syncData.domain_data.domain_name,
+            syncData.user_data.id,
+            String(data.last_upload_id)
+          );
+        }
+
+        /* ---- tracker update ---- */
+
+        for (const item of cleanPayload) {
+          saveTrackerItem({
+            path: normalizeTrackerPath(item.path),
+            type: item.is_dir ? "folder" : "file",
+            size: item.is_dir ? 0 : item.size,
+            mtime: item.is_dir ? 0 : item.mtime,   // ✅ folder mtime forced 0
+            synced: 1
+          });
+
+          uploadingPaths.delete(item.path);
+        }
+
+        done += cleanPayload.length;
+        event.sender.send("upload-progress", { done, total: changedItems.length });
+      }
+
+      event.sender.send("upload-progress-complete");
+      setTimeout(() => event.sender.send("upload-progress-hide"), 5000);
+    }
+
+    /* ------------------------------------------------------------
+       DELETE
+    ------------------------------------------------------------ */
+
+    if (deletedItems.length) {
+      const chunks = chunkArray(deletedItems, 50);
+      event.sender.send("delete-progress-start", { total: deletedItems.length });
+
+      let done = 0;
+
+      for (const chunk of chunks) {
+        const safe = chunk.filter(p => !uploadingPaths.has(p));
+        if (!safe.length) continue;
+
+        const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id,
+            domain_id,
+            user_id,
+            device_id,
+            deleted_items: safe,
+            root_path: mappedDrivePath,
+            source: "client"
+          })
+        });
+
+        if (!res.ok) throw new Error("Delete failed");
+
+        for (const p of safe) {
+          await removeFromTracker(p);
+        }
+
+        done += safe.length;
+        event.sender.send("delete-progress", { done, total: deletedItems.length });
+      }
+
+      event.sender.send("delete-progress-complete", { source: "client", status: "done" });
+      setTimeout(() => event.sender.send("delete-progress-hide"), 5000);
+    }
+
+    if (win) sendLogToRenderer("sync-status", "success", "Auto sync complete.");
+
+    return { success: true, message: "Sync completed successfully" };
+
+  } catch (err) {
+    console.error("AUTO-SYNC ERROR:", err);
+    return { success: false, message: err.message };
+  }
+});
+
 
 // function makeRelativePath(fullPath, rootPath) {
 //     return fullPath
@@ -4705,337 +5212,6 @@ function makeRelativePath(fullPath, rootPath) {
     return full.slice(root.length + 1);
 }
 
-ipcMain.handle("auto-sync-failed", async (event, args) => {
-    const { customer_id, domain_id, apiUrl, syncData } = args;
-
-    const user_id = syncData.user_data.id;
-    const centrisFolder = syncData.config_data.centris_drive;
-    const deleteFrom = "Centris Drive";
-
-    const db = getDB();
-
-    try {
-        // --------------------------------------------------
-        // BASE PATH (NO DUPLICATION)
-        // --------------------------------------------------
-        const driveLetter = getMappedDriveLetter(); // e.g. F:
-        const mappedDrivePath = path
-            .resolve(`${driveLetter}\\${centrisFolder}`)
-            .replace(/\\/g, "/");
-
-        // --------------------------------------------------
-        // TEMP SNAPSHOT TABLE
-        // --------------------------------------------------
-        db.exec(`
-            DROP TABLE IF EXISTS temp_snapshot;
-            CREATE TEMP TABLE temp_snapshot (
-                path TEXT PRIMARY KEY,
-                type TEXT,
-                size INTEGER,
-                mtime INTEGER,
-                hash TEXT
-            );
-        `);
-
-        const insertStmt = db.prepare(`
-            INSERT OR REPLACE INTO temp_snapshot
-            (path, type, size, mtime, hash)
-            VALUES (?, ?, ?, ?, ?)
-        `);
-
-        const insertBatch = db.transaction(rows => {
-            for (const r of rows) {
-                insertStmt.run(
-                    r.path,
-                    r.type,
-                    r.size,
-                    r.mtime,
-                    r.hash
-                );
-            }
-        });
-
-        // --------------------------------------------------
-        // DIRECTORY SCAN (STREAMING)
-        // --------------------------------------------------
-        async function* scanDirectory(start) {
-            const stack = [start];
-
-            while (stack.length) {
-                const dir = stack.pop();
-                let entries;
-
-                try {
-                    entries = await fs.promises.readdir(dir, { withFileTypes: true });
-                } catch {
-                    continue;
-                }
-
-                for (const e of entries) {
-                    const full = path.join(dir, e.name);
-
-                    if (e.isDirectory()) {
-                        yield { full, type: "folder" };
-                        stack.push(full);
-                    } else if (e.isFile()) {
-                        const stat = await fs.promises.stat(full);
-                        yield {
-                            full,
-                            type: "file",
-                            size: stat.size,
-                            mtime: stat.mtimeMs
-                        };
-                    }
-                }
-            }
-        }
-
-        // --------------------------------------------------
-        // BUILD SNAPSHOT (BATCHED)
-        // --------------------------------------------------
-        const BATCH_SIZE = 1000;
-        let buffer = [];
-
-        for await (const item of scanDirectory(mappedDrivePath)) {
-            const relPath = makeRelativePath(item.full, mappedDrivePath);
-
-            let hash = null;
-
-            if (item.type === "file") {
-                const prev = db.prepare(`
-                    SELECT mtime, hash FROM tracker WHERE path = ?
-                `).get(relPath);
-
-                if (!prev || prev.mtime !== item.mtime) {
-                    hash = await hashFile(item.full);
-                } else {
-                    hash = prev.hash;
-                }
-            }
-
-            buffer.push({
-                path: relPath,
-                type: item.type,
-                size: item.size || 0,
-                mtime: item.mtime || 0,
-                hash
-            });
-
-            if (buffer.length >= BATCH_SIZE) {
-                insertBatch(buffer);
-                buffer = [];
-            }
-        }
-
-        if (buffer.length) insertBatch(buffer);
-
-        // --------------------------------------------------
-        // DIFF (SQL BASED)
-        // --------------------------------------------------
-        const newItems = db.prepare(`
-            SELECT t.*
-            FROM temp_snapshot t
-            LEFT JOIN tracker tr ON t.path = tr.path
-            WHERE tr.path IS NULL
-        `).all();
-
-        const changedItems = db.prepare(`
-            SELECT t.*
-            FROM temp_snapshot t
-            JOIN tracker tr ON t.path = tr.path
-            WHERE tr.synced = 1
-              AND (
-                    t.hash  != tr.hash OR
-                    t.mtime != tr.mtime OR
-                    t.size  != tr.size
-              )
-        `).all();
-
-        const deletedItems = db.prepare(`
-            SELECT tr.path
-            FROM tracker tr
-            LEFT JOIN temp_snapshot t ON tr.path = t.path
-            WHERE tr.synced = 1
-              AND t.path IS NULL
-        `).all();
-
-        //await deleteLocalFilesLogic(event,args);
-       
-        //await downloadPendingFilesLogic(event,args);
-
-        // --------------------------------------------------
-        // NO CHANGES
-        // --------------------------------------------------
-        if (newItems.length === 0 &&
-            changedItems.length === 0 &&
-            deletedItems.length === 0) {
-
-            return {
-                success: true,
-                message: "No changes found to upload."
-            };
-        }
-
-        // --------------------------------------------------
-        // UPLOAD NEW + CHANGED
-        // --------------------------------------------------
-        const uploadItems = [...newItems, ...changedItems];
-
-        if (uploadItems.length) {
-            event.sender.send("upload-progress-start", {
-                total: uploadItems.length
-            });
-
-            const chunks = chunkArray(uploadItems, 50);
-            let done = 0;
-
-            for (const chunk of chunks) {
-                const payload = await Promise.all(
-                    chunk.map(async item => {
-                        const fullPath = path
-                            .join(mappedDrivePath, item.path)
-                            .replace(/\\/g, "/");
-
-                        return {
-                            path: item.path,
-                            is_dir: item.type === "folder",
-                            content: item.type === "file"
-                                ? await fs.promises.readFile(fullPath, "base64")
-                                : null,
-                            size: item.size,
-                            mtime: item.mtime,
-                            hash: item.hash
-                        };
-                    })
-                );
-
-                const res = await fetch(`${apiUrl}/api/syncChangedItems`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        customer_id,
-                        domain_id,
-                        user_id,
-                        device_id:device_id,
-                        source: "client",
-                        changed_items: payload
-                    })
-                });
-
-                if (!res.ok) {
-                    throw new Error("Upload failed");
-                }
-
-                for (const i of payload) {
-                    saveTrackerItem({
-                        path: i.path,
-                        type: i.is_dir ? "folder" : "file",
-                        size: i.size,
-                        mtime: i.mtime,
-                        hash: i.hash,
-                        synced: 1
-                    });
-                }
-
-                done += chunk.length;
-                event.sender.send("upload-progress", {
-                    done,
-                    total: uploadItems.length
-                });
-            }
-
-            event.sender.send("upload-progress-complete");
-        }
-
-        if (deletedItems.length) {
-            event.sender.send("delete-progress-start", {
-                total: deletedItems.length
-            });
-
-            const chunks = chunkArray(deletedItems, 50);
-            let done = 0;
-
-            for (const chunk of chunks) {
-
-                // For server: keep as objects
-                const payload = chunk;  // [{ path: "..."}]
-
-                const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        customer_id,
-                        domain_id,
-                        user_id,
-                        deleted_items: payload, // send objects for API
-                        root_path: mappedDrivePath
-                    })
-                });
-
-                const result = await res.json();
-                if (!res.ok || result.success !== true) {
-                    throw new Error(result.message || "Server delete failed");
-                }
-
-                // For removing from tracker: extract strings
-                for (const p of payload.map(x => x.path)) {
-                    await removeFromTracker(p);
-                }
-
-                done += payload.length;
-                event.sender.send("delete-progress", {
-                    done,
-                    total: deletedItems.length
-                });
-            }
-
-
-            // for (const chunk of chunks) {
-
-            //     // ✅ chunk is already an array of paths (strings)
-            //     const paths = chunk;
-
-            //     const res = await fetch(`${apiUrl}/api/deleteSyncedItems`, {
-            //         method: "POST",
-            //         headers: { "Content-Type": "application/json" },
-            //         body: JSON.stringify({
-            //             customer_id,
-            //             domain_id,
-            //             user_id,
-            //             deleted_items: paths,
-            //             root_path: mappedDrivePath
-            //         })
-            //     });
-
-            //     const result = await res.json();
-            //     if (!res.ok || result.success !== true) {
-            //         throw new Error(result.message || "Server delete failed");
-            //     }
-
-            //     // ✅ Remove from tracker using SAME path string
-            //     for (const p of paths) {
-            //         await removeFromTracker(p);
-            //     }
-
-            //     done += paths.length;
-            //     event.sender.send("delete-progress", {
-            //         done,
-            //         total: deletedItems.length
-            //     });
-            // }
-
-            event.sender.send("delete-progress-complete");
-        }
-
-
-        event.sender.send("sync-status", "Auto sync complete");
-        return { success: true };
-
-    } catch (err) {
-        console.error("AUTO-SYNC ERROR:", err);
-        return { success: false, message: err.message };
-    }
-});
 
 ipcMain.handle("search-paths", async (event, query) => {
     try {
@@ -6541,8 +6717,8 @@ app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {
 		app.quit();
 	}else{
-        app.quit();        // graceful
-        app.exit(0);
+        // app.quit();        // graceful
+        // app.exit(0);
     }
     
 });

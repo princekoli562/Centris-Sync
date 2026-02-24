@@ -165,6 +165,10 @@ window.electronAPI.onDeleteComplete(({ source, status }) => {
     
 });
 
+
+
+
+
 window.electronAPI.onDeleteHide(() => {
     if (activeProgressType !== "delete") return;
     progressContainer.style.display = "none";

@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     onDeleteProgressStart: (cb) => ipcRenderer.on("delete-progress-start", (_, data) => cb(data)),
     onDeleteProgress: (cb) => ipcRenderer.on("delete-progress", (_, data) => cb(data)),
-    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", (event, data) => cb(data)),    
+    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete",(_event, data) => cb(data)),   // ✅ forward payload only   
     onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
     scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
     //createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),

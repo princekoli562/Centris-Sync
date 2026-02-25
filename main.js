@@ -731,7 +731,7 @@ async function startDriveWatcherWORKING(syncData) {
   }
 }
 
-async function startDriveWatcher(syncData) {
+async function startDriveWatcher111(syncData) {
   try {
     if (!syncData?.config_data?.centris_drive) return;
 
@@ -781,44 +781,22 @@ async function startDriveWatcher(syncData) {
     //     atomic: true
     // });
 
-    // watcher = chokidar.watch(DRIVE_ROOT, {
-    //     persistent: true,
-    //     ignoreInitial: true,
-
-    //     // IMPORTANT for Windows mapped drives
-    //     usePolling: false,          // ❗ must be false
-    //     ignorePermissionErrors: true,
-
-    //     depth: 10,                  // safer
-    //     awaitWriteFinish: false,    // ❗ disable
-
-    //     followSymlinks: false,
-    //     disableGlobbing: true,
-
-    //     // stability
-    //     alwaysStat: false,
-    //     atomic: false               // ❗ disable atomic
-    // });
-
-    const isMappedDrive = process.platform === "win32";
-
     watcher = chokidar.watch(DRIVE_ROOT, {
         persistent: true,
         ignoreInitial: true,
-
-        // hybrid strategy
-        usePolling: isMappedDrive,     // ✅ only polling on Windows mapped
-        interval: isMappedDrive ? 5000 : undefined,
-        binaryInterval: isMappedDrive ? 7000 : undefined,
-
         depth: 10,
 
-        awaitWriteFinish: false,
+        // ❌ remove polling
+        usePolling: false,
+
+        awaitWriteFinish: {
+            stabilityThreshold: 2000,
+            pollInterval: 500
+        },
+
         followSymlinks: false,
         disableGlobbing: true,
-        alwaysStat: false,
         atomic: false,
-        ignorePermissionErrors: true
     });
 
     // ---- log memory after watcher ----
@@ -867,6 +845,155 @@ async function startDriveWatcher(syncData) {
   }
 }
 
+
+async function startDriveWatcher(syncData) {
+  try {
+    if (!syncData?.config_data?.centris_drive) {
+      console.log("⚠️ No centris_drive config");
+      return;
+    }
+
+    // =============================
+    // HARD CLEANUP
+    // =============================
+    await stopDriveWatcher();
+
+    // =============================
+    // COMPUTE DRIVE ROOT
+    // =============================
+    const drive = cleanSegment(getMappedDriveLetter());   // e.g. "Z"
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    let DRIVE_ROOT;
+
+    if (process.platform === "win32") {
+      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+      DRIVE_ROOT = `/${drive}/${baseFolder}`;
+    } else {
+      DRIVE_ROOT = `/${baseFolder}`;
+    }
+
+    console.log("👀 WATCH ROOT:", DRIVE_ROOT);
+
+    // =============================
+    // VALIDATE PATH
+    // =============================
+    if (!fs.existsSync(DRIVE_ROOT)) {
+      console.error("❌ DRIVE_ROOT does not exist:", DRIVE_ROOT);
+      return;
+    }
+
+    console.log("✅ DRIVE_ROOT exists");
+
+    // =============================
+    // MEMORY LOG
+    // =============================
+    console.log("🧠 Memory before watcher:", await process.getProcessMemoryInfo());
+
+    // =============================
+    // CONTEXT
+    // =============================
+    watcherContext = {
+      customer_id: syncData.customer_data?.id,
+      domain_id: syncData.domain_data?.id,
+      user_id: syncData.user_data?.id
+    };
+
+    // =============================
+    // WATCHER (MAPPED DRIVE SAFE MODE)
+    // =============================
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: Infinity,
+
+      // 🔴 REQUIRED FOR MAPPED DRIVES
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 1500,
+
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 500
+      },
+
+      // memory + stability
+      followSymlinks: false,
+      disableGlobbing: true,
+      atomic: false,
+      alwaysStat: false,
+      ignorePermissionErrors: true
+    });
+
+    console.log("🧠 Memory after watcher:", await process.getProcessMemoryInfo());
+
+    // =============================
+    // NOTIFIER
+    // =============================
+    const notifyRenderer = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+
+      debounceTimer = setTimeout(async () => {
+        console.log("📡 FS CHANGE DETECTED");
+
+        // prevent deadlocks
+        if (SyncQueue.isRunning("c2s")) {
+          console.log("⏸ Sync already running — skipping trigger");
+          return;
+        }
+
+        console.log("🧠 Memory before sync:", await process.getProcessMemoryInfo());
+
+        SyncQueue.runUnique("c2s", async () => {
+          console.log("🚀 Sync start");
+
+          try {
+            sendLogToRenderer("fs-changed");
+
+            await runClientToServerSync(watcherContext);
+
+          } catch (err) {
+            console.error("❌ Sync error:", err);
+          }
+
+          console.log("✅ Sync end");
+          console.log("🧠 Memory after sync:", await process.getProcessMemoryInfo());
+        });
+
+      }, 2500); // debounce window
+    };
+
+    // =============================
+    // EVENTS
+    // =============================
+    watcher
+      .on("add", notifyRenderer)
+      .on("change", notifyRenderer)
+      .on("unlink", notifyRenderer)
+      .on("addDir", notifyRenderer)
+      .on("unlinkDir", notifyRenderer)
+
+      // debug
+      .on("all", (event, filePath) => {
+        console.log("🧠 EVENT:", event, filePath);
+      })
+
+      .on("ready", async () => {
+        console.log("✅ Watcher READY");
+        console.log("🧠 Memory on ready:", await process.getProcessMemoryInfo());
+      })
+
+      .on("error", async (err) => {
+        console.error("❌ Watcher ERROR:", err);
+        console.log("🧠 Memory on error:", await process.getProcessMemoryInfo());
+      });
+
+  } catch (err) {
+    console.error("❌ startDriveWatcher failed:", err);
+    console.log("🧠 Memory on failure:", await process.getProcessMemoryInfo());
+  }
+}
 
 
 async function stopDriveWatcher() {
@@ -2473,6 +2600,7 @@ async function downloadPendingFilesLogicLast(event, args) {
 
     const drive = cleanSegment(getMappedDriveLetter());
     const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    
     let mappedDrivePath = '';//path.join(drive + ":", baseFolder);
     if (process.platform === "win32") {
         // Windows → add base folder
@@ -3690,54 +3818,83 @@ async function startServerPollingNOT(event, syncData) {
     }, 30_000);
 }
 
+// async function startServerPolling(event, syncData) {
+//     console.log("▶ startServerPolling invoked");
+
+//     if (s2cPollingTimer) {
+//         console.log("⛔ Poller already running");
+//         return;
+//     }
+
+//     try {
+//         //console.log("▶ First S2C sync starting");
+//         console.log("Memory before first S2C sync:", await process.getProcessMemoryInfo());
+
+//         await runServerToClientSync(event, syncData);
+
+//         console.log("Memory after first S2C sync:", await process.getProcessMemoryInfo());
+//         //console.log("✅ First S2C sync done");
+//     } catch (e) {
+//         console.error("❌ First sync failed:", e);
+//         console.log("Memory on first sync failure:", await process.getProcessMemoryInfo());
+//     }
+
+//     console.log("⏱ Starting polling interval");
+
+//     s2cPollingTimer = setInterval(async () => {
+//         console.log("⏱ Poll tick");
+//         //console.log("s2cRunning state:", s2cRunning);
+
+//         if (s2cRunning) {
+//             console.log("⏭ Skipped (already running)");
+//             return;
+//         }
+
+//         s2cRunning = true;
+//         try {
+//             console.log("🔄 Running S2C sync");
+//             console.log("Memory before poll S2C sync:", await process.getProcessMemoryInfo());
+
+//             await runServerToClientSync(event, syncData);
+
+//             console.log("Memory after poll S2C sync:", await process.getProcessMemoryInfo());
+//             console.log("✅ Poll sync complete");
+//         } catch (e) {
+//             console.error("❌ S2C poll error:", e);
+//             console.log("Memory on poll error:", await process.getProcessMemoryInfo());
+//         } finally {
+//             s2cRunning = false;
+//         }
+//     }, 30_000);
+// }
+
 async function startServerPolling(event, syncData) {
-    console.log("▶ startServerPolling invoked");
+    console.log("🚀 startServerPolling called");
+    console.log('s2cPollingTimer - start ->', s2cPollingTimer);
+
+    //if (!acquireLock("s2c")) return;
 
     if (s2cPollingTimer) {
-        console.log("⛔ Poller already running");
+        console.log("⛔ Polling already running");
+        //releaseLock("s2c");
         return;
     }
 
-    try {
-        //console.log("▶ First S2C sync starting");
-        console.log("Memory before first S2C sync:", await process.getProcessMemoryInfo());
+    console.log("▶ Running first sync");
+    await runServerToClientSync(event, syncData);
 
-        await runServerToClientSync(event, syncData);
-
-        console.log("Memory after first S2C sync:", await process.getProcessMemoryInfo());
-        //console.log("✅ First S2C sync done");
-    } catch (e) {
-        console.error("❌ First sync failed:", e);
-        console.log("Memory on first sync failure:", await process.getProcessMemoryInfo());
-    }
-
-    console.log("⏱ Starting polling interval");
+    console.log("✅ First sync done");
 
     s2cPollingTimer = setInterval(async () => {
         console.log("⏱ Poll tick");
-        //console.log("s2cRunning state:", s2cRunning);
-
-        if (s2cRunning) {
-            console.log("⏭ Skipped (already running)");
-            return;
-        }
-
-        s2cRunning = true;
         try {
-            console.log("🔄 Running S2C sync");
-            console.log("Memory before poll S2C sync:", await process.getProcessMemoryInfo());
-
             await runServerToClientSync(event, syncData);
-
-            console.log("Memory after poll S2C sync:", await process.getProcessMemoryInfo());
-            console.log("✅ Poll sync complete");
         } catch (e) {
-            console.error("❌ S2C poll error:", e);
-            console.log("Memory on poll error:", await process.getProcessMemoryInfo());
-        } finally {
-            s2cRunning = false;
+            console.error("S2C poll error:", e);
         }
     }, 30_000);
+
+    console.log("🟢 Polling started, timer =", s2cPollingTimer);
 }
 
 async function stopServerPolling() {
@@ -5057,6 +5214,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
 
   const drive_letter = getMappedDriveLetter();
   let mappedDrivePath = `${drive_letter}/${centrisFolder}/`.replace(/\\/g, "/");
+  
 
   if (process.platform === "darwin") {
     mappedDrivePath = `/${drive_letter}/${centrisFolder}/${centrisFolder}/`;
@@ -6021,7 +6179,7 @@ ipcMain.handle("open-external-file", async (_, filePath) => {
 });
 
 ipcMain.on("start-drive-watcher", (event, syncData) => {
-    startDriveWatcher(event, syncData);
+    startDriveWatcher(syncData);
 });
 
 ipcMain.handle("stop-drive-watcher", async () => {

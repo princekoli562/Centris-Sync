@@ -167,10 +167,17 @@ const iconPath = isWindows
             : path.join(process.resourcesPath, "app.asar", "assets/images/favicon.icns")
       );
 
-function sendLogToRenderer(message) {
-  if (win && !win.isDestroyed() && win.webContents) {
-    win.webContents.send('main-log', message);
-  }
+
+function sendFsEvent(message) {
+    if (
+        app.isQuitting ||
+        !win ||
+        win.isDestroyed() ||
+        !win.webContents ||
+        win.webContents.isDestroyed()
+    ) return;
+    //'main-log' //fs-changed
+    win.webContents.send(message); // pure signal
 }
 
 function sendLogToRenderer2(callback,status, message) {
@@ -196,7 +203,7 @@ function sendLogToRenderer2(callback,status, message) {
     }
 }
 
-function sendLogToRenderer1(channel, status, message) {
+function sendLogToRenderer(channel, status, message) {
     // Hard safety guards
     if (
         app.isQuitting ||
@@ -277,7 +284,7 @@ console.log = (...args) => {
         //sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
         //win.webContents.send("log", message);
         //"main-log", "info",
-        sendLogToRenderer( message);
+        sendLogToRenderer('main-log',message);
 
     } catch (err) {
         originalLog("Log mirror error:", err.message);
@@ -570,283 +577,8 @@ async function runExclusiveSync(type, fn) {
 }
 
 
-async function startDriveWatcher11(syncData) {
-  try {
-    if (!syncData?.config_data?.centris_drive) {
-      console.warn("⚠️ Invalid syncData");
-      return;
-    }
 
-    // ✅ Always close existing watcher properly
-    if (watcher) {
-      try {
-        await watcher.close();
-      } catch {}
-      watcher = null;
-    }
-
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-
-    const drive = cleanSegment(getMappedDriveLetter());
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    let DRIVE_ROOT = drive;
-
-    if (process.platform === "win32") {
-      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
-    } else if (process.platform === "darwin") {
-      DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
-    }
-
-    console.log("👀 Watching:", DRIVE_ROOT);
-
-    watcher = chokidar.watch(DRIVE_ROOT, {
-      persistent: true,
-      ignoreInitial: true,
-
-      // ✅ MEMORY SAFE SETTINGS
-      depth: 3,                 // not 10
-      usePolling: false,        // ❗ critical
-      awaitWriteFinish: {
-        stabilityThreshold: 1000,
-        pollInterval: 200
-      }
-    });
-
-    let debounceTimerLocal = null;
-
-    const notifyRenderer = () => {
-      if (debounceTimerLocal) clearTimeout(debounceTimerLocal);
-
-      debounceTimerLocal = setTimeout(() => {
-        SyncQueue.run("c2s", async () => {
-          sendLogToRenderer("fs-changed", "success", "FS changed.");
-          await runClientToServerSync(syncData);
-        });
-      }, 5000);
-    };
-
-    // const notifyRenderer = () => {
-    //     if (debounceTimerLocal) clearTimeout(debounceTimerLocal);
-
-    //     debounceTimerLocal = setTimeout(() => {
-    //         SyncQueue.run("c2s", async () => {
-
-    //         // ⛔ Wait if poller running
-    //         await runExclusiveSync("c2s", async () => {
-    //             sendLogToRenderer("fs-changed", "success", "FS changed.");
-    //             await runClientToServerSync(syncData);
-    //         });
-
-    //         });
-    //     }, 5000);
-    // };
-
-    watcher
-      .on("add", notifyRenderer)
-      .on("change", notifyRenderer)
-      .on("unlink", notifyRenderer)
-      .on("addDir", notifyRenderer)
-      .on("unlinkDir", notifyRenderer)
-      .on("ready", () => console.log("✅ Watcher ready"))
-      .on("error", err => console.error("❌ Watcher error:", err));
-
-  } catch (err) {
-    console.error("❌ startDriveWatcher failed:", err);
-  }
-}
-
-
-async function startDriveWatcherWORKING(syncData) {
-  try {
-    if (!syncData?.config_data?.centris_drive) return;
-
-    // ---- hard cleanup ----
-    await stopDriveWatcher();
-
-    const drive = cleanSegment(getMappedDriveLetter());
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    let DRIVE_ROOT;
-    if (process.platform === "win32") {
-      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
-    } else if (process.platform === "darwin") {
-      DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
-    }
-
-    console.log("👀 Watching:", DRIVE_ROOT);
-
-    // ---- minimal context only ----
-    watcherContext = {
-      customer_id: syncData.customer_data.id,
-      domain_id: syncData.domain_data.id,
-      user_id: syncData.user_data.id
-    };
-
-    watcher = chokidar.watch(DRIVE_ROOT, {
-      persistent: true,
-      ignoreInitial: true,
-      depth: 3,
-      usePolling: false,
-      awaitWriteFinish: {
-        stabilityThreshold: 1000,
-        pollInterval: 200
-      },
-
-      // memory safety
-      alwaysStat: false,
-      followSymlinks: false,
-      disableGlobbing: true,
-      atomic: true
-    });
-
-    const notifyRenderer = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-
-      debounceTimer = setTimeout(async() => {
-        console.log("Memory before runClientToServerSync:", await process.getProcessMemoryInfo());
-        // ✅ dedup + single-run protection
-        SyncQueue.runUnique("c2s", async () => {
-          sendLogToRenderer("fs-changed", "success", "FS changed.");
-          await runClientToServerSync(watcherContext);
-          console.log("Memory after runClientToServerSync:", await process.getProcessMemoryInfo());
-        });
-      }, 3000);
-    };
-
-    watcher
-      .on("add", notifyRenderer)
-      .on("change", notifyRenderer)
-      .on("unlink", notifyRenderer)
-      .on("addDir", notifyRenderer)
-      .on("unlinkDir", notifyRenderer)
-      .on("ready", () => console.log("✅ Watcher ready"))
-      .on("error", err => console.error("❌ Watcher error:", err));
-
-  } catch (err) {
-    console.error("❌ startDriveWatcher failed:", err);
-  }
-}
-
-async function startDriveWatcher111(syncData) {
-  try {
-    if (!syncData?.config_data?.centris_drive) return;
-
-    // ---- hard cleanup ----
-    await stopDriveWatcher();
-
-    // ---- compute DRIVE_ROOT ----
-    const drive = cleanSegment(getMappedDriveLetter());
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    let DRIVE_ROOT;
-    if (process.platform === "win32") {
-      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
-    } else if (process.platform === "darwin") {
-      DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
-    }
-
-    console.log("👀 Watching:", DRIVE_ROOT);
-
-    // ---- log memory before watcher ----
-    console.log("Memory before watcher init:", await process.getProcessMemoryInfo());
-
-    // ---- minimal context only ----
-    watcherContext = {
-      customer_id: syncData.customer_data?.id,
-      domain_id: syncData.domain_data?.id,
-      user_id: syncData.user_data?.id
-    };
-
-    // ---- initialize watcher ----
-    // watcher = chokidar.watch(DRIVE_ROOT, {
-    //     persistent: true,
-    //     ignoreInitial: true,
-    //     depth: 3,
-    //     usePolling: true,
-    //     interval: 2000,
-    //     binaryInterval: 3000,
-    //     awaitWriteFinish: {
-    //         stabilityThreshold: 1500,
-    //         pollInterval: 300
-    //     },
-
-    //     // memory safety
-    //     alwaysStat: false,
-    //     followSymlinks: false,
-    //     disableGlobbing: true,
-    //     atomic: true
-    // });
-
-    watcher = chokidar.watch(DRIVE_ROOT, {
-        persistent: true,
-        ignoreInitial: true,
-        depth: 10,
-
-        // ❌ remove polling
-        usePolling: false,
-
-        awaitWriteFinish: {
-            stabilityThreshold: 2000,
-            pollInterval: 500
-        },
-
-        followSymlinks: false,
-        disableGlobbing: true,
-        atomic: false,
-    });
-
-    // ---- log memory after watcher ----
-    console.log("Memory after watcher init:", await process.getProcessMemoryInfo());
-
-    // ---- notifyRenderer function ----
-    const notifyRenderer = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-
-      debounceTimer = setTimeout(async () => {
-        console.log("Memory before runClientToServerSync:", await process.getProcessMemoryInfo());
-
-        // ✅ dedup + single-run protection
-        SyncQueue.runUnique("c2s", async () => {
-            //, "success", "FS changed."
-          sendLogToRenderer("fs-changed");
-
-          setImmediate(async () => {
-            await runClientToServerSync(watcherContext);
-        });
-
-          console.log("Memory after runClientToServerSync:", await process.getProcessMemoryInfo());
-        });
-      }, 3000);
-    };    
-
-    // ---- watcher events ----
-    watcher
-      .on("add", notifyRenderer)
-      .on("change", notifyRenderer)
-      .on("unlink", notifyRenderer)
-      .on("addDir", notifyRenderer)
-      .on("unlinkDir", notifyRenderer)
-      .on("ready", async () => {
-        console.log("✅ Watcher ready");
-        console.log("Memory on watcher ready:", await process.getProcessMemoryInfo());
-      })
-      .on("error", async (err) => {
-        console.error("❌ Watcher error:", err);
-        console.log("Memory on watcher error:", await process.getProcessMemoryInfo());
-      });
-
-  } catch (err) {
-    console.error("❌ startDriveWatcher failed:", err);
-    console.log("Memory on watcher init failure:", await process.getProcessMemoryInfo());
-  }
-}
-
-
-async function startDriveWatcher(syncData) {
+async function startDriveWatcherNO(syncData) {
   try {
     if (!syncData?.config_data?.centris_drive) {
       console.log("⚠️ No centris_drive config");
@@ -903,29 +635,43 @@ async function startDriveWatcher(syncData) {
     // =============================
     // WATCHER (MAPPED DRIVE SAFE MODE)
     // =============================
-    watcher = chokidar.watch(DRIVE_ROOT, {
+    // watcher = chokidar.watch(DRIVE_ROOT, {
+    //   persistent: true,
+    //   ignoreInitial: true,
+    //   depth: Infinity,
+
+    //   // 🔴 REQUIRED FOR MAPPED DRIVES
+    //   usePolling: true,
+    //   interval: 1000,
+    //   binaryInterval: 1500,
+
+    //   awaitWriteFinish: {
+    //     stabilityThreshold: 2000,
+    //     pollInterval: 500
+    //   },
+
+    //   // memory + stability
+    //   followSymlinks: false,
+    //   disableGlobbing: true,
+    //   atomic: false,
+    //   alwaysStat: false,
+    //   ignorePermissionErrors: true
+    // });
+
+     watcher = chokidar.watch(DRIVE_ROOT, {
       persistent: true,
       ignoreInitial: true,
-      depth: Infinity,
+      depth: 10,
 
-      // 🔴 REQUIRED FOR MAPPED DRIVES
       usePolling: true,
       interval: 1000,
-      binaryInterval: 1500,
+      binaryInterval: 2000,
 
       awaitWriteFinish: {
         stabilityThreshold: 2000,
-        pollInterval: 500
-      },
-
-      // memory + stability
-      followSymlinks: false,
-      disableGlobbing: true,
-      atomic: false,
-      alwaysStat: false,
-      ignorePermissionErrors: true
+        pollInterval: 100
+      }
     });
-
     console.log("🧠 Memory after watcher:", await process.getProcessMemoryInfo());
 
     // =============================
@@ -938,28 +684,28 @@ async function startDriveWatcher(syncData) {
         console.log("📡 FS CHANGE DETECTED");
 
         // prevent deadlocks
-        if (SyncQueue.isRunning("c2s")) {
-          console.log("⏸ Sync already running — skipping trigger");
-          return;
-        }
+        // if (SyncQueue.isRunning("c2s")) {
+        //   console.log("⏸ Sync already running — skipping trigger");
+        //   return;
+        // }
 
         console.log("🧠 Memory before sync:", await process.getProcessMemoryInfo());
 
-        SyncQueue.runUnique("c2s", async () => {
-          console.log("🚀 Sync start");
+        // SyncQueue.runUnique("c2s", async () => {
+        //   console.log("🚀 Sync start");
 
-          try {
-            sendLogToRenderer("fs-changed");
+        //   try {
+        //     sendLogToRenderer("fs-changed");
 
-            await runClientToServerSync(watcherContext);
+        //     await runClientToServerSync(watcherContext);
 
-          } catch (err) {
-            console.error("❌ Sync error:", err);
-          }
+        //   } catch (err) {
+        //     console.error("❌ Sync error:", err);
+        //   }
 
-          console.log("✅ Sync end");
-          console.log("🧠 Memory after sync:", await process.getProcessMemoryInfo());
-        });
+        //   console.log("✅ Sync end");
+        //   console.log("🧠 Memory after sync:", await process.getProcessMemoryInfo());
+        // });
 
       }, 2500); // debounce window
     };
@@ -995,11 +741,216 @@ async function startDriveWatcher(syncData) {
   }
 }
 
+async function runClientToServerSync(context) {
+  console.log("🔁 Sync started for:", context);
+
+  // simulate work
+  await new Promise(r => setTimeout(r, 1000));
+
+  console.log("✅ Sync finished");
+}
+
+
+async function startDriveWatcherYes(syncData) {
+  try {
+    if (!syncData?.config_data?.centris_drive) {
+      console.warn("âš ï¸ Invalid syncData");
+      return;
+    }
+
+    if (watcherRunning) {
+      console.log("ðŸŸ¡ Drive watcher already running");
+      return;
+    }
+
+    if (watcher) {
+      await watcher.close();
+      watcher = null;
+    }
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
+    const drive = cleanSegment(getMappedDriveLetter()); // "Z"
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    let DRIVE_ROOT = drive;//path.win32.normalize(`${drive}:\\${baseFolder}`);
+
+    if (process.platform === "win32") {
+        // Windows â†’ add base folder
+        DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+        // macOS â†’ mount path is already correct
+        DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
+    }
+
+    console.log("Watching (polling):", DRIVE_ROOT);
+
+    watcherRunning = true;
+
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 10,
+
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 2000,
+
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    //console.log("🧠 Memory after watcher:", await process.getProcessMemoryInfo());
+
+    const notifyRenderer = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+
+      debounceTimer = setTimeout(() => {
+        if (win && !win.isDestroyed()) {
+          console.log("fs-changed");
+          sendFsEvent("fs-changed");
+        }
+      }, 6000);
+    };
+
+    watcher
+      .on("add", notifyRenderer)
+      .on("change", notifyRenderer)
+      .on("unlink", notifyRenderer)
+      .on("addDir", notifyRenderer)
+      .on("unlinkDir", notifyRenderer)
+      .on("ready", () => console.log(" Watcher ready"))
+      .on("error", err => console.error("Watcher error:", err));
+
+  } catch (err) {
+    console.error("startDriveWatcher failed:", err);
+    watcherRunning = false;
+  }
+}
+
+async function startDriveWatcher(syncData) {
+  try {
+    /* =========================
+       VALIDATION
+    ========================= */
+    if (!syncData?.config_data?.centris_drive) {
+      console.warn("⚠️ Invalid syncData");
+      return;
+    }
+
+    if (watcherRunning) {
+      console.log("🟡 Drive watcher already running");
+      return;
+    }
+
+    /* =========================
+       CLEANUP OLD WATCHER
+    ========================= */
+    if (watcher) {
+      try {
+        await watcher.close();
+      } catch {}
+      watcher = null;
+    }
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
+    /* =========================
+       PATH RESOLUTION
+    ========================= */
+    const drive = cleanSegment(getMappedDriveLetter()); // e.g. "Z"
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    let DRIVE_ROOT = drive;
+
+    if (process.platform === "win32") {
+      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+      DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
+    }
+
+    console.log("📂 Watching (polling):", DRIVE_ROOT);
+
+    watcherRunning = true;
+
+    /* =========================
+       WATCHER INIT
+    ========================= */
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 20,
+
+      // Polling for mapped drives (network drives safe)
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 2000,
+
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    /* =========================
+       BULK-COPY SAFE IDLE DEBOUNCE
+    ========================= */
+    const IDLE_TIMEOUT = 5000; // 5 sec after last change
+    let idleTimer = null;
+    let fsActivity = false;
+
+    const notifyRenderer = () => {
+      fsActivity = true;
+
+      // Reset timer on every fs event
+      if (idleTimer) clearTimeout(idleTimer);
+
+      idleTimer = setTimeout(() => {
+        // No fs events for 5s = bulk copy finished
+        if (
+          win &&
+          !win.isDestroyed() &&
+          win.webContents &&
+          !win.webContents.isDestroyed()
+        ) {
+          console.log("📦 Bulk operation finished → processing files");
+          sendFsEvent("fs-changed");   // 🔥 single trigger only
+        }
+
+        fsActivity = false;
+      }, IDLE_TIMEOUT);
+    };
+
+    /* =========================
+       EVENTS
+    ========================= */
+    watcher
+      .on("add", notifyRenderer)
+      .on("change", notifyRenderer)
+      .on("unlink", notifyRenderer)
+      .on("addDir", notifyRenderer)
+      .on("unlinkDir", notifyRenderer)
+      .on("ready", () => console.log("✅ Watcher ready"))
+      .on("error", err => console.error("❌ Watcher error:", err));
+
+  } catch (err) {
+    console.error("❌ startDriveWatcher failed:", err);
+    watcherRunning = false;
+  }
+}
 
 async function stopDriveWatcher() {
     try {
         if (!watcher) {
-            console.log("🟡 No watcher to stop");
+            console.log("ðŸŸ¡ No watcher to stop");
             watcherRunning = false;
             return;
         }
@@ -1015,11 +966,10 @@ async function stopDriveWatcher() {
             debounceTimer = null;
         }
 
-        console.log("🛑 Drive watcher stopped");
-        //releaseLock("c2s");
+        console.log(" Drive watcher stopped");
 
     } catch (err) {
-        console.error("❌ stopDriveWatcher failed:", err);
+        console.error("stopDriveWatcher failed:", err);
     }
 }
 

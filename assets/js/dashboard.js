@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!syncEnabled) {
         console.log("Sync disabled by user");
     }else{
-        //window.electronAPI.startServerPolling(syncData);
+        window.electronAPI.startServerPolling(syncData);
         window.electronAPI.startDriveWatcher(syncData);
     }
 
@@ -1321,7 +1321,7 @@ $(document).on("mousemove", function (e) {
 
         if (enabled) {
             startPing(syncData);
-           // window.electronAPI.startServerPolling(syncData);
+            window.electronAPI.startServerPolling(syncData);
             window.electronAPI.startDriveWatcher(syncData);
 
             // Attach FS listener if not already

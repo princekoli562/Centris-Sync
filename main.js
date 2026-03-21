@@ -577,170 +577,6 @@ async function runExclusiveSync(type, fn) {
 }
 
 
-
-async function startDriveWatcherNO(syncData) {
-  try {
-    if (!syncData?.config_data?.centris_drive) {
-      console.log("⚠️ No centris_drive config");
-      return;
-    }
-
-    // =============================
-    // HARD CLEANUP
-    // =============================
-    await stopDriveWatcher();
-
-    // =============================
-    // COMPUTE DRIVE ROOT
-    // =============================
-    const drive = cleanSegment(getMappedDriveLetter());   // e.g. "Z"
-    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
-
-    let DRIVE_ROOT;
-
-    if (process.platform === "win32") {
-      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
-    } else if (process.platform === "darwin") {
-      DRIVE_ROOT = `/${drive}/${baseFolder}`;
-    } else {
-      DRIVE_ROOT = `/${baseFolder}`;
-    }
-
-    console.log("👀 WATCH ROOT:", DRIVE_ROOT);
-
-    // =============================
-    // VALIDATE PATH
-    // =============================
-    if (!fs.existsSync(DRIVE_ROOT)) {
-      console.error("❌ DRIVE_ROOT does not exist:", DRIVE_ROOT);
-      return;
-    }
-
-    console.log("✅ DRIVE_ROOT exists");
-
-    // =============================
-    // MEMORY LOG
-    // =============================
-    console.log("🧠 Memory before watcher:", await process.getProcessMemoryInfo());
-
-    // =============================
-    // CONTEXT
-    // =============================
-    watcherContext = {
-      customer_id: syncData.customer_data?.id,
-      domain_id: syncData.domain_data?.id,
-      user_id: syncData.user_data?.id
-    };
-
-    // =============================
-    // WATCHER (MAPPED DRIVE SAFE MODE)
-    // =============================
-    // watcher = chokidar.watch(DRIVE_ROOT, {
-    //   persistent: true,
-    //   ignoreInitial: true,
-    //   depth: Infinity,
-
-    //   // 🔴 REQUIRED FOR MAPPED DRIVES
-    //   usePolling: true,
-    //   interval: 1000,
-    //   binaryInterval: 1500,
-
-    //   awaitWriteFinish: {
-    //     stabilityThreshold: 2000,
-    //     pollInterval: 500
-    //   },
-
-    //   // memory + stability
-    //   followSymlinks: false,
-    //   disableGlobbing: true,
-    //   atomic: false,
-    //   alwaysStat: false,
-    //   ignorePermissionErrors: true
-    // });
-
-     watcher = chokidar.watch(DRIVE_ROOT, {
-      persistent: true,
-      ignoreInitial: true,
-      depth: 10,
-
-      usePolling: true,
-      interval: 1000,
-      binaryInterval: 2000,
-
-      awaitWriteFinish: {
-        stabilityThreshold: 2000,
-        pollInterval: 100
-      }
-    });
-    console.log("🧠 Memory after watcher:", await process.getProcessMemoryInfo());
-
-    // =============================
-    // NOTIFIER
-    // =============================
-    const notifyRenderer = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-
-      debounceTimer = setTimeout(async () => {
-        console.log("📡 FS CHANGE DETECTED");
-
-        // prevent deadlocks
-        // if (SyncQueue.isRunning("c2s")) {
-        //   console.log("⏸ Sync already running — skipping trigger");
-        //   return;
-        // }
-
-        console.log("🧠 Memory before sync:", await process.getProcessMemoryInfo());
-
-        // SyncQueue.runUnique("c2s", async () => {
-        //   console.log("🚀 Sync start");
-
-        //   try {
-        //     sendLogToRenderer("fs-changed");
-
-        //     await runClientToServerSync(watcherContext);
-
-        //   } catch (err) {
-        //     console.error("❌ Sync error:", err);
-        //   }
-
-        //   console.log("✅ Sync end");
-        //   console.log("🧠 Memory after sync:", await process.getProcessMemoryInfo());
-        // });
-
-      }, 2500); // debounce window
-    };
-
-    // =============================
-    // EVENTS
-    // =============================
-    watcher
-      .on("add", notifyRenderer)
-      .on("change", notifyRenderer)
-      .on("unlink", notifyRenderer)
-      .on("addDir", notifyRenderer)
-      .on("unlinkDir", notifyRenderer)
-
-      // debug
-      .on("all", (event, filePath) => {
-        console.log("🧠 EVENT:", event, filePath);
-      })
-
-      .on("ready", async () => {
-        console.log("✅ Watcher READY");
-        console.log("🧠 Memory on ready:", await process.getProcessMemoryInfo());
-      })
-
-      .on("error", async (err) => {
-        console.error("❌ Watcher ERROR:", err);
-        console.log("🧠 Memory on error:", await process.getProcessMemoryInfo());
-      });
-
-  } catch (err) {
-    console.error("❌ startDriveWatcher failed:", err);
-    console.log("🧠 Memory on failure:", await process.getProcessMemoryInfo());
-  }
-}
-
 async function runClientToServerSync(context) {
   console.log("🔁 Sync started for:", context);
 
@@ -833,7 +669,7 @@ async function startDriveWatcherYes(syncData) {
   }
 }
 
-async function startDriveWatcher(syncData) {
+async function startDriveWatcherYes2(syncData) {
   try {
     /* =========================
        VALIDATION
@@ -938,6 +774,153 @@ async function startDriveWatcher(syncData) {
       .on("unlink", notifyRenderer)
       .on("addDir", notifyRenderer)
       .on("unlinkDir", notifyRenderer)
+      .on("ready", () => console.log("✅ Watcher ready"))
+      .on("error", err => console.error("❌ Watcher error:", err));
+
+  } catch (err) {
+    console.error("❌ startDriveWatcher failed:", err);
+    watcherRunning = false;
+  }
+}
+
+async function startDriveWatcher(syncData) {
+  try {
+
+    /* =========================
+       VALIDATION
+    ========================= */
+    if (!syncData?.config_data?.centris_drive) {
+      console.warn("⚠️ Invalid syncData");
+      return;
+    }
+
+    if (watcherRunning) {
+      console.log("🟡 Drive watcher already running");
+      return;
+    }
+
+    /* =========================
+       CLEANUP OLD WATCHER
+    ========================= */
+    if (watcher) {
+      try {
+        await watcher.close();
+      } catch {}
+      watcher = null;
+    }
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
+    /* =========================
+       PATH RESOLUTION
+    ========================= */
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+
+    let DRIVE_ROOT = drive;
+
+    if (process.platform === "win32") {
+      DRIVE_ROOT = path.win32.normalize(`${drive}:\\${baseFolder}`);
+    } else if (process.platform === "darwin") {
+      DRIVE_ROOT = `/${drive}/${baseFolder}/${baseFolder}`;
+    }
+
+    console.log("📂 Watching (polling):", DRIVE_ROOT);
+
+    watcherRunning = true;
+
+    /* =========================
+       WATCHER INIT
+    ========================= */
+
+    watcher = chokidar.watch(DRIVE_ROOT, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 20,
+
+      usePolling: true,
+      interval: 1000,
+      binaryInterval: 2000,
+
+      awaitWriteFinish: {
+        stabilityThreshold: 2000,
+        pollInterval: 100
+      }
+    });
+
+    /* =========================
+       HELPERS
+    ========================= */
+
+    function normalizeRelPath(filePath) {
+      return path.relative(DRIVE_ROOT, filePath).replace(/\\/g, "/");
+    }
+
+    function isBlockedPath(relPath) {
+
+      if (!relPath) return true;
+
+      if (global.uploadingPaths?.has(relPath)) return true;
+      if (global.downloadingPaths?.has(relPath)) return true;
+
+      // protect parent folders
+      for (const p of global.systemTouchedPaths || []) {
+        if (relPath.startsWith(p)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    /* =========================
+       BULK-COPY SAFE DEBOUNCE
+    ========================= */
+
+    const IDLE_TIMEOUT = 5000;
+    let idleTimer = null;
+
+    const notifyRenderer = (filePath) => {
+
+      const relPath = normalizeRelPath(filePath);
+
+      if (isBlockedPath(relPath)) {
+        // console.log("⛔ Skipped system change:", relPath);
+        return;
+      }
+
+      if (idleTimer) clearTimeout(idleTimer);
+
+      idleTimer = setTimeout(() => {
+
+        if (
+          win &&
+          !win.isDestroyed() &&
+          win.webContents &&
+          !win.webContents.isDestroyed()
+        ) {
+          console.log("📦 Bulk operation finished → processing files");
+
+          sendFsEvent("fs-changed");
+        }
+
+      }, IDLE_TIMEOUT);
+    };
+
+    /* =========================
+       EVENTS
+    ========================= */
+
+    watcher
+      .on("add", path => notifyRenderer(path))
+      .on("change", path => notifyRenderer(path))
+      .on("unlink", path => notifyRenderer(path))
+      .on("addDir", path => notifyRenderer(path))
+      .on("unlinkDir", path => notifyRenderer(path))
       .on("ready", () => console.log("✅ Watcher ready"))
       .on("error", err => console.error("❌ Watcher error:", err));
 
@@ -2867,7 +2850,7 @@ async function downloadPendingFilesLogicNEW(event, args) {
     setTimeout(() => event.sender.send("download-hide"), 6000);
 }
 
-async function downloadPendingFilesLogic(event, args) {
+async function downloadPendingFilesLogicNew2(event, args) {
 
     const { customer_id, domain_id, apiUrl, syncData, db } = args;
 
@@ -3076,6 +3059,251 @@ async function downloadPendingFilesLogic(event, args) {
     setTimeout(() => event.sender.send("download-hide"), 6000);
 }
 
+async function downloadPendingFilesLogic(event, args) {
+
+    const { customer_id, domain_id, apiUrl, syncData, db } = args;
+
+    const CHUNK_SIZE = 50;
+    const CONCURRENCY = 6;
+
+    const drive = cleanSegment(getMappedDriveLetter());
+    const baseFolder = cleanSegment(syncData.config_data.centris_drive);
+    const UserName = syncData.user_data.user_name;
+    const device_id = syncData.device_id;
+
+    let mappedDrivePath = process.platform === "win32"
+        ? path.win32.normalize(`${drive}:\\${baseFolder}`)
+        : `/${drive}/${baseFolder}`;
+
+    let totalDownloaded = 0;
+    let totalFiles = 0;
+    let firstBatch = true;
+
+    await logMemory("DOWNLOAD START");
+
+    while (true) {
+
+        await logMemory("BEFORE SERVER FETCH");
+
+        const response = await downloadServerPending({
+            customer_id,
+            domain_id,
+            apiUrl,
+            syncData,
+        });
+
+        await logMemory("AFTER SERVER FETCH");
+
+        const pending = response.pending || [];
+        const nextSyncId = response.next_sync_id;
+        const nextSyncTime = response.next_sync_time;
+
+        if (!pending.length) break;
+
+        if (firstBatch) {
+            totalFiles = response.total_remaining;
+            event.sender.send("download-progress-start", { total: totalFiles });
+            firstBatch = false;
+        }
+
+        const chunks = chunkArray(pending, CHUNK_SIZE);
+
+        for (const chunk of chunks) {
+
+            await logMemory(`CHUNK START (${chunk.length})`);
+
+            const tasks = chunk.map(item => async () => {
+
+                let fullLocalPath = null;
+                let cleanLocation = null;
+
+                try {
+
+                    cleanLocation = extractRelativePath(
+                        item.location,
+                        baseFolder,
+                        UserName
+                    ).replace(/\\/g, "/");
+
+                    fullLocalPath = path.resolve(mappedDrivePath, cleanLocation);
+
+                    if (!fullLocalPath.startsWith(mappedDrivePath)) {
+                        throw new Error("Path escape blocked");
+                    }
+
+                    // Skip if upload already running
+                    if (global.uploadingPaths.has(cleanLocation)) {
+                        return { ok: true, skipped: true };
+                    }
+
+                    // Skip if already downloading
+                    if (global.downloadingPaths.has(cleanLocation)) {
+                        return { ok: true, skipped: true };
+                    }
+
+                    const targetDir = item.type === "file"
+                        ? path.dirname(fullLocalPath)
+                        : fullLocalPath;
+
+                    if (!fs.existsSync(targetDir)) {
+                        fs.mkdirSync(targetDir, { recursive: true });
+                    }
+
+                    /* -----------------------------------
+                       PROTECT WATCHER
+                    ----------------------------------- */
+
+                    global.downloadingPaths.add(cleanLocation);
+                    global.systemTouchedPaths.add(cleanLocation);
+
+                    await updateSaveTracker(fullLocalPath, cleanLocation, item, 0);
+
+                    if (item.type === "file") {
+                        await downloadFile(item, fullLocalPath, apiUrl);
+                    }
+
+                    await updateSaveTracker(fullLocalPath, cleanLocation, item, 1);
+
+                    return {
+                        ok: true,
+                        status_id: item.status_id,
+                        location: item.location
+                    };
+
+                } catch (err) {
+
+                    console.error("Download error:", item.location, err);
+
+                    return {
+                        ok: false,
+                        status_id: item.status_id
+                    };
+
+                } finally {
+
+                    if (cleanLocation) {
+
+                        global.downloadingPaths.delete(cleanLocation);
+
+                        // delay to allow watcher polling to settle
+                        setTimeout(() => {
+                            global.systemTouchedPaths.delete(cleanLocation);
+                        }, 15000);
+                    }
+                }
+            });
+
+            await logMemory("BEFORE CONCURRENCY RUN");
+
+            const results = await runWithConcurrency(tasks, CONCURRENCY);
+
+            await logMemory("AFTER CONCURRENCY RUN");
+
+            const downloadedStatusIds = [];
+
+            for (const r of results) {
+
+                if (r.ok && !r.skipped) {
+
+                    downloadedStatusIds.push(r.status_id);
+
+                    totalDownloaded++;
+
+                    event.sender.send("download-progress", {
+                        done: totalDownloaded,
+                        total: totalFiles,
+                        file: r.location,
+                        filePercent: Math.round((totalDownloaded / totalFiles) * 100)
+                    });
+                }
+            }
+
+            /* ----------------------------
+               BULK MARK SERVER
+            ---------------------------- */
+
+            if (downloadedStatusIds.length) {
+
+                await logMemory("BEFORE BULK MARK");
+
+                await fetch(`${apiUrl}/api/markDownloadedBulk`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        device_id,
+                        status_ids: downloadedStatusIds
+                    })
+                });
+
+                await logMemory("AFTER BULK MARK");
+            }
+
+            await logMemory("CHUNK END");
+        }
+
+        /* ---------------------------------
+           UPDATE SYNC CURSOR
+        --------------------------------- */
+
+        await logMemory("BEFORE CURSOR UPDATE");
+
+        if (nextSyncTime) {
+
+            lastSyncAt = nextSyncTime;
+
+            db.prepare(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_at', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `).run(
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(nextSyncTime)
+            );
+        }
+
+        if (nextSyncId >= 0) {
+
+            lastSyncId = nextSyncId;
+
+            db.prepare(`
+                INSERT INTO app_settings
+                    (customer_id, domain_id, domain_name, user_id, "key", value)
+                VALUES (?, ?, ?, ?, 'last_sync_id', ?)
+                ON CONFLICT(customer_id, domain_id, domain_name, user_id, "key")
+                DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = strftime('%s','now')
+            `).run(
+                syncData.customer_data.id,
+                syncData.domain_data.id,
+                syncData.domain_data.domain_name,
+                syncData.user_data.id,
+                String(lastSyncId)
+            );
+        }
+
+        await logMemory("AFTER CURSOR UPDATE");
+
+        if (!response.has_more) break;
+    }
+
+    await logMemory("DOWNLOAD COMPLETE");
+
+    event.sender.send("download-complete", {
+        source: "Centris One",
+        status: totalDownloaded ? "download" : "no-download"
+    });
+
+    setTimeout(() => event.sender.send("download-hide"), 6000);
+}
+
 async function logMemory(tag) {
     const mem = await process.getProcessMemoryInfo();
     console.log(`🧠 [MEM] ${tag}`, {
@@ -3108,6 +3336,17 @@ async function runWithConcurrency(tasks, limit = 6) {
     return Promise.all(results);
 }
 
+
+function isBlockedPath(rel) {
+
+    for (const p of global.systemTouchedPaths) {
+        if (rel.startsWith(p)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 
 

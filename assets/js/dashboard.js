@@ -2243,7 +2243,8 @@ function openFolder(targetPath,type){
     if (targetPath) loadFiles(targetPath, true);
 }
 
-function openPreview(filePath,type) {
+function openPreview(filePath,type) { 
+
     const ext = filePath.split(".").pop().toLowerCase();
 
     const previewPanel = document.getElementById("preview-panel");
@@ -2262,7 +2263,7 @@ function openPreview(filePath,type) {
         pdfContainer.innerHTML = "";          // clear previous PDF pages
         pdfContainer.classList.remove("hidden");
         openPDF(filePath);
-    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx", "csv", "zip","rar","gz","cad"].includes(ext)) {
+    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx", "csv", "zip","rar","gz","cad","txt"].includes(ext)) {
         // 🔹 Office → placeholder
         officePreview.classList.remove("hidden");
         pdfContainer.classList.add("hidden");

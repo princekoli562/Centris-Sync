@@ -482,7 +482,7 @@ const createWindow = async () => {
 
                     // ⚠️ DevTools ONLY if not quitting
                     if (!app.isQuitting) {
-                        win.webContents.openDevTools({ mode: "detach" });
+                        //win.webContents.openDevTools({ mode: "detach" });
                     }
 
                     setTimeout(() => {
@@ -2669,7 +2669,7 @@ async function downloadPendingFilesLogicNEW(event, args) {
 
     let mappedDrivePath = process.platform === "win32"
         ? path.win32.normalize(`${drive}:\\${baseFolder}`)
-        : `/${drive}/${baseFolder}`;
+        : `/${drive}/${baseFolder}/${baseFolder}`;
 
     let totalDownloaded = 0;
     let totalFiles = 0;
@@ -2864,7 +2864,7 @@ async function downloadPendingFilesLogicNew2(event, args) {
 
     let mappedDrivePath = process.platform === "win32"
         ? path.win32.normalize(`${drive}:\\${baseFolder}`)
-        : `/${drive}/${baseFolder}`;
+        : `/${drive}/${baseFolder}/${baseFolder}`;
 
     let totalDownloaded = 0;
     let totalFiles = 0;
@@ -3073,7 +3073,7 @@ async function downloadPendingFilesLogic(event, args) {
 
     let mappedDrivePath = process.platform === "win32"
         ? path.win32.normalize(`${drive}:\\${baseFolder}`)
-        : `/${drive}/${baseFolder}`;
+        : `/${drive}/${baseFolder}/${baseFolder}`;
 
     let totalDownloaded = 0;
     let totalFiles = 0;

@@ -1509,6 +1509,13 @@ body.dragging iframe {
     color: #b52b27;
 }
 
+.file-item.active-preview {
+    border: 2px solid #007bff;
+    background-color: #e6f0ff;
+    border-radius: 6px;
+}
+
+
 
 
 

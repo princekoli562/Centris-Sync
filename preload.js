@@ -9,10 +9,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getApiUrl: () => ipcRenderer.invoke('get-api-url'),
     getAppConfig: () => ipcRenderer.invoke('getAppConfig'),
     //listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),
-    listFiles: (dirPath) => ipcRenderer.invoke('fs:listFiles', dirPath),    
+    listFiles: (dirPath) => ipcRenderer.invoke('fs:listFiles', dirPath),
     listRecurFiles: (dir, offset = 0, limit = 100) => ipcRenderer.invoke('fs:list-recur-files', dir, offset, limit),
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
-    openFolders : () => ipcRenderer.invoke('dialog:openFolders'),
+    openFolders: () => ipcRenderer.invoke('dialog:openFolders'),
     openFile: () => ipcRenderer.invoke('dialog:openFile'),
     openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
     readDir: (folderPath) => ipcRenderer.invoke('fs:readDir', folderPath),
@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uploadFileToDrive: (files, targetDir) => ipcRenderer.invoke('uploadFileToDrive', files, targetDir),
     getMappedDrive: () => ipcRenderer.invoke('getMappedDrive'),
     saveSession: (data) => ipcRenderer.send('save-session', data),
-    clearSession: () => ipcRenderer.send('clear-session'),    
+    clearSession: () => ipcRenderer.send('clear-session'),
     loadSession: () => ipcRenderer.invoke('load-session'),
     listFilesRecursively: (dir) => ipcRenderer.invoke('fs:listFilesRecursively', dir),
     onMainLog: (callback) => ipcRenderer.on('main-log', (_event, message) => callback(message)),
@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSyncData: () => ipcRenderer.invoke('get-sync-data'),
     //getDirectorySnapshot: (dir) => ipcRenderer.invoke("get-directory-snapshot", dir),   
     getDirectorySnapshot: (dir, oldSnapshot = {}) => ipcRenderer.invoke("get-directory-snapshot", dir, oldSnapshot),
-    saveTracker: (snapshot, syncedDefault = 1) => ipcRenderer.invoke("save-tracker", {snapshot,syncedDefault}),
+    saveTracker: (snapshot, syncedDefault = 1) => ipcRenderer.invoke("save-tracker", { snapshot, syncedDefault }),
     loadTracker: (onlyUnsynced = true) => ipcRenderer.invoke("load-tracker", { onlyUnsynced }),
     onSyncProgress: (callback) => ipcRenderer.on('sync-progress', (event, data) => callback(data)),
     onSyncStatus: (callback) => ipcRenderer.on('sync-status', callback),
@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     onDeleteProgressStart: (cb) => ipcRenderer.on("delete-progress-start", (_, data) => cb(data)),
     onDeleteProgress: (cb) => ipcRenderer.on("delete-progress", (_, data) => cb(data)),
-    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete",(_event, data) => cb(data)),   // ✅ forward payload only   
+    onDeleteComplete: (cb) => ipcRenderer.on("delete-progress-complete", (_event, data) => cb(data)),   // ✅ forward payload only   
     onDeleteHide: (cb) => ipcRenderer.on("delete-progress-hide", cb),
     scanFolder: (folderPath) => ipcRenderer.invoke("scanFolder", folderPath),
     //createFolderInDrive: (sourceFolderPath, mappedDrive) => ipcRenderer.invoke('createFolderInDrive', sourceFolderPath, mappedDrive),
@@ -59,11 +59,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     basename: (fullPath) => ipcRenderer.invoke("basename", fullPath),
     copyFile: (src, dest) => ipcRenderer.invoke("copy-file", src, dest),
     readFileBase64: (p) => ipcRenderer.invoke("read-base64", p),
-    downloadPendingFiles: (args) => ipcRenderer.invoke("download-pending-files",args),
+    downloadPendingFiles: (args) => ipcRenderer.invoke("download-pending-files", args),
     onDownloadProgressStart: (fn) => ipcRenderer.on("download-progress-start", (e, d) => fn(d)),
     onDownloadProgress: (fn) => ipcRenderer.on("download-progress", (e, d) => fn(d)),
-    onDownloadComplete: (cb) => ipcRenderer.on("download-complete", (event, data) => cb(data)),   
-    onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn)   ,
+    onDownloadComplete: (cb) => ipcRenderer.on("download-complete", (event, data) => cb(data)),
+    onDownloadHide: (fn) => ipcRenderer.on("download-hide", fn),
     openExternalFile: (path) => ipcRenderer.invoke("open-external-file", path),
     deleteItem: (data) => ipcRenderer.invoke("delete-item", data),
     // onFSChange: (callback) => ipcRenderer.on("fs-changed", callback),
@@ -72,15 +72,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on("fs-changed", callback);
     },
 
-    startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
+    // startDriveWatcher: (syncData) => { ipcRenderer.send("start-drive-watcher", syncData)},
+    // stopDriveWatcher: () => ipcRenderer.invoke("stop-drive-watcher"),
+    // startServerPolling: (syncData) => { ipcRenderer.send("start-server-polling", syncData)},
+    // stopServerPolling: () => ipcRenderer.invoke("stop-server-polling"),
+
+    startDriveWatcher: (syncData) => ipcRenderer.invoke("start-drive-watcher", syncData),
     stopDriveWatcher: () => ipcRenderer.invoke("stop-drive-watcher"),
-    startServerPolling: (syncData) => { ipcRenderer.send("start-server-polling", syncData)},
+    startServerPolling: (syncData) => ipcRenderer.invoke("start-server-polling", syncData),
     stopServerPolling: () => ipcRenderer.invoke("stop-server-polling"),
+
     getAllPaths: (rootDir) => ipcRenderer.invoke("get-all-paths", rootDir),
     searchPaths: (query) => ipcRenderer.invoke("search-paths", query),
     getSessionUser: () => ipcRenderer.invoke("get-session-user"),
     getSyncStatus: (params) => ipcRenderer.invoke("get-sync-status", params),
-    setSyncStatus: (user,enabled ) => ipcRenderer.invoke("set-sync-status",  user,enabled),
+    setSyncStatus: (user, enabled) => ipcRenderer.invoke("set-sync-status", user, enabled),
     onLogin: (user) => ipcRenderer.invoke("user-login-success", user),
     checkSessionAndRedirect: (autoExpireVal) => ipcRenderer.invoke("check-session-and-redirect", autoExpireVal),
     insertSettingIfNotExists: (user, key, value) => ipcRenderer.invoke("insert-setting-if-not-exists", user, key, value),
@@ -109,9 +115,9 @@ contextBridge.exposeInMainWorld('versions', {
 // });
 
 contextBridge.exposeInMainWorld("appPaths", {
-  //base: path.join(__dirname, "..").replace(/\\/g, "/"),
-  getBase: () => ipcRenderer.invoke("get-base-path"),
-  relative: (from, to) => ipcRenderer.invoke("path:relative", from, to)
+    //base: path.join(__dirname, "..").replace(/\\/g, "/"),
+    getBase: () => ipcRenderer.invoke("get-base-path"),
+    relative: (from, to) => ipcRenderer.invoke("path:relative", from, to)
 });
 
 contextBridge.exposeInMainWorld("vhdx", {

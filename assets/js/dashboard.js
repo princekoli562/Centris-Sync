@@ -10,7 +10,7 @@ let currentIndex = -1;
 window.stopSync = true;
 
 let currentView = "grid";
-let activeProgressType = null; 
+let activeProgressType = null;
 
 let customer_data = localStorage.getItem('customer_data');
 let domain_data = localStorage.getItem('domain_data');
@@ -25,8 +25,8 @@ let user_list = [];
 let pingInterval = null;
 
 if (progressContainer) {
-  progressContainer.style.display = 'none';
-} 
+    progressContainer.style.display = 'none';
+}
 
 let isSyncing = false;
 let autoSyncInterval = null;
@@ -43,24 +43,24 @@ let sync_icon = document.getElementById("sync-icon");
 
 
 window.electronAPI.onSyncProgress(({ done, total, file }) => {
-  const percent = Math.round((done / total) * 100);
+    const percent = Math.round((done / total) * 100);
 
-  // 🔹 Show progress bar when sync starts
-  progressContainer.style.display = 'block';
+    // 🔹 Show progress bar when sync starts
+    progressContainer.style.display = 'block';
 
-  // 🔹 Update values
-  progressBar.value = percent;
-  progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
+    // 🔹 Update values
+    progressBar.value = percent;
+    progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
 
-  // Optional: show current file being synced (if you want)
-  if (file) {
-    console.log(`📁 Currently syncing: ${file}`);
-  }
+    // Optional: show current file being synced (if you want)
+    if (file) {
+        console.log(`📁 Currently syncing: ${file}`);
+    }
 
-  // 🔹 When sync completes
-  if (percent === 100) {
-    progressLabel.textContent = '✅ Sync complete!';
-  }
+    // 🔹 When sync completes
+    if (percent === 100) {
+        progressLabel.textContent = '✅ Sync complete!';
+    }
 });
 
 
@@ -111,12 +111,12 @@ window.electronAPI.onUploadProgressStart(({ total }) => {
 // Update progress
 window.electronAPI.onUploadProgress(({ done, total, file }) => {
     if (activeProgressType !== "upload") return;
-  const percent = Math.round((done / total) * 100);
+    const percent = Math.round((done / total) * 100);
 
-  progressBar.value = percent;
-  progressLabel.textContent = `Uploading... ${percent}% (${done}/${total})`;
+    progressBar.value = percent;
+    progressLabel.textContent = `Uploading... ${percent}% (${done}/${total})`;
 
-  if (file) console.log("Uploading:", file);
+    if (file) console.log("Uploading:", file);
 });
 
 // On complete → 100%
@@ -133,10 +133,10 @@ window.electronAPI.onUploadHide(() => {
 });
 
 window.electronAPI.onDeleteProgressStart(({ total }) => {
-  activeProgressType = "delete";  
-  progressContainer.style.display = "block";
-  progressBar.value = 0;
-  progressLabel.textContent = `Deleting... 0% (0/${total})`;
+    activeProgressType = "delete";
+    progressContainer.style.display = "block";
+    progressBar.value = 0;
+    progressLabel.textContent = `Deleting... 0% (0/${total})`;
 });
 
 
@@ -162,7 +162,7 @@ window.electronAPI.onDeleteComplete(({ source, status }) => {
     setTimeout(() => {
         loadDriveItems(history[currentIndex], true);
     }, 3000);
-    
+
 });
 
 
@@ -212,22 +212,22 @@ window.electronAPI.onDownloadComplete(({ source, status }) => {
 // Auto hide
 window.electronAPI.onDownloadHide(() => {
     if (activeProgressType !== "download") return;
-    progressContainer.style.display  = "none";
+    progressContainer.style.display = "none";
     activeProgressType = null;
 });
 
 // Online / Offline listener
 window.addEventListener("online", () => {
- console.log('On - > ' + sync_toggle.checked);
-  updateUI({ enabled: sync_toggle.checked, online: true,syncData :syncData });
-  checkServer(sync_toggle.checked,true); // 🔥 important
-  startPing(syncData);
+    console.log('On - > ' + sync_toggle.checked);
+    updateUI({ enabled: sync_toggle.checked, online: true, syncData: syncData });
+    checkServer(sync_toggle.checked, true); // 🔥 important
+    startPing(syncData);
 });
 
 window.addEventListener("offline", () => {
     console.log('Off - > ' + sync_toggle.checked);
-  updateUI({ enabled: sync_toggle.checked, online: false,server: false,syncData :syncData });
-  stopPing();
+    updateUI({ enabled: sync_toggle.checked, online: false, server: false, syncData: syncData });
+    stopPing();
 });
 
 
@@ -243,8 +243,8 @@ window.addEventListener("offline", () => {
 $("#file-list").addClass("grid-view");
 
 document.addEventListener('DOMContentLoaded', async () => {
-   // await setupDrive();
-    const config = await  window.electronAPI.getAppConfig();
+    // await setupDrive();
+    const config = await window.electronAPI.getAppConfig();
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
     //startAutoSync(syncData);
@@ -261,41 +261,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     //console.log(mappedDrive);
     let local_stored = localStorage.getItem("customer_data");
 
-    if(local_stored){
+    if (local_stored) {
         customer_data = JSON.parse(localStorage.getItem("customer_data"));
         domain_data = JSON.parse(localStorage.getItem("domain_data"));
         user_data = JSON.parse(localStorage.getItem("user_data"));
-    }else{
-        customer_data  = syncData.customer_data; 
-        domain_data  = syncData.domain_data; 
-        user_data = syncData.user_data; 
+    } else {
+        customer_data = syncData.customer_data;
+        domain_data = syncData.domain_data;
+        user_data = syncData.user_data;
     }
     console.log(currentDir);
     console.log(config.platform + ' = ' + config.volume_label);
-     // Tab switching
+    // Tab switching
     window.secret_key = localStorage.getItem('secret_key');
     window.secret_gen_key = localStorage.getItem('secret_gen_key');
     window.apiUrl = syncData.apiUrl;
 
     let currentUser = {
-        customer_id :syncData.customer_data.id,
-        domain_id :syncData.domain_data.id,
-        domain_name :syncData.domain_data.domain_name,
-        user_id:syncData.user_data.id,
-        apiUrl:syncData.apiUrl
+        customer_id: syncData.customer_data.id,
+        domain_id: syncData.domain_data.id,
+        domain_name: syncData.domain_data.domain_name,
+        user_id: syncData.user_data.id,
+        apiUrl: syncData.apiUrl
     };
 
-   
 
-    await loadUsersFromSession(syncData,user_list);
+
+    await loadUsersFromSession(syncData, user_list);
 
     const syncEnabled = await window.electronAPI.getSyncStatus(currentUser);
 
     if (navigator.onLine) {
-        checkServer(syncEnabled,navigator.onLine,syncData);
+        checkServer(syncEnabled, navigator.onLine, syncData);
         startPing(syncData);
-    }else{
-        updateUI({enabled: syncEnabled, online: navigator.onLine,syncData });
+    } else {
+        updateUI({ enabled: syncEnabled, online: navigator.onLine, syncData });
     }
 
     if (syncEnabled) {
@@ -306,18 +306,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             triggerSync(syncData, false)
                 .finally(() => {
-                isSyncRunning = false;
+                    isSyncRunning = false;
                 });
         });
-    }    
+    }
 
     console.log('DD - >' + syncEnabled);
 
+    // if (!syncEnabled) {
+    //     console.log("Sync disabled by user");
+    // }else{
+    //     window.electronAPI.startServerPolling(syncData);
+    //     window.electronAPI.startDriveWatcher(syncData);
+    // }
+
     if (!syncEnabled) {
         console.log("Sync disabled by user");
-    }else{
-        window.electronAPI.startServerPolling(syncData);
-        window.electronAPI.startDriveWatcher(syncData);
+    } else {
+        // 🔧 FIX: run first S2C to completion BEFORE starting the watcher
+        (async () => {
+            try {
+                await window.electronAPI.startServerPolling(syncData);
+                console.log("✅ First S2C done — starting watcher");
+                await window.electronAPI.startDriveWatcher(syncData);
+            } catch (e) {
+                console.error("Initial S2C failed; watcher will start after 30s retry:", e);
+                setTimeout(() => {
+                    window.electronAPI.startDriveWatcher(syncData).catch(() => { });
+                }, 30_000);
+            }
+        })();
     }
 
     var apiUrl = window.apiUrl;
@@ -326,13 +344,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // console.log("API URL:", apiUrl);
     // console.log("Secret key:", secret_key);
-    
+
 
     $(".sidebar .btnload").removeClass("active");
     $("#openDrive").addClass("active");
 
     // 🔹 Optionally trigger loadFiles for the default directory
-   
+
     // history = [currentDir];
     // currentIndex = 0;    
     await initFirstPath(currentDir);
@@ -340,8 +358,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadDriveItems(currentDir);
 
     //await loadFiles(currentDir,true);
-    
-    $(document).on("click",".tab",function(e) {
+
+    $(document).on("click", ".tab", function (e) {
         const tab = $(this).data('tab');
         $('.tab').removeClass('active');
         $(this).addClass('active');
@@ -350,31 +368,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
 
-   let isDragging = false;
-let lastX = 0;
-let rafId = null;
+    let isDragging = false;
+    let lastX = 0;
+    let rafId = null;
 
-const $container = $("#main-content");
-const $fileList = $("#file-list");
-const $preview = $("#preview-panel");
-const $dragBar = $("#drag-bar");
+    const $container = $("#main-content");
+    const $fileList = $("#file-list");
+    const $preview = $("#preview-panel");
+    const $dragBar = $("#drag-bar");
 
-$dragBar.on("mousedown", function (e) {
-    e.preventDefault();
-    isDragging = true;
-    lastX = e.pageX;
-    $("body").addClass("dragging");
-});
+    $dragBar.on("mousedown", function (e) {
+        e.preventDefault();
+        isDragging = true;
+        lastX = e.pageX;
+        $("body").addClass("dragging");
+    });
 
-$(document).on("mousemove", function (e) {
-    if (!isDragging) return;
-    lastX = e.pageX;
+    $(document).on("mousemove", function (e) {
+        if (!isDragging) return;
+        lastX = e.pageX;
 
-    // throttle with RAF
-    if (!rafId) {
-        rafId = requestAnimationFrame(updateLayout);
-    }
-});
+        // throttle with RAF
+        if (!rafId) {
+            rafId = requestAnimationFrame(updateLayout);
+        }
+    });
 
     $(document).on("mouseup mouseleave", function () {
         stopDrag();
@@ -418,9 +436,9 @@ $(document).on("mousemove", function (e) {
     //     window.electronAPI.hardStop();
     // });
 
-      // --- Local Files ---
-    
-    $(document).on("click","#chooseFolder",async function(e) {
+    // --- Local Files ---
+
+    $(document).on("click", "#chooseFolder", async function (e) {
         const folderPath = await window.electronAPI.chooseFolder();
         var customer_data = JSON.parse(localStorage.getItem('customer_data'));
         var domain_data = JSON.parse(localStorage.getItem('domain_data'));
@@ -429,7 +447,7 @@ $(document).on("mousemove", function (e) {
         if (!folderPath) return;
         $('#folderPath').text(folderPath);
         const files = await window.electronAPI.listFiles(folderPath);
-        
+
         // Recursively get files/folders
         const filesTree = await window.electronAPI.listFilesRecursively(folderPath);
         renderFileList('#localFileList', filesTree);
@@ -448,35 +466,35 @@ $(document).on("mousemove", function (e) {
             });
             const data = await res.json();
             console.log('Sync Result:', data);
-        } catch(err) {
+        } catch (err) {
             console.error('Sync Error:', err);
         }
     });
 
-      // --- Remote Files ---
-     
-    $(document).on("click","#loadRemote",async function(e) {
+    // --- Remote Files ---
+
+    $(document).on("click", "#loadRemote", async function (e) {
         const remoteList = $('#remoteFileList');
         remoteList.html('<li>Loading...</li>');
         console.log(secret_key);
         console.log(apiUrl);
-        if(apiUrl.length <= 0) {
+        if (apiUrl.length <= 0) {
             console.log("invalid secret key provided");
             return false;
         }
         try {
-          const res = await fetch(apiUrl +'/api/getFiles');
-          if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-          const data = await res.json();
-          renderTree('#remoteFileList', data);
-        } catch(err) {
-          remoteList.html(`<li style="color:red;">Error: ${err.message}</li>`);
+            const res = await fetch(apiUrl + '/api/getFiles');
+            if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+            const data = await res.json();
+            renderTree('#remoteFileList', data);
+        } catch (err) {
+            remoteList.html(`<li style="color:red;">Error: ${err.message}</li>`);
         }
-    });  
-    
+    });
+
     let currentMenu = null;
     let currentBtn = null;
-    
+
     // $(document).on("click", "#openDrive", async function (e) {
     //     //e.preventDefault();
 
@@ -524,12 +542,12 @@ $(document).on("mousemove", function (e) {
     //     });
     // });
 
-  
+
 
     // Load the initial directory (triggered by your “Open Drive” button)
     $(document).on("click", "#openDrive", async function (e) {
         e.preventDefault();
-        await loadFiles(currentDir,true);
+        await loadFiles(currentDir, true);
     });
 
     // 🔹 Scroll listener for lazy loading
@@ -549,13 +567,13 @@ $(document).on("mousemove", function (e) {
     // 🔹 Breadcrumb navigation
     $(document).on("click", ".crumb", async function () {
         const path = $(this).data("path");
-        if(path == '#') return;
+        if (path == '#') return;
         await loadFiles(path, true);
     });
 
     // Infinite scroll handler
     $("#file-list").on("scroll", async function () {
-        
+
         if (isLoading) return;
 
         // if (currentMenu && currentBtn) {
@@ -571,14 +589,14 @@ $(document).on("mousemove", function (e) {
             currentMenu = null;
             currentBtn = null;
         }
-        console.log(loadedItems + ' = ' +  totalItems);
+        console.log(loadedItems + ' = ' + totalItems);
         const nearBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 50;
         if (nearBottom && loadedItems < totalItems) {
             await loadFiles(currentDir, false);
         }
     });
 
-    
+
 
     $(document).on("click", "#uploadFolder", function (e) {
         e.stopPropagation();
@@ -620,12 +638,12 @@ $(document).on("mousemove", function (e) {
         deleteSelectedItems();
     });
 
-    
+
 
     // This is for single Folder Selection , but work inside recursively
     $(document).on("click", "#uploadFolderSingleOption", async function () {
         try {
-            $(".upload-menu").removeClass("show");            
+            $(".upload-menu").removeClass("show");
 
             const folderPath = await window.electronAPI.openFolder();
             if (!folderPath) {
@@ -650,17 +668,17 @@ $(document).on("mousemove", function (e) {
                 return;
             }
 
-           // alert("Folder uploaded successfully!");
+            // alert("Folder uploaded successfully!");
             showValidation("The folder and files have been uploaded to Centris Local Drive successfully.", 'success');
             console.log(folderPath);
             console.log(mappedDrive);
             loadFiles(mappedDrive, true);
             await wait(2000);
 
-            showValidation("Syncing files to Centris Local Drive. Please wait...", 'info',0);
-        
-           // const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);
-           // console.log("File Tree:", filesTree);
+            showValidation("Syncing files to Centris Local Drive. Please wait...", 'info', 0);
+
+            // const filesTree = await window.electronAPI.listFilesRecursively(mappedDrive);
+            // console.log("File Tree:", filesTree);
 
             const res = await fetch(`${apiUrl}/api/sync-folders-and-files`, {
                 method: "POST",
@@ -673,20 +691,20 @@ $(document).on("mousemove", function (e) {
                 })
             });
             const oldSnapshot = await window.electronAPI.loadTracker(false);
-             console.log(oldSnapshot);
-            const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive,oldSnapshot);
+            console.log(oldSnapshot);
+            const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
             //console.log(newSnapshot['snapshot']);
-            const saveShots  = await window.electronAPI.saveTracker(newSnapshot['snapshot']);
+            const saveShots = await window.electronAPI.saveTracker(newSnapshot['snapshot']);
 
             const data = await res.json();
             console.log("Sync Result:", data);
             await wait(2000);
-          
+
             showValidation(data.message, 'success');
-    
+
         } catch (err) {
             console.error("Upload or Sync Error:", err);
-            showValidation("An error occurred: " + err.message , 'error');
+            showValidation("An error occurred: " + err.message, 'error');
         }
     });
 
@@ -717,16 +735,16 @@ $(document).on("mousemove", function (e) {
 
             let mappedConfigDrive = config.drivePath;
 
-             if (config.platform === "win32") {
+            if (config.platform === "win32") {
                 // Example: "F:\"
                 mappedDrive = crumbs.length > 0
-                ? crumbs[crumbs.length - 1].getAttribute("data-path")
-                : await window.electronAPI.getMappedDrive();
+                    ? crumbs[crumbs.length - 1].getAttribute("data-path")
+                    : await window.electronAPI.getMappedDrive();
             } else if (config.platform === "darwin") {
                 // Example: "/Volumes/Centris-Drive"
                 mappedDrive = crumbs.length > 0
-                ? crumbs[crumbs.length - 1].getAttribute("data-path")
-                : mappedConfigDrive;
+                    ? crumbs[crumbs.length - 1].getAttribute("data-path")
+                    : mappedConfigDrive;
             }
 
             if (!confirm(`Upload ${folderPaths.length} folder(s) to ${mappedDrive}?`)) return;
@@ -801,7 +819,7 @@ $(document).on("mousemove", function (e) {
                         mtime: stats.mtimeMs
                     });
                 }
-               
+
                 // ===============================
                 // 4. CHUNK UPLOAD
                 // ===============================
@@ -856,7 +874,7 @@ $(document).on("mousemove", function (e) {
     });
 
 
-   $(document).on("click", "#uploadFileOption", async function () {
+    $(document).on("click", "#uploadFileOption", async function () {
         try {
             $(".upload-menu").removeClass("show");
 
@@ -864,8 +882,8 @@ $(document).on("mousemove", function (e) {
             const local_stored = localStorage.getItem("customer_data");
             if (local_stored) {
                 customer_data = JSON.parse(localStorage.getItem("customer_data"));
-                domain_data   = JSON.parse(localStorage.getItem("domain_data"));
-                user_data     = JSON.parse(localStorage.getItem("user_data"));
+                domain_data = JSON.parse(localStorage.getItem("domain_data"));
+                user_data = JSON.parse(localStorage.getItem("user_data"));
             }
 
             // 1️⃣ SELECT FILES
@@ -883,13 +901,13 @@ $(document).on("mousemove", function (e) {
             if (config.platform === "win32") {
                 // Example: "F:\"
                 mappedDrive = crumbs.length > 0
-                ? crumbs[crumbs.length - 1].getAttribute("data-path")
-                : await window.electronAPI.getMappedDrive();
+                    ? crumbs[crumbs.length - 1].getAttribute("data-path")
+                    : await window.electronAPI.getMappedDrive();
             } else if (config.platform === "darwin") {
                 // Example: "/Volumes/Centris-Drive"
                 mappedDrive = crumbs.length > 0
-                ? crumbs[crumbs.length - 1].getAttribute("data-path")
-                : mappedConfigDrive;
+                    ? crumbs[crumbs.length - 1].getAttribute("data-path")
+                    : mappedConfigDrive;
             }
 
             // mappedDrive = crumbs.length > 0
@@ -922,7 +940,7 @@ $(document).on("mousemove", function (e) {
             }
 
             showValidation("All files copied to Centris Local Drive.", "success", 2000);
-            
+
 
             // 4️⃣ CHUNK FILE ITEMS (50 each)
             // const chunkSize = 50;
@@ -1000,20 +1018,20 @@ $(document).on("mousemove", function (e) {
             await window.electronAPI.fullLogoutCleanup();
             SessionLogout();
             const autoExpireVal = true; // or from storage/config
-            const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);            
+            const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);
             // call API / IPC / AJAX here
         }
     });
 
 
-    $("#grid-view").on("click",async function() {
+    $("#grid-view").on("click", async function () {
         currentView = "grid";
         $("#file-list").empty();
         $("#list-view").removeClass("active");
         $(this).addClass("active");
         $("#file-list").removeClass("list-view").addClass("grid-view");
-        $("#file-list-header").addClass("hidden"); 
-        var  mappedDrive = await window.electronAPI.getMappedDrive();
+        $("#file-list-header").addClass("hidden");
+        var mappedDrive = await window.electronAPI.getMappedDrive();
 
         let mappedConfigDrive = config.drivePath;
 
@@ -1022,45 +1040,45 @@ $(document).on("mousemove", function (e) {
             const lastCrumb = crumbs[crumbs.length - 1];
             mappedDrive = lastCrumb.getAttribute('data-path');
             console.log("mappedDrive path:", mappedDrive);
-        }else{
+        } else {
             // Get mapped drive dynamically
             if (config.platform === "win32") {
-                mappedDrive = await window.electronAPI.getMappedDrive();  
+                mappedDrive = await window.electronAPI.getMappedDrive();
             } else if (config.platform === "darwin") {
                 // Example: "/Volumes/Centris-Drive"
                 mappedDrive = mappedConfigDrive;
             }
-              
+
         }
-        await loadFiles(mappedDrive,true);       
+        await loadFiles(mappedDrive, true);
     });
 
-    $("#list-view").on("click",async function() {
+    $("#list-view").on("click", async function () {
         currentView = "list";
         $("#file-list").empty();
         $("#grid-view").removeClass("active");
         $(this).addClass("active");
         $("#file-list").removeClass("grid-view").addClass("list-view");
         $("#file-list-header").removeClass("hidden");
-        var  mappedDrive = await window.electronAPI.getMappedDrive();
+        var mappedDrive = await window.electronAPI.getMappedDrive();
         let mappedConfigDrive = config.drivePath;
         const crumbs = document.querySelectorAll('#breadcrumb .crumb');
         if (crumbs.length > 0) {
             const lastCrumb = crumbs[crumbs.length - 1];
             mappedDrive = lastCrumb.getAttribute('data-path');
             console.log("mappedDrive path:", mappedDrive);
-        }else{
+        } else {
             if (config.platform === "win32") {
                 // Get mapped drive dynamically
-                mappedDrive = await window.electronAPI.getMappedDrive(); 
-                
+                mappedDrive = await window.electronAPI.getMappedDrive();
+
             } else if (config.platform === "darwin") {
                 // Example: "/Volumes/Centris-Drive"
                 mappedDrive = mappedConfigDrive;
-                
-            }               
+
+            }
         }
-        await loadFiles(mappedDrive,true);
+        await loadFiles(mappedDrive, true);
     });
 
     $(document).on("click", "#SyncDrive", async function () {
@@ -1070,10 +1088,10 @@ $(document).on("mousemove", function (e) {
         if (syncEnabled) {
             btn.prop("disabled", true).html('<i class="bi bi-arrow-repeat spin"></i> Syncing...');
 
-            await triggerSync(syncData,true);
+            await triggerSync(syncData, true);
 
             btn.prop("disabled", false).html('<i class="bi bi-arrow-repeat"></i> 🔄 Sync Drive');
-        }else{
+        } else {
             showValidation("Sync is Disabled", "warning");
         }
     });
@@ -1118,8 +1136,8 @@ $(document).on("mousemove", function (e) {
         const targetPath = $menu.data("path");
         const type = $menu.data("type");
         console.log(targetPath, type);
-        if(type == 'folder') return;
-        
+        if (type == 'folder') return;
+
         openPreview(targetPath, type);
 
         // Add check icon only once
@@ -1127,7 +1145,7 @@ $(document).on("mousemove", function (e) {
         //  $item.append('<div class="check-icon"></div>');
         // }
 
-       
+
     });
 
     $(document).on("click", ".file-item .check-icon", function (e) {
@@ -1163,14 +1181,14 @@ $(document).on("mousemove", function (e) {
         $('.floating-menu').remove();
         currentMenu = null;
         currentBtn = null;
-      
+
         if (!targetPath) return;
-        if (action === 'open') openFolder(targetPath,type);
+        if (action === 'open') openFolder(targetPath, type);
         if (action === 'view') openPreview(targetPath, type);
         if (action === 'delete') deleteFile(targetPath, type);
         if (action === 'move') moveFile(targetPath, type);
         if (action === 'rename') renameFile(targetPath, type);
-       
+
     });
 
     const userIcon = document.getElementById("userIcon");
@@ -1180,7 +1198,7 @@ $(document).on("mousemove", function (e) {
     userIcon.addEventListener("click", () => {
         userdropdown.style.display =
             userdropdown.style.display === "block" ? "none" : "block";
-        renderUsers(syncData,user_list);
+        renderUsers(syncData, user_list);
     });
 
     // Close userdropdown on outside click
@@ -1227,7 +1245,7 @@ $(document).on("mousemove", function (e) {
     const searchResults = document.getElementById("searchResults");
     const searchContainer = document.querySelector(".search-container");
     const clearBtn = document.getElementById("clearSearchBtn");
-    
+
     /* --------------------------
     SHOW WHEN TYPING & RESULTS EXIST
     ---------------------------*/
@@ -1290,7 +1308,7 @@ $(document).on("mousemove", function (e) {
 
     // Toggle click
 
-    
+
 
     // sync_toggle.addEventListener("change", async () => {
     //     const enabled = sync_toggle.checked;
@@ -1317,12 +1335,22 @@ $(document).on("mousemove", function (e) {
         // Save toggle state to DB / main process
         await window.electronAPI.setSyncStatus(currentUser, enabled);
 
-        updateUI({ enabled, online: navigator.onLine,syncData });
+        updateUI({ enabled, online: navigator.onLine, syncData });
 
         if (enabled) {
+            // startPing(syncData);
+            // window.electronAPI.startServerPolling(syncData);
+            // window.electronAPI.startDriveWatcher(syncData);
             startPing(syncData);
-            window.electronAPI.startServerPolling(syncData);
-            window.electronAPI.startDriveWatcher(syncData);
+            (async () => {
+                try {
+                    await window.electronAPI.startServerPolling(syncData);
+                    console.log("✅ S2C started, watcher next");
+                    await window.electronAPI.startDriveWatcher(syncData);
+                } catch (e) {
+                    console.error("S2C start failed:", e);
+                }
+            })();
 
             // Attach FS listener if not already
             if (!fsListenerAttached) {
@@ -1345,7 +1373,7 @@ $(document).on("mousemove", function (e) {
             stopPing();
             window.electronAPI.stopServerPolling();
             window.electronAPI.stopDriveWatcher();
-           
+
         }
 
         sync_icon.classList.remove("syncing");
@@ -1363,10 +1391,10 @@ $(document).on("mousemove", function (e) {
 });
 
 window.electronAPI.onMainLog((message) => {
-  console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
+    console.log('%c[MAIN]', 'color: #4CAF50; font-weight: bold;', message);
 });
 
-function renderUsers(syncData,user_list = []) {
+function renderUsers(syncData, user_list = []) {
     userList.innerHTML = "";
 
     user_list.forEach(user => {
@@ -1377,7 +1405,7 @@ function renderUsers(syncData,user_list = []) {
             user.profile_image &&
             user.profile_image.trim() !== "";
 
-       let fullPathProfileImg = syncData.config_data.storage_relative_path + user.profile_image;
+        let fullPathProfileImg = syncData.config_data.storage_relative_path + user.profile_image;
 
         const avatarHTML = hasImage
             ? `<img src="${fullPathProfileImg}"
@@ -1389,8 +1417,8 @@ function renderUsers(syncData,user_list = []) {
             <div class="user-row">
                 ${avatarHTML}
                 <span class="user-name">${user.name}</span>
-                ${user.active 
-            ? `
+                ${user.active
+                ? `
                 <span class="check" title="Active">✔</span>
                 <span class="logout-icon" 
                       title="Logout user" 
@@ -1398,8 +1426,8 @@ function renderUsers(syncData,user_list = []) {
                     <i class="fa fa-sign-out-alt"></i>
                 </span>
               `
-            : ''
-        }
+                : ''
+            }
             </div>
         `;
 
@@ -1431,7 +1459,7 @@ function createDefaultAvatar() {
 }
 
 
-async function loadUsersFromSession(syncData,user_list = []) {
+async function loadUsersFromSession(syncData, user_list = []) {
     const sessionUser = await window.electronAPI.getSessionUser();
 
     if (sessionUser) {
@@ -1443,7 +1471,7 @@ async function loadUsersFromSession(syncData,user_list = []) {
         });
     }
 
-    renderUsers(syncData,user_list);
+    renderUsers(syncData, user_list);
 }
 
 async function SessionLogout() {
@@ -1458,7 +1486,7 @@ function setSyncDone() {
     icon.className = "fas fa-check-circle";
 }
 
- /* --------------------------
+/* --------------------------
 HELPERS
 ---------------------------*/
 function showResults() {
@@ -1496,7 +1524,7 @@ function highlightText(text, query) {
     return text.replace(regex, `<span class="highlight">$1</span>`);
 }
 
-function viewFile(targetPath){
+function viewFile(targetPath) {
     //const filePath = $(this).data("path");
     const filePath = targetPath;
     console.log(filePath);
@@ -1505,23 +1533,23 @@ function viewFile(targetPath){
     }
 };
 
-async function triggerSync(syncData,manual = false) {
+async function triggerSync(syncData, manual = false) {
     if (isSyncing) {
         console.log("⚠️ Sync already in progress, skipping...");
         if (manual) showValidation("Sync already in progress.", "warning");
         return;
     }
-    
+
     isSyncing = true;
     console.log(manual ? "🔄 Manual sync started..." : "🔄 Auto sync started...");
     console.log(syncData);
     try {
-        
+
         if (!customer_data || !domain_data || !user_data) {
             console.error("Missing customer or domain or User data !");
             return;
         }
-        
+
 
         const result = await window.electronAPI.autoSync({
             customer_id: customer_data.id,
@@ -1543,11 +1571,11 @@ async function triggerSync(syncData,manual = false) {
 
 function startAutoSync(syncData) {
     if (autoSyncInterval) clearInterval(autoSyncInterval); // avoid duplicates
-    autoSyncInterval = setInterval(() => triggerSync(syncData,false), 2 * 60 * 1000);
+    autoSyncInterval = setInterval(() => triggerSync(syncData, false), 2 * 60 * 1000);
 }
 
 function tick(ms = 16) {
-  return new Promise(res => setTimeout(res, ms));
+    return new Promise(res => setTimeout(res, ms));
 }
 
 function showLoader() {
@@ -1560,11 +1588,11 @@ function showLoader() {
 }
 
 function hideLoader() {
-  $("#loader-overlay").addClass("hidden");
-  $("#file-list .inline-loader").remove();
+    $("#loader-overlay").addClass("hidden");
+    $("#file-list .inline-loader").remove();
 }
 
-function hideMiddleSection(){
+function hideMiddleSection() {
     const selectedCount = $(".file-item.selected").length;
     if (selectedCount > 0) {
         $(".middle-section").removeClass("hidden");
@@ -1621,15 +1649,15 @@ async function loadFilesYes(dirPath, reset = false) {
     //await loadDriveItems(targetDir);
 
     const local_stored = localStorage.getItem("customer_data");
-       
-    if(local_stored){
+
+    if (local_stored) {
         customer_data = JSON.parse(localStorage.getItem("customer_data"));
         domain_data = JSON.parse(localStorage.getItem("domain_data"));
         user_data = JSON.parse(localStorage.getItem("user_data"));
-    }else{
-        customer_data  = syncData.customer_data; 
-        domain_data  = syncData.domain_data; 
-        user_data  = syncData.user_data; 
+    } else {
+        customer_data = syncData.customer_data;
+        domain_data = syncData.domain_data;
+        user_data = syncData.user_data;
     }
 
     // Show loader and allow a paint before heavy work
@@ -1651,7 +1679,7 @@ async function loadFilesYes(dirPath, reset = false) {
         //     $("#breadcrumb").html(buildBreadcrumb(currentDir));
         // }
 
-         const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
+        const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1661,7 +1689,7 @@ async function loadFilesYes(dirPath, reset = false) {
             })
         });
         const iconMap = await res_icon.json();
-        
+
         // Append batch of items
         result.items.forEach(item => {
             //const icon = getFileIcon(item.name, item.isDirectory);
@@ -1672,7 +1700,7 @@ async function loadFilesYes(dirPath, reset = false) {
 
             if (item.isDirectory) {
                 // Use folder icon
-                if(iconMap.data['folder'].type == 'path'){
+                if (iconMap.data['folder'].type == 'path') {
                     icon = iconMap.data['folder'].value;
                 }
 
@@ -1702,7 +1730,7 @@ async function loadFilesYes(dirPath, reset = false) {
                         iconHTML = `${defaultIcon.value}`;
                     }
                 }
-                
+
             }
 
 
@@ -1722,8 +1750,7 @@ async function loadFilesYes(dirPath, reset = false) {
             const isListView = $("#file-list").hasClass("list-view");
             const div = $(`
             <div class="file-item">
-                ${
-                isListView
+                ${isListView
                     ? `<div class="check-icon"></div>
                     <div class="file-icon">${iconHTML}</div>
                     <div class="file-name" title="${item.name}">${item.name}</div>
@@ -1918,7 +1945,7 @@ async function loadFiles(dirPath, reset = false, filterPath = null) {
 
             /* 🔍 SEARCH FILTER LOGIC */
 
-             if (activeSearchFilter) {
+            if (activeSearchFilter) {
                 const filterNorm = activeSearchFilter.replace(/\\/g, "/");
                 const itemNorm = item.path.replace(/\\/g, "/");
                 const filterName = filterNorm.split("/").pop();
@@ -1972,8 +1999,7 @@ async function loadFiles(dirPath, reset = false, filterPath = null) {
 
             const div = $(`
             <div class="file-item">
-                ${
-                isListView
+                ${isListView
                     ? `<div class="check-icon"></div>
                     <div class="file-icon">${iconHTML}</div>
                     <div class="file-name" title="${item.name}">${item.name}</div>
@@ -2077,8 +2103,8 @@ function buildBreadcrumb1(fullPath) {
 
     return parts.map((p, i) => {
         // For first breadcrumb → data-path="#"
-        const subPath = i === 0 
-            ? "#" 
+        const subPath = i === 0
+            ? "#"
             : parts.slice(0, i + 1).join("\\") + "\\";
 
         return `<span class="crumb" data-path="${subPath}">${p}</span>`;
@@ -2147,16 +2173,16 @@ function buildBreadcrumb(fullPath) {
 }
 
 
- // --- Render File List ---
+// --- Render File List ---
 function renderFileList(selector, files) {
     const container = $(selector);
     container.empty();
     if (!files || files.length === 0) {
-      container.append('<li>No files found</li>');
-      return;
+        container.append('<li>No files found</li>');
+        return;
     }
     files.forEach(f => container.append(`<li>${f.file_name}</li>`));
-  }
+}
 
 function renderTree(containerSelector, files) {
     const container = $(containerSelector);
@@ -2180,7 +2206,7 @@ function renderTree(containerSelector, files) {
     container.append(html);
 
     // Optional: toggle folder expand/collapse
-    container.find('.folder').click(function(e) {
+    container.find('.folder').click(function (e) {
         e.stopPropagation();
         $(this).siblings('ul').slideToggle();
         $(this).toggleClass('expanded');
@@ -2214,7 +2240,7 @@ async function loadDriveItems(path, fromHistory = false, filterPath = null) {
     currentDir = path;
 
     // LOAD DIRECTORY
-    await loadFiles(path, true,filterPath);
+    await loadFiles(path, true, filterPath);
 
     if (!fromHistory) {
 
@@ -2239,11 +2265,11 @@ async function initFirstPath(path) {
     currentDir = path;
 }
 
-function openFolder(targetPath,type){
+function openFolder(targetPath, type) {
     if (targetPath) loadFiles(targetPath, true);
 }
 
-function openPreview(filePath,type) { 
+function openPreview(filePath, type) {
 
     const ext = filePath.split(".").pop().toLowerCase();
 
@@ -2263,7 +2289,7 @@ function openPreview(filePath,type) {
         pdfContainer.innerHTML = "";          // clear previous PDF pages
         pdfContainer.classList.remove("hidden");
         openPDF(filePath);
-    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx", "csv", "zip","rar","gz","cad","txt"].includes(ext)) {
+    } else if (["xls", "xlsx", "doc", "docx", "ppt", "pptx", "csv", "zip", "rar", "gz", "cad", "txt"].includes(ext)) {
         // 🔹 Office → placeholder
         officePreview.classList.remove("hidden");
         pdfContainer.classList.add("hidden");
@@ -2302,7 +2328,7 @@ async function deleteFile(targetPath, type) {
     });
 
     if (result.success) {
-        showValidation("Deleted successfully","success");
+        showValidation("Deleted successfully", "success");
         setTimeout(() => {
             loadDriveItems(history[currentIndex], true);
         }, 3000);
@@ -2456,7 +2482,7 @@ function getIconHTMLForItem(item, iconMap) {
 
 
 async function renderResults(results, query) {
-    const config = await  window.electronAPI.getAppConfig();
+    const config = await window.electronAPI.getAppConfig();
     console.log(config);
     syncData = await window.electronAPI.getSyncData();
     //startAutoSync(syncData);
@@ -2471,9 +2497,9 @@ async function renderResults(results, query) {
         return;
     }
 
-   //${buildBreadcrumb(currentDirectory)}
+    //${buildBreadcrumb(currentDirectory)}
 
-   const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
+    const res_icon = await fetch(apiUrl + '/api/folder-files-icons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2491,7 +2517,7 @@ async function renderResults(results, query) {
         const parent = parts.join("/");
         const depth = parts.length;
 
-        const currentDirectory  = currentDir + '/' + parent;
+        const currentDirectory = currentDir + '/' + parent;
         const currentnormalized = currentDir + '/' + normalized;
 
         const isFileItem = isFile(name);
@@ -2504,7 +2530,7 @@ async function renderResults(results, query) {
             isDirectory: !isFileItem
         };
 
-         const iconHTML = getIconHTMLForItem(itemData, iconMap);
+        const iconHTML = getIconHTMLForItem(itemData, iconMap);
 
         item.innerHTML = `
         <div class="search-row">
@@ -2678,48 +2704,48 @@ function formatUnixTimestamp(ts) {
 }
 
 
-async function checkServer(syncEnabled,online,syncData) {
-  try {
-    const res = await fetch(`${apiUrl}/api/ping`, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-      cache: "no-store"
-    });
+async function checkServer(syncEnabled, online, syncData) {
+    try {
+        const res = await fetch(`${apiUrl}/api/ping`, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+            cache: "no-store"
+        });
 
-    if (!res.ok) throw new Error("Server not reachable");
+        if (!res.ok) throw new Error("Server not reachable");
 
-    const data = await res.json();
+        const data = await res.json();
 
-    updateUI({
-      enabled: syncEnabled,
-      online: online,
-      server: true,
-      serverTime: data.data?.server_time,
-      syncData :syncData
-    });
+        updateUI({
+            enabled: syncEnabled,
+            online: online,
+            server: true,
+            serverTime: data.data?.server_time,
+            syncData: syncData
+        });
 
-  } catch (err) {
-    updateUI({
-      enabled: syncEnabled,
-      online: online,
-      server: false,
-      syncData :syncData
-    });
-  }
+    } catch (err) {
+        updateUI({
+            enabled: syncEnabled,
+            online: online,
+            server: false,
+            syncData: syncData
+        });
+    }
 }
 
 
 function startPing(syncData) {
-  if (pingInterval) return;
+    if (pingInterval) return;
 
-  pingInterval = setInterval(() => {
-    checkServer(sync_toggle.checked, navigator.onLine,syncData);
-  }, 15_000);
+    pingInterval = setInterval(() => {
+        checkServer(sync_toggle.checked, navigator.onLine, syncData);
+    }, 15_000);
 }
 
 function stopPing() {
-  clearInterval(pingInterval);
-  pingInterval = null;
+    clearInterval(pingInterval);
+    pingInterval = null;
 }
 
 

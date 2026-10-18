@@ -6,6 +6,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
     //chooseFolder: async () => await ipcRenderer.invoke('dialog:openFolder'),
     getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
+    getSavedSecretKey: () => ipcRenderer.invoke('get-saved-secret-key'),
+    saveSavedSecretKey: (secretKey) => ipcRenderer.invoke('save-saved-secret-key', secretKey),
+    deleteSavedSecretKey: () => ipcRenderer.invoke('delete-saved-secret-key'),
     getApiUrl: () => ipcRenderer.invoke('get-api-url'),
     getAppConfig: () => ipcRenderer.invoke('getAppConfig'),
     //listFiles: (path) => ipcRenderer.invoke('fs:listFiles', path),

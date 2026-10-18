@@ -1023,6 +1023,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    $(document).on("click", "#deleteSecretKeyOption", async function (e) {
+        e.stopPropagation();
+        if (confirm("Are you sure you want to delete the saved Secret Key? You will need to enter it again on your next login.")) {
+            try {
+                if (window.electronAPI && window.electronAPI.deleteSavedSecretKey) {
+                    await window.electronAPI.deleteSavedSecretKey();
+                }
+                localStorage.removeItem('secret_key');
+                alert("Saved Secret Key deleted successfully.");
+                $("#deleteSecretKeyOption").slideUp(200);
+            } catch (err) {
+                console.error("Error deleting secret key:", err);
+                alert("Failed to delete secret key: " + (err.message || err));
+            }
+        }
+    });
+
+
 
     $("#grid-view").on("click", async function () {
         currentView = "grid";
@@ -1415,23 +1433,41 @@ function renderUsers(syncData, user_list = []) {
 
         li.innerHTML = `
             <div class="user-row">
-                ${avatarHTML}
-                <span class="user-name">${user.name}</span>
-                ${user.active
-                ? `
-                <span class="check" title="Active">✔</span>
-                <span class="logout-icon" 
+                <div class="user-info-left">
+                    ${avatarHTML}
+                    <span class="user-name">${user.name}</span>
+                </div>
+                ${user.active ? `<span class="check" title="Active">✔</span>` : ''}
+            </div>
+            ${user.active
+            ? `
+            <div class="user-dropdown-actions">
+                <div class="delete-secret-key-option" id="deleteSecretKeyOption" title="Delete saved secret key">
+                    <i class="fas fa-key"></i>
+                    <span>Delete Secret Key</span>
+                </div>
+                <div class="logout-icon dropdown-logout-btn" 
                       title="Logout user" 
                       data-user-id="${user.id}">
                     <i class="fa fa-sign-out-alt"></i>
-                </span>
-              `
-                : ''
-            }
+                    <span>Logout</span>
+                </div>
             </div>
+            `
+            : ''
+        }
         `;
 
         userList.appendChild(li);
+
+        if (user.active && window.electronAPI && window.electronAPI.getSavedSecretKey) {
+            window.electronAPI.getSavedSecretKey().then(savedKey => {
+                if (!savedKey) {
+                    const opt = li.querySelector("#deleteSecretKeyOption");
+                    if (opt) opt.style.display = "none";
+                }
+            }).catch(() => {});
+        }
     });
 }
 

@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, safeStorage } = require('electron');
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
@@ -2632,6 +2632,91 @@ ipcMain.handle('get-secret-key', async () => {
 
 ipcMain.handle('get-api-url', async () => {
     return API_URL || '';
+});
+
+// Helper functions for encrypted secret_key storage at app.getPath("userData")
+function getSecretKeyFilePath() {
+    return path.join(app.getPath('userData'), 'secret_key');
+}
+
+function getSavedSecretKeyFromFile() {
+    const filePath = getSecretKeyFilePath();
+    try {
+        if (!fs.existsSync(filePath)) {
+            return null;
+        }
+        const buffer = fs.readFileSync(filePath);
+        if (!buffer || buffer.length === 0) {
+            return null;
+        }
+
+        // Check fallback crypto prefix
+        if (buffer.length > 9 && buffer.subarray(0, 9).toString('utf8') === 'FALLBACK:') {
+            const iv = buffer.subarray(9, 25);
+            const data = buffer.subarray(25);
+            const key = crypto.createHash('sha256').update(SECRET_KEY || 'centris_key').digest();
+            const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+            return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+        }
+
+        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+            return safeStorage.decryptString(buffer);
+        } else {
+            console.warn("⚠️ safeStorage is not available to decrypt secret_key");
+        }
+    } catch (err) {
+        console.error("⚠️ Error reading/decrypting secret_key file:", err);
+    }
+    return null;
+}
+
+function saveSecretKeyToFile(secretKey) {
+    if (!secretKey || typeof secretKey !== 'string') return false;
+    const filePath = getSecretKeyFilePath();
+    try {
+        let encryptedBuffer;
+        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+            encryptedBuffer = safeStorage.encryptString(secretKey.trim());
+        } else {
+            const key = crypto.createHash('sha256').update(SECRET_KEY || 'centris_key').digest();
+            const iv = crypto.randomBytes(16);
+            const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+            const enc = Buffer.concat([cipher.update(secretKey.trim(), 'utf8'), cipher.final()]);
+            encryptedBuffer = Buffer.concat([Buffer.from('FALLBACK:'), iv, enc]);
+        }
+        fs.writeFileSync(filePath, encryptedBuffer);
+        console.log("💾 Successfully saved encrypted secret_key to:", filePath);
+        return true;
+    } catch (err) {
+        console.error("⚠️ Error saving encrypted secret_key:", err);
+        return false;
+    }
+}
+
+function deleteSecretKeyFile() {
+    const filePath = getSecretKeyFilePath();
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log("🗑️ Successfully deleted secret_key file:", filePath);
+        }
+        return true;
+    } catch (err) {
+        console.error("⚠️ Error deleting secret_key file:", err);
+        return false;
+    }
+}
+
+ipcMain.handle('get-saved-secret-key', async () => {
+    return getSavedSecretKeyFromFile();
+});
+
+ipcMain.handle('save-saved-secret-key', async (_event, secretKey) => {
+    return saveSecretKeyToFile(secretKey);
+});
+
+ipcMain.handle('delete-saved-secret-key', async () => {
+    return deleteSecretKeyFile();
 });
 
 // Receive and store customer/domain IDs from renderer

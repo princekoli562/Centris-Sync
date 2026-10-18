@@ -40,9 +40,14 @@ window.initializeGlobals = async function () {
         // Wait for secureAPI to return the generated secret key
         window.secret_gen_key = await window.secureAPI.getSecretKey();
 
-        // Get secret key from input element (if present)
+        // Get secret key from input element (if present) or saved file
         const input = document.getElementById("secret_key");
-        if (input) window.secret_key = input.value;
+        if (input && input.value) {
+            window.secret_key = input.value;
+        } else if (window.electronAPI && window.electronAPI.getSavedSecretKey) {
+            const savedKey = await window.electronAPI.getSavedSecretKey();
+            if (savedKey) window.secret_key = savedKey;
+        }
 
         // Decrypt the API URL only if both keys exist
         if (window.secret_key && window.secret_gen_key) {

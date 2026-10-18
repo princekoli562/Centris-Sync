@@ -1,8 +1,41 @@
 let secret_gen_key;
+let savedSecretKey = null;
 
 window.electronAPI.getSecretKey().then((data) => {
     secret_gen_key = data;
 });
+
+async function checkSavedSecretKey() {
+    try {
+        if (window.electronAPI && window.electronAPI.getSavedSecretKey) {
+            const savedKey = await window.electronAPI.getSavedSecretKey();
+            if (savedKey && typeof savedKey === 'string' && savedKey.trim() !== '') {
+                savedSecretKey = savedKey.trim();
+                const secretKeyInput = document.getElementById("secret_key");
+                if (secretKeyInput) {
+                    secretKeyInput.value = savedSecretKey;
+                }
+                const secretKeyGroup = document.getElementById("secretKeyGroup");
+                if (secretKeyGroup) {
+                    secretKeyGroup.style.display = "none";
+                }
+            } else {
+                const secretKeyGroup = document.getElementById("secretKeyGroup");
+                if (secretKeyGroup) {
+                    secretKeyGroup.style.display = "block";
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Failed to check saved secret key:", e);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkSavedSecretKey);
+} else {
+    checkSavedSecretKey();
+}
 
  // start authentication
 
@@ -10,7 +43,12 @@ const validationBox = document.getElementById('validationBox');
     
 document.getElementById('sync').addEventListener('click', async () => {
     // get site url from secret key
-    let secret_key = document.getElementById("secret_key").value;
+    let secretKeyInput = document.getElementById("secret_key");
+    let secret_key = secretKeyInput ? secretKeyInput.value.trim() : "";
+    if (!secret_key && savedSecretKey) {
+        secret_key = savedSecretKey;
+        if (secretKeyInput) secretKeyInput.value = savedSecretKey;
+    }
     var apiUrl = CryptoAESdecrypt(secret_key,secret_gen_key);
     if(apiUrl.length <= 0) {
        // console.log("invalid secret key provided");
@@ -34,6 +72,11 @@ document.getElementById('sync').addEventListener('click', async () => {
 
         // Success
         showValidation("Login successful!", 'success');
+
+        // Save secret key to encrypted file at app.getPath('userData')
+        if (window.electronAPI && window.electronAPI.saveSavedSecretKey) {
+            await window.electronAPI.saveSavedSecretKey(secret_key);
+        }
 
         window.electronAPI.saveSession({
             user: username,

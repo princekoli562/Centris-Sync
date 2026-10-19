@@ -5594,6 +5594,24 @@ ipcMain.handle('createFolderInDrive', async (event, sourceFolderPath, mappedDriv
     }
 });
 
+// Create a new empty folder inside a directory
+ipcMain.handle("createEmptyFolder", async (event, parentDir, folderName) => {
+    try {
+        if (!parentDir || !folderName) {
+            return { success: false, error: "Missing parent directory or folder name." };
+        }
+        const fullPath = path.join(parentDir, folderName);
+        if (fs.existsSync(fullPath)) {
+            return { success: false, error: "A folder with this name already exists." };
+        }
+        ensureDirSync(fullPath);
+        return { success: true, fullPath };
+    } catch (err) {
+        console.error("createEmptyFolder error:", err);
+        return { success: false, error: err.message };
+    }
+});
+
 ipcMain.handle("basename", async (event, fullPath) => {
     return path.basename(fullPath);
 });

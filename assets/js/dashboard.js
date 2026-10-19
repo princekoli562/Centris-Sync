@@ -691,6 +691,102 @@ document.addEventListener('DOMContentLoaded', async () => {
         $(".upload-menu").removeClass("show");
     });
 
+    /* ============================================================
+       CREATE NEW EMPTY FOLDER
+    ============================================================ */
+    function openNewFolderModal() {
+        $(".upload-menu").removeClass("show");
+        $("#newFolderNameInput").val("New Folder");
+        $("#newFolderError").text("");
+        $("#newFolderModal").removeClass("hidden");
+        setTimeout(() => {
+            $("#newFolderNameInput").focus().select();
+        }, 100);
+    }
+
+    function closeNewFolderModal() {
+        $("#newFolderModal").addClass("hidden");
+        $("#newFolderError").text("");
+    }
+
+    $(document).on("click", "#createFolderBtn, #createFolderMenuOption", function (e) {
+        e.stopPropagation();
+        openNewFolderModal();
+    });
+
+    $(document).on("click", "#closeNewFolderModal, #cancelNewFolderBtn", function () {
+        closeNewFolderModal();
+    });
+
+    $(document).on("click", "#newFolderModal", function (e) {
+        if ($(e.target).is("#newFolderModal")) {
+            closeNewFolderModal();
+        }
+    });
+
+    $(document).on("keydown", "#newFolderNameInput", function (e) {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            $("#confirmNewFolderBtn").click();
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closeNewFolderModal();
+        }
+    });
+
+    $(document).on("click", "#confirmNewFolderBtn", async function () {
+        const folderName = $("#newFolderNameInput").val().trim();
+        const errorEl = $("#newFolderError");
+
+        if (!folderName) {
+            errorEl.text("Please enter a folder name.");
+            return;
+        }
+
+        const illegalCharsRegex = /[\\/:*?"<>|]/;
+        if (illegalCharsRegex.test(folderName)) {
+            errorEl.text('Folder name cannot contain \\ / : * ? " < > |');
+            return;
+        }
+
+        let targetDir = currentDir;
+        if (!targetDir) {
+            const crumbs = document.querySelectorAll('#breadcrumb .crumb');
+            if (crumbs.length > 0) {
+                targetDir = crumbs[crumbs.length - 1].getAttribute("data-path");
+            } else {
+                targetDir = await window.electronAPI.getMappedDrive();
+            }
+        }
+
+        if (!targetDir) {
+            errorEl.text("Unable to determine current drive location.");
+            return;
+        }
+
+        try {
+            const result = await window.electronAPI.createEmptyFolder(targetDir, folderName);
+            if (!result.success) {
+                errorEl.text(result.error || "Failed to create folder.");
+                return;
+            }
+
+            closeNewFolderModal();
+            showValidation(`Folder "${folderName}" created successfully!`, "success", 2500);
+
+            // Refresh current folder view
+            await loadDriveItems(currentDir, true);
+
+            // Trigger sync if enabled
+            if (syncData) {
+                triggerSync(syncData, false);
+            }
+        } catch (err) {
+            console.error("createEmptyFolder error:", err);
+            errorEl.text("Error: " + err.message);
+        }
+    });
+
     $(document).on("click", ".delete-btn", function (e) {
         e.preventDefault();
 

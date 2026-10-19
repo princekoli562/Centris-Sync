@@ -22,10 +22,12 @@
         <h2>My Drive</h2>
         <button id="openDrive" class="btnload">📁 My Files </button>
         <button id="uploadFolder" class="btnload">⬆️ Upload Folders / Files</button>
-            <div id="uploadMenu" class="upload-menu">
+        <div id="uploadMenu" class="upload-menu">
             <div class="menu-item" id="uploadFolderOption">📁 Upload Folder</div>
             <div class="menu-item" id="uploadFileOption">📄 Upload File</div>
+            <div class="menu-item" id="createFolderMenuOption">📁➕ Create New Folder</div>
         </div>
+        <button id="createFolderBtn" class="btnload">📁➕ Create New Folder</button>
         <button id="SyncDrive" class="btnload">🔄 Sync Drive</button>
         <!-- <button id="stopSyncBtn" style="display:block; background:#ff4444; color:white; padding:8px 16px; border:none; border-radius:6px;">
             Stop Sync
@@ -219,6 +221,25 @@
 
     <div class="pdf-body">
         <canvas id="pdfCanvas"></canvas>
+    </div>
+</div>
+
+<!-- Create New Folder Modal -->
+<div id="newFolderModal" class="folder-modal hidden">
+    <div class="folder-modal-content">
+        <div class="folder-modal-header">
+            <h3><i class="fas fa-folder-plus"></i> Create New Folder</h3>
+            <button id="closeNewFolderModal" class="close-modal-btn">&times;</button>
+        </div>
+        <div class="folder-modal-body">
+            <label for="newFolderNameInput">Folder Name:</label>
+            <input type="text" id="newFolderNameInput" placeholder="Enter folder name..." autocomplete="off" />
+            <div id="newFolderError" class="folder-modal-error"></div>
+        </div>
+        <div class="folder-modal-footer">
+            <button id="cancelNewFolderBtn" class="modal-btn-cancel">Cancel</button>
+            <button id="confirmNewFolderBtn" class="modal-btn-create">Create</button>
+        </div>
     </div>
 </div>
 <footer>

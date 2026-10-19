@@ -58,14 +58,9 @@ function focusAppropriateInput() {
         if (window.electronAPI && window.electronAPI.focusWindow) {
             window.electronAPI.focusWindow();
         }
-        const secretKeyGroup = document.getElementById("secretKeyGroup");
-        const isSecretVisible = secretKeyGroup && window.getComputedStyle(secretKeyGroup).display !== "none";
-        const targetInput = isSecretVisible
-            ? document.getElementById("secret_key")
-            : document.getElementById("username");
-
-        if (targetInput) {
-            targetInput.focus();
+        const usernameInput = document.getElementById("username");
+        if (usernameInput) {
+            usernameInput.focus();
         }
     } catch (err) {
         console.warn("focusAppropriateInput error:", err);

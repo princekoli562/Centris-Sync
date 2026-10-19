@@ -1,5 +1,15 @@
 
 const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, safeStorage } = require('electron');
+const isDev = !app.isPackaged;
+
+// In production (exe, portable, dmg), prevent console prompts from showing on main console
+if (!isDev) {
+    console.log = () => {};
+    console.info = () => {};
+    console.debug = () => {};
+    console.warn = () => {};
+}
+
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
@@ -143,7 +153,7 @@ let syncData = {
     apiUrl: null,
 };
 
-const isDev = !app.isPackaged;
+// isDev is declared at top of main.js
 
 // const preloadPathgg = isDev
 //     ? path.join(__dirname, "preload.js")
@@ -253,47 +263,50 @@ function sendLogToRenderer(channel, status, message) {
 }
 
 
-// Monkey-patch console.log to also send to renderer
-const originalLog = console.log;
+// Monkey-patch console.log to also send to renderer (development only)
+if (isDev) {
+    const originalLog = console.log;
 
-console.log = (...args) => {
-    originalLog(...args);
+    console.log = (...args) => {
+        originalLog(...args);
 
-    // Never forward logs while quitting
-    if (app.isQuitting) return;
+        // Never forward logs while quitting
+        if (app.isQuitting) return;
 
-    try {
-        if (
-            !win ||
-            win.isDestroyed() ||
-            !win.webContents ||
-            win.webContents.isDestroyed()
-        ) {
-            return;
-        }
+        try {
+            if (
+                !win ||
+                win.isDestroyed() ||
+                !win.webContents ||
+                win.webContents.isDestroyed()
+            ) {
+                return;
+            }
 
-        const message = args
-            .map(a => {
-                if (typeof a === "object") {
-                    try {
-                        return JSON.stringify(a);
-                    } catch {
-                        return "[Object]";
+            const message = args
+                .map(a => {
+                    if (typeof a === "object") {
+                        try {
+                            return JSON.stringify(a);
+                        } catch {
+                            return "[Object]";
+                        }
                     }
-                }
-                return String(a);
-            })
-            .join(" ");
-        //sendLogToRenderer(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
-        //win.webContents.send("log", message);
-        //"main-log", "info",
-        //sendLogToRenderer('main-log', message);
-        sendLogToRenderer('main-log', 'info', message);
+                    return String(a);
+                })
+                .join(" ");
+            sendLogToRenderer('main-log', 'info', message);
 
-    } catch (err) {
-        originalLog("Log mirror error:", err.message);
-    }
-};
+        } catch (err) {
+            originalLog("Log mirror error:", err.message);
+        }
+    };
+} else {
+    console.log = () => {};
+    console.info = () => {};
+    console.debug = () => {};
+    console.warn = () => {};
+}
 
 // console.log = (...args) => {
 //     // Always print to main console
@@ -339,7 +352,8 @@ const createWindow = async () => {
             preload: preloadPath,
             contextIsolation: true,
             enableRemoteModule: false,
-            nodeIntegration: false
+            nodeIntegration: false,
+            additionalArguments: [isDev ? '--is-dev=true' : '--is-dev=false']
             //webSecurity: false
         },
         icon: iconPath
@@ -385,6 +399,11 @@ const createWindow = async () => {
     });
 
     win.webContents.on('did-finish-load', handleSessionCheck);
+    win.webContents.on('did-finish-load', () => {
+        if (!isDev && win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+            win.webContents.executeJavaScript('if (typeof console !== "undefined") { console.log = () => {}; console.info = () => {}; console.debug = () => {}; console.warn = () => {}; }').catch(() => {});
+        }
+    });
     //win.webContents.on('did-navigate', handleSessionCheck);
 
     // 🧩 Handle navigation from renderer

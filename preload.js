@@ -1,9 +1,18 @@
-const { contextBridge, ipcRenderer } = require('electron');
-// const path = require('path');
-// const fs = require('fs');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
+const isDev = process.argv.includes('--is-dev=true');
 
+if (!isDev) {
+    console.log = () => {};
+    console.info = () => {};
+    console.debug = () => {};
+    console.warn = () => {};
+    try {
+        webFrame.executeJavaScript('if (typeof console !== "undefined") { console.log = () => {}; console.info = () => {}; console.debug = () => {}; console.warn = () => {}; }');
+    } catch { }
+}
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    isDev: isDev,
     //chooseFolder: async () => await ipcRenderer.invoke('dialog:openFolder'),
     getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
     getSavedSecretKey: () => ipcRenderer.invoke('get-saved-secret-key'),

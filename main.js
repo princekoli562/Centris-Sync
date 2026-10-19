@@ -393,7 +393,10 @@ const createWindow = async () => {
     win.on('close', (event) => {
         if (!app.isQuitting) {
             event.preventDefault();
-            win.hide(); // keep running in tray
+            win.hide(); // keep running in task tray
+            if (!tray || tray.isDestroyed()) {
+                createTray();
+            }
             return false;
         }
     });
@@ -636,28 +639,82 @@ const createWindow = async () => {
 
 };
 
-function createTray() {
-    //tray = new Tray(path.join(__dirname, 'assets/images/favicon.png'));
-    const trayIconPath = isDev
-        ? path.join(__dirname, "assets/images/favicon.png")                // dev
-        : path.join(process.resourcesPath, "app.asar", "assets/images/favicon.png");
+function getTrayIconPath() {
+    const iconName = isWindows ? "favicon.ico" : "favicon.png";
+    const devPath = path.join(__dirname, "assets", "images", iconName);
+    if (fs.existsSync(devPath)) return devPath;
 
-    const contextMenu = Menu.buildFromTemplate([
-        {
-            label: 'Open Centris Drive',
-            click: () => win.show(),
-        },
-        { type: 'separator' },
-        {
-            label: 'Exit',
-            click: () => {
-                app.isQuitting = true;
-                app.quit();
+    const prodPath = path.join(process.resourcesPath, "app.asar", "assets", "images", iconName);
+    if (fs.existsSync(prodPath)) return prodPath;
+
+    const fallbackDev = path.join(__dirname, "assets", "images", "favicon.png");
+    if (fs.existsSync(fallbackDev)) return fallbackDev;
+
+    return path.join(process.resourcesPath, "app.asar", "assets", "images", "favicon.png");
+}
+
+function restoreAndFocusWindow() {
+    if (!win || win.isDestroyed()) {
+        createWindow();
+    } else {
+        if (!win.isVisible()) {
+            win.show();
+        }
+        if (win.isMinimized()) {
+            win.restore();
+        }
+        win.show();
+        win.focus();
+        if (win.webContents && !win.webContents.isDestroyed()) {
+            win.webContents.focus();
+        }
+    }
+}
+
+function createTray() {
+    if (tray && !tray.isDestroyed()) return;
+
+    try {
+        const trayIconPath = getTrayIconPath();
+        tray = new Tray(trayIconPath);
+
+        const contextMenu = Menu.buildFromTemplate([
+            {
+                label: 'Open Centris Drive',
+                click: () => {
+                    restoreAndFocusWindow();
+                },
             },
-        },
-    ]);
-    tray.setToolTip('Centris Drive');
-    tray.setContextMenu(contextMenu);
+            { type: 'separator' },
+            {
+                label: 'Exit Centris Drive',
+                click: async () => {
+                    app.isQuitting = true;
+                    try {
+                        await fullLogoutCleanup();
+                    } catch (e) {
+                        console.error("Cleanup on exit error:", e);
+                    }
+                    app.quit();
+                },
+            },
+        ]);
+
+        tray.setToolTip('Centris Drive - Running in background');
+        tray.setContextMenu(contextMenu);
+
+        tray.on('click', () => {
+            restoreAndFocusWindow();
+        });
+
+        tray.on('double-click', () => {
+            restoreAndFocusWindow();
+        });
+
+        console.log("✅ System task tray created successfully");
+    } catch (err) {
+        console.error("Failed to create system tray:", err);
+    }
 }
 
 
@@ -2712,7 +2769,7 @@ app.whenReady().then(() => {
         }
     });
 
-    //createTray();
+    createTray();
 
     // Prevent creating new windows unnecessarily
     // app.on('activate', () => {
@@ -8113,12 +8170,11 @@ app.on("before-quit", async (event) => {
 });
 
 
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
+app.on('window-all-closed', (event) => {
+    // Keep app running in task tray unless user explicitly exits
+    if (app.isQuitting) {
         app.quit();
-    } else {
-        // app.quit();        // graceful
-        // app.exit(0);
+    } else if (event) {
+        event.preventDefault();
     }
-
 });

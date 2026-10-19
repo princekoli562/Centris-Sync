@@ -1109,16 +1109,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log(history);
     });
 
-    $(document).on("click", ".logout-icon", async function (e) {
-        if (confirm("Logout this user?")) {
-            await window.electronAPI.fullLogoutCleanup();
-            await SessionLogout();
-            await new Promise((resolve) => setTimeout(resolve, 150));
-            const autoExpireVal = true; // or from storage/config
-            const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);
-            // call API / IPC / AJAX here
+    // In-app Logout Confirmation Modal (replaces native confirm() to preserve window focus)
+    const logoutConfirmModal = document.getElementById("logoutConfirmModal");
+    const closeLogoutConfirmModal = document.getElementById("closeLogoutConfirmModal");
+    const cancelLogoutConfirmBtn = document.getElementById("cancelLogoutConfirmBtn");
+    const doLogoutConfirmBtn = document.getElementById("doLogoutConfirmBtn");
+
+    function openLogoutModal() {
+        if (logoutConfirmModal) {
+            logoutConfirmModal.classList.remove("hidden");
         }
+    }
+
+    function closeLogoutModal() {
+        if (logoutConfirmModal) {
+            logoutConfirmModal.classList.add("hidden");
+        }
+    }
+
+    if (closeLogoutConfirmModal) {
+        closeLogoutConfirmModal.addEventListener("click", closeLogoutModal);
+    }
+    if (cancelLogoutConfirmBtn) {
+        cancelLogoutConfirmBtn.addEventListener("click", closeLogoutModal);
+    }
+    if (logoutConfirmModal) {
+        logoutConfirmModal.addEventListener("click", (e) => {
+            if (e.target === logoutConfirmModal) closeLogoutModal();
+        });
+    }
+
+    $(document).on("click", ".logout-icon", function (e) {
+        e.stopPropagation();
+        openLogoutModal();
     });
+
+    if (doLogoutConfirmBtn) {
+        doLogoutConfirmBtn.addEventListener("click", async () => {
+            closeLogoutModal();
+            doLogoutConfirmBtn.disabled = true;
+            doLogoutConfirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging out...';
+            try {
+                await window.electronAPI.fullLogoutCleanup();
+                await SessionLogout();
+                await new Promise((resolve) => setTimeout(resolve, 150));
+                const autoExpireVal = true;
+                await window.electronAPI.checkSessionAndRedirect(autoExpireVal);
+            } catch (err) {
+                console.error("Logout error:", err);
+                doLogoutConfirmBtn.disabled = false;
+                doLogoutConfirmBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> Logout';
+            }
+        });
+    }
 
     $(document).on("click", "#deleteSecretKeyOption", async function (e) {
         e.stopPropagation();
@@ -1352,6 +1395,141 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initial load of root drive properties
     loadRootDriveProperties();
+
+    // ==========================================
+    // 🚀 APP VERSION & UPDATE UI HANDLERS
+    // ==========================================
+    const dropdownVersionText = document.getElementById("dropdownVersionText");
+    const aboutAppVersion = document.getElementById("aboutAppVersion");
+    const aboutPlatform = document.getElementById("aboutPlatform");
+    const aboutArch = document.getElementById("aboutArch");
+    const aboutUpdateStatus = document.getElementById("aboutUpdateStatus");
+    const aboutModal = document.getElementById("aboutModal");
+    const closeAboutModal = document.getElementById("closeAboutModal");
+    const closeAboutModalBtn = document.getElementById("closeAboutModalBtn");
+    const appMenuBtn = document.getElementById("appMenuBtn");
+    const checkUpdateDropdownBtn = document.getElementById("checkUpdateDropdownBtn");
+    const checkUpdateModalBtn = document.getElementById("checkUpdateModalBtn");
+    const aboutUpdateProgressContainer = document.getElementById("aboutUpdateProgressBarContainer");
+    const aboutUpdateProgressBar = document.getElementById("aboutUpdateProgressBar");
+    const aboutUpdateProgressLabel = document.getElementById("aboutUpdateProgressLabel");
+
+    if (window.electronAPI && window.electronAPI.getAppVersion) {
+        window.electronAPI.getAppVersion().then(info => {
+            if (info && info.version) {
+                if (dropdownVersionText) dropdownVersionText.textContent = info.version;
+                if (aboutAppVersion) aboutAppVersion.textContent = info.version;
+                if (aboutPlatform) {
+                    const pName = info.platform === 'win32' ? 'Windows' : info.platform === 'darwin' ? 'macOS' : info.platform;
+                    aboutPlatform.textContent = pName;
+                }
+                if (aboutArch) aboutArch.textContent = info.arch || '-';
+            }
+        }).catch(() => {});
+    }
+
+    function openAboutModal() {
+        if (aboutModal) {
+            aboutModal.classList.remove("hidden");
+        }
+    }
+
+    function closeAboutModalView() {
+        if (aboutModal) {
+            aboutModal.classList.add("hidden");
+        }
+    }
+
+    if (appMenuBtn) {
+        appMenuBtn.addEventListener("click", () => {
+            openAboutModal();
+        });
+    }
+
+    if (closeAboutModal) {
+        closeAboutModal.addEventListener("click", closeAboutModalView);
+    }
+    if (closeAboutModalBtn) {
+        closeAboutModalBtn.addEventListener("click", closeAboutModalView);
+    }
+    if (aboutModal) {
+        aboutModal.addEventListener("click", (e) => {
+            if (e.target === aboutModal) closeAboutModalView();
+        });
+    }
+
+    async function triggerUpdateCheck() {
+        if (!window.electronAPI || !window.electronAPI.checkForUpdates) return;
+        if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Checking for updates...";
+        if (checkUpdateModalBtn) {
+            checkUpdateModalBtn.disabled = true;
+            checkUpdateModalBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+        }
+        if (checkUpdateDropdownBtn) {
+            checkUpdateDropdownBtn.disabled = true;
+            checkUpdateDropdownBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            const res = await window.electronAPI.checkForUpdates(true);
+            if (res && res.hasUpdate) {
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = `v${res.latestVersion} available!`;
+            } else if (res && res.success) {
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Up to date";
+            } else {
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Ready to check";
+            }
+        } catch (err) {
+            if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Check failed";
+        } finally {
+            if (checkUpdateModalBtn) {
+                checkUpdateModalBtn.disabled = false;
+                checkUpdateModalBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Check for Updates';
+            }
+            if (checkUpdateDropdownBtn) {
+                checkUpdateDropdownBtn.disabled = false;
+                checkUpdateDropdownBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Update';
+            }
+        }
+    }
+
+    if (checkUpdateDropdownBtn) {
+        checkUpdateDropdownBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            triggerUpdateCheck();
+        });
+    }
+
+    if (checkUpdateModalBtn) {
+        checkUpdateModalBtn.addEventListener("click", () => {
+            triggerUpdateCheck();
+        });
+    }
+
+    if (window.electronAPI && window.electronAPI.onUpdateStatus) {
+        window.electronAPI.onUpdateStatus((data) => {
+            if (!data) return;
+            if (data.status === 'checking') {
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Checking for updates...";
+            } else if (data.status === 'available') {
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = `v${data.latestVersion} available!`;
+            } else if (data.status === 'up-to-date') {
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Up to date";
+            } else if (data.status === 'downloading') {
+                openAboutModal();
+                if (aboutUpdateProgressContainer) aboutUpdateProgressContainer.style.display = "block";
+                if (aboutUpdateProgressBar) aboutUpdateProgressBar.value = data.percent || 0;
+                if (aboutUpdateProgressLabel) aboutUpdateProgressLabel.textContent = `Downloading update... ${data.percent || 0}%`;
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = `Downloading (${data.percent || 0}%)...`;
+            } else if (data.status === 'downloaded') {
+                if (aboutUpdateProgressContainer) aboutUpdateProgressContainer.style.display = "none";
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Downloaded. Ready to install.";
+            } else if (data.status === 'error') {
+                if (aboutUpdateProgressContainer) aboutUpdateProgressContainer.style.display = "none";
+                if (aboutUpdateStatus) aboutUpdateStatus.textContent = "Update check failed";
+            }
+        });
+    }
 
     const previewToggleBtn = document.getElementById("previewToggle");
     const mainContent = document.getElementById("main-content");

@@ -55,10 +55,18 @@ function initPasswordToggle() {
 
 function focusAppropriateInput() {
     try {
-        if (window.electronAPI && window.electronAPI.focusWindow) {
-            window.electronAPI.focusWindow();
-        }
         const usernameInput = document.getElementById("username");
+        const passwordInput = document.getElementById("password");
+        const secretKeyInput = document.getElementById("secret_key");
+
+        [usernameInput, passwordInput, secretKeyInput].forEach(inp => {
+            if (inp) {
+                inp.removeAttribute("disabled");
+                inp.removeAttribute("readonly");
+                inp.style.pointerEvents = "auto";
+            }
+        });
+
         if (usernameInput) {
             usernameInput.focus();
         }
@@ -82,12 +90,12 @@ function setupEnterKeySubmit() {
 }
 
 function initLoginPage() {
-    if (window.electronAPI && window.electronAPI.focusWindow) {
-        window.electronAPI.focusWindow();
-    }
     initPasswordToggle();
     setupEnterKeySubmit();
     checkSavedSecretKey();
+    setTimeout(() => {
+        focusAppropriateInput();
+    }, 80);
 }
 
 if (document.readyState === 'loading') {
@@ -100,11 +108,12 @@ window.addEventListener("focus", () => {
     focusAppropriateInput();
 });
 
-document.addEventListener("mousedown", () => {
-    if (window.electronAPI && window.electronAPI.focusWindow) {
-        window.electronAPI.focusWindow();
+// Explicitly handle click on inputs to ensure typing focus is immediately active
+document.addEventListener("click", (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+        e.target.focus();
     }
-}, { once: true });
+});
 
  // start authentication
 

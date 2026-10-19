@@ -23,10 +23,10 @@
                     <div class="login-inner-card">
                         <img src="assets/images/centris-drive.png">
                         <div id="validationBox" class="validation-box"></div>
-                        <form>
+                        <form onsubmit="return false;">
                             <div class="mb-3">
                                 <label for="username" class="form-label">Enter Username / Email</label>
-                                <input type="text" class="form-control" id="username" placeholder="Enter Username Or Email">
+                                <input type="text" class="form-control" id="username" placeholder="Enter Username Or Email" autofocus autocomplete="username">
                                 <div id="emailHelp" class="form-text">We'll never share your credentials with anyone.</div>
                             </div>
                             <div class="mb-3">

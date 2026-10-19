@@ -1,6 +1,6 @@
 {
   "name": "centris-drive",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop app for syncing files between Centris and Windows/macOS",
   "main": "main.js",
   "author": "ViDoc Technologies Private Limited",

@@ -343,6 +343,25 @@ if (isDev) {
 //     }
 // };
 
+function ensureWindowAndWebContentsFocus(targetWin) {
+    if (!targetWin || targetWin.isDestroyed()) return;
+    try {
+        if (!targetWin.isVisible()) {
+            targetWin.show();
+        }
+        if (targetWin.isMinimized()) {
+            targetWin.restore();
+        }
+        targetWin.show();
+        targetWin.focus();
+        if (targetWin.webContents && !targetWin.webContents.isDestroyed()) {
+            targetWin.webContents.focus();
+        }
+    } catch (e) {
+        console.error("ensureWindowAndWebContentsFocus error:", e);
+    }
+}
+
 const createWindow = async () => {
 
     win = new BrowserWindow({
@@ -358,6 +377,12 @@ const createWindow = async () => {
         },
         icon: iconPath
     });
+
+    try {
+        Menu.setApplicationMenu(buildAppMenu());
+    } catch (menuErr) {
+        console.error("Failed to set application menu:", menuErr);
+    }
 
     // win = new BrowserWindow({
     //     width: 800,
@@ -440,13 +465,7 @@ const createWindow = async () => {
 
             } else if (page === 'login') {
                 await win.loadFile(getHtmlPath('index.html'));
-                if (win && !win.isDestroyed()) {
-                    win.show();
-                    win.focus();
-                    if (win.webContents && !win.webContents.isDestroyed()) {
-                        win.webContents.focus();
-                    }
-                }
+                ensureWindowAndWebContentsFocus(win);
                 console.log('🔑 Login page loaded');
 
             } else {
@@ -466,35 +485,19 @@ const createWindow = async () => {
         if (sessionActive) {
             console.log("✅ Session active, redirecting to home...");
             await win.loadFile(getHtmlPath("home.html"));
-            if (win && !win.isDestroyed()) {
-                win.show();
-                win.focus();
-                if (win.webContents && !win.webContents.isDestroyed()) {
-                    win.webContents.focus();
-                }
-            }
+            ensureWindowAndWebContentsFocus(win);
             return { status: "active" };
         } else {
             console.log("🔒 Session expired or not logged in");
             await win.loadFile(getHtmlPath("index.html"));
-            if (win && !win.isDestroyed()) {
-                win.show();
-                win.focus();
-                if (win.webContents && !win.webContents.isDestroyed()) {
-                    win.webContents.focus();
-                }
-            }
+            ensureWindowAndWebContentsFocus(win);
             return { status: "expired" };
         }
     });
 
     ipcMain.handle("focus-window", () => {
         if (win && !win.isDestroyed()) {
-            win.show();
-            win.focus();
-            if (win.webContents && !win.webContents.isDestroyed()) {
-                win.webContents.focus();
-            }
+            ensureWindowAndWebContentsFocus(win);
             return true;
         }
         return false;
@@ -527,13 +530,7 @@ const createWindow = async () => {
         const currentUrl = win.webContents.getURL() || "";
         if (currentUrl.includes("index.html")) {
             // Already on login page — ensure window and webContents have focus and DO NOT reload!
-            if (!win.isDestroyed()) {
-                win.show();
-                win.focus();
-                if (win.webContents && !win.webContents.isDestroyed()) {
-                    win.webContents.focus();
-                }
-            }
+            ensureWindowAndWebContentsFocus(win);
             return;
         }
 
@@ -657,18 +654,517 @@ function restoreAndFocusWindow() {
     if (!win || win.isDestroyed()) {
         createWindow();
     } else {
-        if (!win.isVisible()) {
-            win.show();
-        }
-        if (win.isMinimized()) {
-            win.restore();
-        }
-        win.show();
-        win.focus();
-        if (win.webContents && !win.webContents.isDestroyed()) {
-            win.webContents.focus();
+        ensureWindowAndWebContentsFocus(win);
+    }
+}
+
+// ==========================================
+// 🚀 APP VERSION & AUTO-UPDATER SYSTEM
+// ==========================================
+
+function getAppCurrentVersion() {
+    try {
+        return app.getVersion() || require('./package.json').version;
+    } catch {
+        return "1.0.0";
+    }
+}
+
+function compareSemver(v1, v2) {
+    if (!v1 || !v2) return 0;
+    const clean = (v) => v.toString().replace(/^[vV]/, "").trim();
+    const p1 = clean(v1).split(/[-+.]/).map(n => parseInt(n, 10) || 0);
+    const p2 = clean(v2).split(/[-+.]/).map(n => parseInt(n, 10) || 0);
+    const len = Math.max(p1.length, p2.length, 3);
+    for (let i = 0; i < len; i++) {
+        const num1 = p1[i] || 0;
+        const num2 = p2[i] || 0;
+        if (num1 > num2) return 1;
+        if (num1 < num2) return -1;
+    }
+    return 0;
+}
+
+function downloadUpdateFile(url, destPath, onProgress) {
+    return new Promise((resolve, reject) => {
+        const request = (targetUrl, redirectCount = 0) => {
+            if (redirectCount > 10) {
+                return reject(new Error('Too many redirects while downloading update'));
+            }
+            let parsedUrl;
+            try {
+                parsedUrl = new URL(targetUrl);
+            } catch (err) {
+                return reject(new Error('Invalid download URL: ' + targetUrl));
+            }
+
+            const client = parsedUrl.protocol === 'http:' ? http : https;
+            const req = client.get(parsedUrl, {
+                headers: {
+                    'User-Agent': `Centris-Drive/${getAppCurrentVersion()} (${process.platform})`
+                }
+            }, (res) => {
+                if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+                    const nextUrl = new URL(res.headers.location, targetUrl).href;
+                    res.resume();
+                    return request(nextUrl, redirectCount + 1);
+                }
+
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    res.resume();
+                    return reject(new Error(`Download failed with HTTP status ${res.statusCode}`));
+                }
+
+                const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+                let receivedBytes = 0;
+                const fileStream = fs.createWriteStream(destPath);
+
+                res.on('data', (chunk) => {
+                    receivedBytes += chunk.length;
+                    if (totalBytes > 0 && typeof onProgress === 'function') {
+                        const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+                        onProgress({ percent, receivedBytes, totalBytes });
+                    }
+                });
+
+                res.pipe(fileStream);
+
+                fileStream.on('finish', () => {
+                    fileStream.close(() => resolve(destPath));
+                });
+
+                fileStream.on('error', (err) => {
+                    fs.unlink(destPath, () => {});
+                    reject(err);
+                });
+            });
+
+            req.on('error', (err) => {
+                fs.unlink(destPath, () => {});
+                reject(err);
+            });
+        };
+
+        request(url);
+    });
+}
+
+async function fetchUpdateInfo() {
+    const currentVersion = getAppCurrentVersion();
+    const platform = process.platform;
+    const arch = process.arch;
+
+    // 1. Check Centris server if apiUrl is available
+    const apiUrl = (syncData && syncData.apiUrl) ? syncData.apiUrl : (loadSession()?.apiUrl || "");
+    if (apiUrl) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const checkUrl = `${apiUrl.replace(/\/+$/, '')}/api/app-version?platform=${platform}&arch=${arch}&current_version=${currentVersion}`;
+            const res = await fetch(checkUrl, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.version) {
+                    return {
+                        source: 'centris',
+                        latestVersion: data.version,
+                        currentVersion,
+                        downloadUrl: data.download_url || data.downloadUrl || data.url || "",
+                        releaseNotes: data.release_notes || data.releaseNotes || data.notes || "",
+                        forceUpdate: !!data.force_update
+                    };
+                }
+            }
+        } catch (e) {
+            console.log("Centris server update check unavailable:", e.message);
         }
     }
+
+    // 2. Fallback to GitHub Releases API
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const ghUrl = "https://api.github.com/repos/princekoli562/Centris-Sync/releases/latest";
+        const res = await fetch(ghUrl, {
+            headers: {
+                "User-Agent": `Centris-Drive/${currentVersion} (${platform})`,
+                "Accept": "application/vnd.github.v3+json"
+            },
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+            const release = await res.json();
+            const tagVersion = (release.tag_name || "").replace(/^v/i, "").trim();
+            if (tagVersion) {
+                let downloadUrl = release.html_url || "";
+                if (Array.isArray(release.assets)) {
+                    let matchingAsset = null;
+                    if (platform === "win32") {
+                        matchingAsset = release.assets.find(a => a.name && a.name.toLowerCase().endsWith(".exe"));
+                    } else if (platform === "darwin") {
+                        matchingAsset = release.assets.find(a => a.name && (a.name.toLowerCase().endsWith(".dmg") || a.name.toLowerCase().endsWith(".zip")));
+                    }
+                    if (matchingAsset && matchingAsset.browser_download_url) {
+                        downloadUrl = matchingAsset.browser_download_url;
+                    }
+                }
+                return {
+                    source: 'github',
+                    latestVersion: tagVersion,
+                    currentVersion,
+                    downloadUrl,
+                    releaseNotes: release.body || "",
+                    forceUpdate: false
+                };
+            }
+        }
+    } catch (e) {
+        console.log("GitHub release check unavailable:", e.message);
+    }
+
+    return null;
+}
+
+async function handleDownloadAndInstallUpdate(downloadUrl, latestVersion) {
+    if (!downloadUrl) {
+        dialog.showMessageBox(win || null, {
+            type: 'error',
+            buttons: ['OK'],
+            title: 'Update Error',
+            message: 'No download URL available for this release.',
+            detail: 'Please visit the official Centris download portal to download the latest installer.'
+        });
+        return;
+    }
+
+    const platform = process.platform;
+    const isExe = downloadUrl.toLowerCase().endsWith('.exe');
+    const isDmg = downloadUrl.toLowerCase().endsWith('.dmg');
+    const isZip = downloadUrl.toLowerCase().endsWith('.zip');
+
+    if (!isExe && !isDmg && !isZip && !downloadUrl.includes('/download/')) {
+        shell.openExternal(downloadUrl);
+        return;
+    }
+
+    const ext = platform === 'win32' ? '.exe' : (isDmg ? '.dmg' : (isZip ? '.zip' : ''));
+    const tempDir = app.getPath('temp');
+    const destFileName = `Centris-Drive-Update-${latestVersion}${ext || (platform === 'win32' ? '.exe' : '.dmg')}`;
+    const destPath = path.join(tempDir, destFileName);
+
+    if (win && !win.isDestroyed()) {
+        win.webContents.send('update-status', { status: 'downloading', percent: 0, latestVersion });
+    }
+
+    try {
+        await downloadUpdateFile(downloadUrl, destPath, (progress) => {
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('update-status', {
+                    status: 'downloading',
+                    percent: progress.percent,
+                    receivedBytes: progress.receivedBytes,
+                    totalBytes: progress.totalBytes,
+                    latestVersion
+                });
+            }
+        });
+
+        if (win && !win.isDestroyed()) {
+            win.webContents.send('update-status', { status: 'downloaded', destPath, latestVersion });
+        }
+
+        if (platform === 'win32') {
+            const installConfirm = await dialog.showMessageBox(win || null, {
+                type: 'info',
+                buttons: ['Install and Restart Now', 'Install Later'],
+                defaultId: 0,
+                cancelId: 1,
+                title: 'Update Ready to Install',
+                message: 'Update download complete!',
+                detail: `Centris Drive v${latestVersion} has been downloaded.\n\nClick "Install and Restart Now" to close Centris Drive and launch the installer.`
+            });
+
+            if (installConfirm.response === 0) {
+                try {
+                    const installer = spawn(destPath, [], {
+                        detached: true,
+                        stdio: 'ignore'
+                    });
+                    installer.unref();
+
+                    app.isQuitting = true;
+                    try {
+                        await fullLogoutCleanup();
+                    } catch (e) {
+                        console.error("Cleanup before update quit error:", e);
+                    }
+                    app.quit();
+                } catch (spawnErr) {
+                    console.error("Error launching installer:", spawnErr);
+                    shell.openPath(destPath);
+                }
+            }
+        } else if (platform === 'darwin') {
+            await shell.openPath(destPath);
+            dialog.showMessageBox(win || null, {
+                type: 'info',
+                buttons: ['OK'],
+                title: 'Update Downloaded',
+                message: `Centris Drive v${latestVersion} DMG opened.`,
+                detail: 'The installer disk image has been opened. Drag Centris Drive into Applications to replace your existing version.'
+            });
+        } else {
+            shell.openPath(destPath);
+        }
+    } catch (err) {
+        console.error("Failed to download or run update:", err);
+        if (win && !win.isDestroyed()) {
+            win.webContents.send('update-status', { status: 'error', message: err.message });
+        }
+        const fallback = await dialog.showMessageBox(win || null, {
+            type: 'warning',
+            buttons: ['Open in Browser', 'Cancel'],
+            defaultId: 0,
+            cancelId: 1,
+            title: 'Automatic Download Failed',
+            message: 'Unable to download update automatically.',
+            detail: `Error: ${err.message}\n\nWould you like to open the download page in your web browser instead?`
+        });
+        if (fallback.response === 0) {
+            shell.openExternal(downloadUrl);
+        }
+    }
+}
+
+async function checkForAppUpdates(isManual = false) {
+    const currentVersion = getAppCurrentVersion();
+    if (isManual && win && !win.isDestroyed()) {
+        win.webContents.send('update-status', { status: 'checking', currentVersion });
+    }
+
+    const updateInfo = await fetchUpdateInfo();
+
+    if (!updateInfo) {
+        if (isManual) {
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('update-status', {
+                    status: 'error',
+                    message: 'Unable to check for updates. Please verify your network connection.'
+                });
+            }
+            dialog.showMessageBox(win || null, {
+                type: 'info',
+                buttons: ['OK'],
+                title: 'Check for Updates',
+                message: 'Update Check Status',
+                detail: `Centris Drive v${currentVersion}\n\nUnable to reach the update server right now. Please check your internet connection or try again later.`
+            });
+        }
+        return { success: false, error: 'Network error or no update server reachable' };
+    }
+
+    const { latestVersion, downloadUrl, releaseNotes } = updateInfo;
+    const hasUpdate = compareSemver(latestVersion, currentVersion) > 0;
+
+    if (!hasUpdate) {
+        if (win && !win.isDestroyed()) {
+            win.webContents.send('update-status', {
+                status: 'up-to-date',
+                currentVersion,
+                latestVersion
+            });
+        }
+        if (isManual) {
+            dialog.showMessageBox(win || null, {
+                type: 'info',
+                buttons: ['OK'],
+                title: 'Check for Updates',
+                message: "You're up to date!",
+                detail: `Centris Drive v${currentVersion} is currently the newest version available.`
+            });
+        }
+        return { success: true, hasUpdate: false, currentVersion };
+    }
+
+    // Newer version found!
+    if (win && !win.isDestroyed()) {
+        win.webContents.send('update-status', {
+            status: 'available',
+            currentVersion,
+            latestVersion,
+            downloadUrl,
+            releaseNotes
+        });
+    }
+
+    const detailText = `A new version of Centris Drive is available!\n\n` +
+        `Current Version: v${currentVersion}\n` +
+        `New Version: v${latestVersion}\n` +
+        (releaseNotes ? `\nRelease Notes:\n${releaseNotes.slice(0, 300)}${releaseNotes.length > 300 ? '...' : ''}\n` : '') +
+        `\nWould you like to download and install this update now?`;
+
+    const choice = await dialog.showMessageBox(win || null, {
+        type: 'question',
+        buttons: ['Update Now', 'Later', 'View Release Page'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Centris Drive Update Available',
+        message: `Update Centris Drive to v${latestVersion}`,
+        detail: detailText
+    });
+
+    if (choice.response === 0) {
+        await handleDownloadAndInstallUpdate(downloadUrl, latestVersion);
+    } else if (choice.response === 2) {
+        if (downloadUrl) {
+            shell.openExternal(downloadUrl);
+        }
+    }
+
+    return {
+        success: true,
+        hasUpdate: true,
+        currentVersion,
+        latestVersion,
+        downloadUrl
+    };
+}
+
+function showAboutDialog() {
+    const version = getAppCurrentVersion();
+    const isWindows = process.platform === 'win32';
+    const isMac = process.platform === 'darwin';
+    const osName = isWindows ? 'Windows' : isMac ? 'macOS' : process.platform;
+
+    dialog.showMessageBox(win || null, {
+        type: 'info',
+        buttons: ['Check for Updates', 'OK'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'About Centris Drive',
+        message: 'Centris Drive',
+        detail: `Version: ${version}\nPlatform: ${osName} (${process.arch})\nAuthor: ViDoc Technologies Private Limited\nDesktop app for syncing files between Centris and Windows/macOS`
+    }).then(({ response }) => {
+        if (response === 0) {
+            checkForAppUpdates(true);
+        }
+    });
+}
+
+function buildAppMenu() {
+    const appVersion = getAppCurrentVersion();
+    const isMac = process.platform === 'darwin';
+
+    const template = [
+        ...(isMac ? [{
+            label: app.name || 'Centris Drive',
+            submenu: [
+                {
+                    label: 'About Centris Drive',
+                    click: () => showAboutDialog()
+                },
+                { type: 'separator' },
+                {
+                    label: `Version ${appVersion}`,
+                    enabled: false
+                },
+                {
+                    label: 'Check for Updates...',
+                    click: () => checkForAppUpdates(true)
+                },
+                { type: 'separator' },
+                { role: 'services' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' }
+            ]
+        }] : []),
+        {
+            label: 'File',
+            submenu: [
+                {
+                    label: 'Open Centris Drive',
+                    click: () => restoreAndFocusWindow()
+                },
+                { type: 'separator' },
+                isMac ? { role: 'close' } : {
+                    label: 'Exit Centris Drive',
+                    click: async () => {
+                        app.isQuitting = true;
+                        try { await fullLogoutCleanup(); } catch(e){}
+                        app.quit();
+                    }
+                }
+            ]
+        },
+        {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' }
+            ]
+        },
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                ...(isDev ? [{ role: 'toggleDevTools' }] : []),
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'Window',
+            submenu: [
+                { role: 'minimize' },
+                { role: 'zoom' },
+                ...(isMac ? [
+                    { type: 'separator' },
+                    { role: 'front' },
+                    { type: 'separator' },
+                    { role: 'window' }
+                ] : [
+                    { role: 'close' }
+                ])
+            ]
+        },
+        {
+            role: 'help',
+            label: 'Help',
+            submenu: [
+                {
+                    label: `Version ${appVersion}`,
+                    enabled: false
+                },
+                {
+                    label: 'Check for Updates...',
+                    click: () => checkForAppUpdates(true)
+                },
+                { type: 'separator' },
+                {
+                    label: 'About Centris Drive',
+                    click: () => showAboutDialog()
+                }
+            ]
+        }
+    ];
+
+    return Menu.buildFromTemplate(template);
 }
 
 function createTray() {
@@ -677,12 +1173,30 @@ function createTray() {
     try {
         const trayIconPath = getTrayIconPath();
         tray = new Tray(trayIconPath);
+        const appVersion = getAppCurrentVersion();
 
         const contextMenu = Menu.buildFromTemplate([
             {
                 label: 'Open Centris Drive',
                 click: () => {
                     restoreAndFocusWindow();
+                },
+            },
+            { type: 'separator' },
+            {
+                label: `Version ${appVersion}`,
+                enabled: false,
+            },
+            {
+                label: 'Check for Updates...',
+                click: () => {
+                    checkForAppUpdates(true);
+                },
+            },
+            {
+                label: 'About Centris Drive',
+                click: () => {
+                    showAboutDialog();
                 },
             },
             { type: 'separator' },
@@ -700,7 +1214,7 @@ function createTray() {
             },
         ]);
 
-        tray.setToolTip('Centris Drive - Running in background');
+        tray.setToolTip(`Centris Drive v${appVersion} - Running in background`);
         tray.setContextMenu(contextMenu);
 
         tray.on('click', () => {
@@ -2771,6 +3285,16 @@ app.whenReady().then(() => {
 
     createTray();
 
+    // 🚀 Background auto-check for updates 15s after startup
+    setTimeout(() => {
+        checkForAppUpdates(false).catch(() => {});
+    }, 15000);
+
+    // 🚀 Periodic update check every 4 hours
+    setInterval(() => {
+        checkForAppUpdates(false).catch(() => {});
+    }, 4 * 60 * 60 * 1000);
+
     // Prevent creating new windows unnecessarily
     // app.on('activate', () => {
     //     if (win) {
@@ -2781,6 +3305,24 @@ app.whenReady().then(() => {
     // });  
 
 })
+
+ipcMain.handle('get-app-version', async () => {
+    return {
+        version: getAppCurrentVersion(),
+        name: app.name || 'Centris Drive',
+        platform: process.platform,
+        arch: process.arch
+    };
+});
+
+ipcMain.handle('check-for-updates', async (event, isManual = true) => {
+    return await checkForAppUpdates(isManual);
+});
+
+ipcMain.handle('show-about-dialog', async () => {
+    showAboutDialog();
+    return true;
+});
 
 ipcMain.handle('get-secret-key', async () => {
     return SECRET_KEY || 'This is sensitive data';

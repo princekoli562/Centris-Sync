@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createEmptyFolder: (parentDir, folderName) => ipcRenderer.invoke("createEmptyFolder", parentDir, folderName),
     focusWindow: () => ipcRenderer.invoke("focus-window"),
     getDriveProperties: (rootDir) => ipcRenderer.invoke("get-drive-properties", rootDir),
+    getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+    checkForUpdates: (manual = true) => ipcRenderer.invoke("check-for-updates", manual),
+    showAboutDialog: () => ipcRenderer.invoke("show-about-dialog"),
+    onUpdateStatus: (cb) => ipcRenderer.on("update-status", (_, data) => cb(data)),
     // NEW: Copy file into mapped drive
     copyFileToDrive: (source, relPath, mappedDrive) => ipcRenderer.invoke("copyFileToDrive", source, relPath, mappedDrive),
     uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),

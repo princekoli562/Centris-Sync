@@ -21,13 +21,13 @@
         </div>
         <h2>My Drive</h2>
         <button id="openDrive" class="btnload">📁 My Files </button>
+        <button id="createFolderBtn" class="btnload">📁<i class="fas fa-plus sidebar-plus-icon"></i> Create New Folder</button>
         <button id="uploadFolder" class="btnload">⬆️ Upload Folders / Files</button>
         <div id="uploadMenu" class="upload-menu">
+            <div class="menu-item" id="createFolderMenuOption">📁<i class="fas fa-plus sidebar-plus-icon"></i> Create New Folder</div>
             <div class="menu-item" id="uploadFolderOption">📁 Upload Folder</div>
             <div class="menu-item" id="uploadFileOption">📄 Upload File</div>
-            <div class="menu-item" id="createFolderMenuOption">📁➕ Create New Folder</div>
         </div>
-        <button id="createFolderBtn" class="btnload">📁➕ Create New Folder</button>
         <button id="SyncDrive" class="btnload">🔄 Sync Drive</button>
         <!-- <button id="stopSyncBtn" style="display:block; background:#ff4444; color:white; padding:8px 16px; border:none; border-radius:6px;">
             Stop Sync
@@ -111,6 +111,16 @@
                         <ul id="userList">
                             <!-- dynamically filled -->
                         </ul>
+                        <div class="user-dropdown-help-section">
+                            <div class="dropdown-version-row">
+                                <span class="dropdown-version-badge" title="App Version from package.json">
+                                    <i class="fas fa-tag"></i> v<span id="dropdownVersionText">1.0.0</span>
+                                </span>
+                                <button class="dropdown-check-update-btn" id="checkUpdateDropdownBtn" type="button" title="Check for updates">
+                                    <i class="fas fa-sync-alt"></i> Update
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -119,7 +129,7 @@
             
             <div class="title-bar">
                 <div class="left-section">
-                    <button class="menu-btn" title="Menu">
+                    <button class="menu-btn" id="appMenuBtn" title="Help & About Centris Drive">
                         <i class="fas fa-bars"></i>
                     </button>
                     <h2 class="title">Files</h2>
@@ -275,6 +285,67 @@
         <div class="folder-modal-footer">
             <button id="cancelNewFolderBtn" class="modal-btn-cancel">Cancel</button>
             <button id="confirmNewFolderBtn" class="modal-btn-create">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- About & Updates Modal -->
+<div id="aboutModal" class="folder-modal hidden">
+    <div class="folder-modal-content about-modal-content">
+        <div class="folder-modal-header">
+            <h3><i class="fas fa-info-circle"></i> About Centris Drive</h3>
+            <button id="closeAboutModal" class="close-modal-btn">&times;</button>
+        </div>
+        <div class="folder-modal-body about-modal-body">
+            <div class="about-logo-wrapper">
+                <img src="assets/images/centris-drive.png" alt="Centris Drive Logo" class="about-logo" />
+            </div>
+            <h2 class="about-app-name">Centris Drive</h2>
+            <p class="about-version-text">Desktop Application · Version <strong id="aboutAppVersion">1.0.0</strong></p>
+            <div class="about-details-card">
+                <div class="about-detail-row">
+                    <span class="about-detail-label"><i class="fas fa-desktop"></i> Platform:</span>
+                    <span class="about-detail-val" id="aboutPlatform">-</span>
+                </div>
+                <div class="about-detail-row">
+                    <span class="about-detail-label"><i class="fas fa-microchip"></i> Architecture:</span>
+                    <span class="about-detail-val" id="aboutArch">-</span>
+                </div>
+                <div class="about-detail-row">
+                    <span class="about-detail-label"><i class="fas fa-shield-alt"></i> Status:</span>
+                    <span class="about-detail-val status-val" id="aboutUpdateStatus">Ready to check</span>
+                </div>
+            </div>
+            <div id="aboutUpdateProgressBarContainer" class="about-progress-container" style="display:none;">
+                <label id="aboutUpdateProgressLabel" class="progress-label">Downloading update... 0%</label>
+                <progress id="aboutUpdateProgressBar" class="progress-bar-el update-progress-bar" value="0" max="100"></progress>
+            </div>
+        </div>
+        <div class="folder-modal-footer">
+            <button id="closeAboutModalBtn" class="modal-btn-cancel" type="button">Close</button>
+            <button id="checkUpdateModalBtn" class="modal-btn-create" type="button">
+                <i class="fas fa-sync-alt"></i> Check for Updates
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Logout Confirmation Modal -->
+<div id="logoutConfirmModal" class="folder-modal hidden">
+    <div class="folder-modal-content">
+        <div class="folder-modal-header">
+            <h3><i class="fas fa-sign-out-alt" style="color: #dc2626;"></i> Confirm Logout</h3>
+            <button id="closeLogoutConfirmModal" class="close-modal-btn">&times;</button>
+        </div>
+        <div class="folder-modal-body" style="text-align: center; padding: 22px 18px 16px;">
+            <p style="font-size: 14px; color: #334155; margin: 0 0 6px 0; font-weight: 500;">Are you sure you want to log out?</p>
+            <p style="font-size: 12px; color: #64748b; margin: 0;">You will need to sign in again to sync your files.</p>
+        </div>
+        <div class="folder-modal-footer">
+            <button id="cancelLogoutConfirmBtn" class="modal-btn-cancel" type="button">Cancel</button>
+            <button id="doLogoutConfirmBtn" class="modal-btn-create" type="button" style="background: #dc2626; border-color: #dc2626; color: #ffffff;">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
         </div>
     </div>
 </div>

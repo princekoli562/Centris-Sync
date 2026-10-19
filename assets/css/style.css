@@ -1790,6 +1790,143 @@ body.dragging iframe {
     /* padding: 8px 12px; */
 }
 
+.header-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 14px;
+}
+
+.drive-properties-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.drive-properties-btn {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #143b64;
+    font-size: 20px;
+    cursor: pointer;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+}
+
+.drive-properties-btn:hover {
+    background-color: rgba(20, 59, 100, 0.1);
+    color: #0d2744;
+}
+
+.drive-properties-btn:active {
+    transform: scale(0.92);
+}
+
+.drive-properties-popup {
+    position: absolute;
+    right: 0;
+    top: 36px;
+    width: 250px;
+    background: #ffffff;
+    border: 1px solid #dcdfe6;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    padding: 12px 14px;
+    z-index: 200;
+    display: none;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.drive-properties-wrapper:hover .drive-properties-popup,
+.drive-properties-popup.show {
+    display: block;
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.prop-popup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.prop-header-icon {
+    font-size: 20px;
+    color: #194d79;
+}
+
+.prop-header-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.prop-popup-title {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: #194d79;
+    letter-spacing: 0.3px;
+}
+
+.prop-popup-subtitle {
+    font-size: 11px;
+    color: #8c9ba5;
+}
+
+.prop-popup-divider {
+    height: 1px;
+    background: #edf0f2;
+    margin: 8px 0 10px 0;
+}
+
+.prop-popup-body {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.prop-popup-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #495057;
+}
+
+.prop-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    color: #555;
+}
+
+.prop-label i {
+    font-size: 12px;
+    width: 14px;
+    text-align: center;
+    color: #194d79;
+}
+
+.prop-val {
+    font-weight: 600;
+    color: #143b64;
+    max-width: 135px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
 .user-menu {
     width: 40px;                 /* 🔥 FIX */
     display: flex;

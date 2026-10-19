@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createFolderInDrive: (relPath, mappedDrive) => ipcRenderer.invoke("createFolderInDrive", relPath, mappedDrive),
     createEmptyFolder: (parentDir, folderName) => ipcRenderer.invoke("createEmptyFolder", parentDir, folderName),
     focusWindow: () => ipcRenderer.invoke("focus-window"),
+    getDriveProperties: (rootDir) => ipcRenderer.invoke("get-drive-properties", rootDir),
     // NEW: Copy file into mapped drive
     copyFileToDrive: (source, relPath, mappedDrive) => ipcRenderer.invoke("copyFileToDrive", source, relPath, mappedDrive),
     uploadChunkToDrive: (chunk, mappedDrive, sourceRoot) => ipcRenderer.invoke('uploadChunkToDrive', chunk, mappedDrive, sourceRoot),

@@ -1316,12 +1316,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderUsers(syncData, user_list);
     });
 
-    // Close userdropdown on outside click
+    const drivePropsBtn = document.getElementById("drivePropertiesBtn");
+    const drivePropsWrapper = document.getElementById("drivePropertiesWrapper");
+    const drivePropsPopup = document.getElementById("drivePropertiesPopup");
+
+    if (drivePropsWrapper) {
+        drivePropsWrapper.addEventListener("mouseenter", () => {
+            loadRootDriveProperties();
+        });
+    }
+
+    if (drivePropsBtn) {
+        drivePropsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (drivePropsPopup) {
+                drivePropsPopup.classList.toggle("show");
+                if (drivePropsPopup.classList.contains("show")) {
+                    loadRootDriveProperties();
+                }
+            }
+        });
+    }
+
+    // Close userdropdown and drivePropertiesPopup on outside click
     document.addEventListener("click", (e) => {
         if (!e.target.closest(".user-menu")) {
             userdropdown.style.display = "none";
         }
+        if (!e.target.closest(".drive-properties-wrapper")) {
+            if (drivePropsPopup) {
+                drivePropsPopup.classList.remove("show");
+            }
+        }
     });
+
+    // Initial load of root drive properties
+    loadRootDriveProperties();
 
     const previewToggleBtn = document.getElementById("previewToggle");
     const mainContent = document.getElementById("main-content");
@@ -2378,7 +2408,45 @@ function updateFooterStatus(dirPath, result = {}) {
     }
 }
 
+let rootDriveProperties = null;
+let isLoadingDriveProperties = false;
 
+async function loadRootDriveProperties() {
+    if (isLoadingDriveProperties) return;
+    try {
+        if (!window.electronAPI || !window.electronAPI.getDriveProperties) return;
+        isLoadingDriveProperties = true;
+        const config = await window.electronAPI.getAppConfig();
+        const rootPath = config ? config.drivePath : null;
+        const props = await window.electronAPI.getDriveProperties(rootPath);
+        if (props) {
+            rootDriveProperties = props;
+            renderDrivePropertiesPopup(props);
+        }
+    } catch (err) {
+        console.error("loadRootDriveProperties error:", err);
+    } finally {
+        isLoadingDriveProperties = false;
+    }
+}
+
+function renderDrivePropertiesPopup(props) {
+    if (!props) return;
+    const titleEl = document.getElementById("propPopupTitle");
+    const pathEl = document.getElementById("propRootPath");
+    const foldersEl = document.getElementById("propFoldersCount");
+    const filesEl = document.getElementById("propFilesCount");
+    const sizeEl = document.getElementById("propTotalSize");
+
+    if (titleEl) titleEl.textContent = "Centris-Drive";
+    if (pathEl) {
+        pathEl.textContent = props.rootPath || "Centris-Drive";
+        pathEl.title = props.rootPath || "";
+    }
+    if (foldersEl) foldersEl.textContent = `${(props.folderCount || 0).toLocaleString()} ${props.folderCount === 1 ? 'Folder' : 'Folders'}`;
+    if (filesEl) filesEl.textContent = `${(props.fileCount || 0).toLocaleString()} ${props.fileCount === 1 ? 'File' : 'Files'}`;
+    if (sizeEl) sizeEl.textContent = props.totalSizeFormatted || "0 B";
+}
 
 // --- Render File List ---
 function renderFileList(selector, files) {

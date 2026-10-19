@@ -64,18 +64,54 @@
 			 <div id="breadcrumb"
 				style="margin-bottom: 10px; font-weight: bold; cursor: pointer;">
 			</div>
-            <div class="user-menu">
-                <div class="user-icon" id="userIcon" title="Logged-in users">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#143b64"
-                    xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/>
-                </svg>
+            <div class="header-right-actions">
+                <div class="drive-properties-wrapper" id="drivePropertiesWrapper">
+                    <button class="drive-properties-btn" id="drivePropertiesBtn" type="button" title="Centris-Drive Properties">
+                        <i class="fas fa-info-circle"></i>
+                    </button>
+                    <div class="drive-properties-popup" id="drivePropertiesPopup">
+                        <div class="prop-popup-header">
+                            <i class="fas fa-hdd prop-header-icon"></i>
+                            <div class="prop-header-text">
+                                <span class="prop-popup-title" id="propPopupTitle">Centris-Drive</span>
+                                <span class="prop-popup-subtitle">Root Drive Properties</span>
+                            </div>
+                        </div>
+                        <div class="prop-popup-divider"></div>
+                        <div class="prop-popup-body">
+                            <div class="prop-popup-row">
+                                <span class="prop-label"><i class="fas fa-map-marker-alt"></i> Root Path:</span>
+                                <span class="prop-val" id="propRootPath">Loading...</span>
+                            </div>
+                            <div class="prop-popup-row">
+                                <span class="prop-label"><i class="fas fa-folder"></i> Folders:</span>
+                                <span class="prop-val" id="propFoldersCount">0</span>
+                            </div>
+                            <div class="prop-popup-row">
+                                <span class="prop-label"><i class="fas fa-file-alt"></i> Files:</span>
+                                <span class="prop-val" id="propFilesCount">0</span>
+                            </div>
+                            <div class="prop-popup-row">
+                                <span class="prop-label"><i class="fas fa-database"></i> Total Size:</span>
+                                <span class="prop-val" id="propTotalSize">0 B</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="user-dropdown" id="userDropdown">
-                    <ul id="userList">
-                        <!-- dynamically filled -->
-                    </ul>
+                <div class="user-menu">
+                    <div class="user-icon" id="userIcon" title="Logged-in users">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#143b64"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/>
+                    </svg>
+                    </div>
+
+                    <div class="user-dropdown" id="userDropdown">
+                        <ul id="userList">
+                            <!-- dynamically filled -->
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

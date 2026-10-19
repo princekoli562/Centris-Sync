@@ -6854,6 +6854,101 @@ function formatSize(bytes) {
     return `${parseFloat(value.toFixed(2))} ${sizes[i]}`;
 }
 
+let cachedDriveProps = null;
+let lastDrivePropsTime = 0;
+const DRIVE_PROPS_CACHE_TTL = 8000; // 8 seconds
+
+async function calculateDriveProperties(targetDir) {
+    if (!targetDir || !fs.existsSync(targetDir)) {
+        return {
+            rootPath: targetDir || "N/A",
+            folderCount: 0,
+            fileCount: 0,
+            totalSizeBytes: 0,
+            totalSizeFormatted: "0 B"
+        };
+    }
+
+    let folderCount = 0;
+    let fileCount = 0;
+    let totalSizeBytes = 0;
+
+    async function walk(dir) {
+        let entries;
+        try {
+            entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+
+        for (const entry of entries) {
+            if (
+                entry.name.startsWith('.') ||
+                entry.name === '$RECYCLE.BIN' ||
+                entry.name === 'System Volume Information' ||
+                isHiddenWindows(path.join(dir, entry.name))
+            ) {
+                continue;
+            }
+
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                folderCount++;
+                await walk(full);
+            } else {
+                fileCount++;
+                try {
+                    const stat = await fs.promises.stat(full);
+                    totalSizeBytes += stat.size;
+                } catch {}
+            }
+        }
+    }
+
+    await walk(targetDir);
+
+    return {
+        rootPath: targetDir,
+        folderCount,
+        fileCount,
+        totalSizeBytes,
+        totalSizeFormatted: formatSize(totalSizeBytes)
+    };
+}
+
+ipcMain.handle("get-drive-properties", async (event, rootDir = null) => {
+    try {
+        const platform = os.platform();
+        let target = rootDir;
+        if (!target) {
+            if (platform === "win32") {
+                target = getMappedDriveLetter("Centris-Drive");
+            } else if (platform === "darwin") {
+                target = "/Volumes/" + VOLUME_LABEL;
+            }
+        }
+
+        const now = Date.now();
+        if (cachedDriveProps && cachedDriveProps.rootPath === target && (now - lastDrivePropsTime < DRIVE_PROPS_CACHE_TTL)) {
+            return cachedDriveProps;
+        }
+
+        const result = await calculateDriveProperties(target);
+        cachedDriveProps = result;
+        lastDrivePropsTime = now;
+        return result;
+    } catch (err) {
+        return {
+            rootPath: rootDir || "Centris-Drive",
+            folderCount: 0,
+            fileCount: 0,
+            totalSizeBytes: 0,
+            totalSizeFormatted: "0 B",
+            error: err.message
+        };
+    }
+});
+
 // 🔹 IPC handler to list folder contents
 // ipcMain.handle('fs:list-recur-files', async (event, dirPath = null, offset = 0, limit = 1000) => {
 //     try {

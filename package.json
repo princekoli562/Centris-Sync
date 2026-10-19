@@ -10,8 +10,8 @@
     "build": "cross-env NODE_ENV=production electron-builder",
     "build:mac:intel": "cross-env NODE_ENV=production electron-builder --mac dmg zip --x64",
     "build:mac:arm": "cross-env NODE_ENV=production electron-builder --mac dmg zip --arm64",
-    "build:win": "cross-env NODE_ENV=production electron-builder",
-    "rebuild:sqlite": "cd node_modules/better-sqlite3 && npx node-gyp rebuild --runtime=electron --target=26.6.10 --arch=x64 --dist-url=https://electronjs.org/headers"
+    "build:win": "cross-env NODE_ENV=production electron-builder --win",
+    "rebuild:sqlite": "electron-rebuild -f -w better-sqlite3 -v 26.6.10"
   },
   "build": {
     "appId": "com.vidoc.centrissync",
@@ -32,7 +32,7 @@
       "node_modules/chokidar/**",
       "node_modules/better-sqlite3/**"
     ],
-    "npmRebuild": false,
+    "npmRebuild": true,
     "mac": {
       "icon": "assets/images/favicon.icns",
       "identity": null,
@@ -60,6 +60,7 @@
     }
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
     "cross-env": "^10.1.0",
     "electron": "^26.6.10",
     "electron-builder": "^26.4.0",
@@ -67,7 +68,7 @@
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
-    "better-sqlite3": "^12.5.0",
+    "better-sqlite3": "11.10.0",
     "bootstrap": "^5.3.8",
     "chokidar": "^3.5.3",
     "crypto-js": "^4.2.0",

@@ -92,6 +92,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // --- Load CSS ---
   loadStyleSheet("node_modules/bootstrap/dist/css/bootstrap.min.css");
+  loadStyleSheet("node_modules/@fortawesome/fontawesome-free/css/all.min.css");
   loadStyleSheet("assets/css/style.css");
 
   try {
@@ -99,26 +100,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     await loadScript("node_modules/jquery/dist/jquery.min.js");
     await loadScript("node_modules/bootstrap/dist/js/bootstrap.bundle.min.js");
     await loadScript("node_modules/crypto-js/crypto-js.js");
-    await loadScript("assets/js/functions.js"); // Must load before initializing globals
+    await loadScript("assets/js/functions.js");
     await loadScript("assets/js/renderer.js");
-
-    // --- Initialize global variables ---
-    if (window.initializeGlobals) {
-      console.log("🔐 Initializing global variables...");
-      await window.initializeGlobals(); // Wait until secureAPI and DOM are ready
-      console.log("✅ Globals ready:", {
-        secret_key: window.secret_key,
-        secret_gen_key: window.secret_gen_key,
-        apiUrl: window.apiUrl,
-      });
-    } else {
-      console.warn("⚠️ initializeGlobals not found. Check functions.js load order.");
-    }
-
-    // --- Finally load your dashboard (depends on globals) ---
-    await loadScript("assets/js/pdf-viewer.js");
-    await loadScript("assets/js/dashboard.js");
-    console.log("🚀 Dashboard loaded successfully.");
+    console.log("🚀 Login assets loaded successfully.");
   } catch (err) {
     console.error("❌ Asset loading failed:", err);
   }

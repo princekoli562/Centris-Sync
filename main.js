@@ -366,6 +366,13 @@ const createWindow = async () => {
     } else {
         console.log("🔒 Session expired or not logged in");
         await win.loadFile(getHtmlPath("index.html"));
+        if (win && !win.isDestroyed()) {
+            win.show();
+            win.focus();
+            if (win.webContents && !win.webContents.isDestroyed()) {
+                win.webContents.focus();
+            }
+        }
     }
 
     //✅ Handle close — minimize to tray, not quit
@@ -400,10 +407,24 @@ const createWindow = async () => {
         try {
             if (page === 'home') {
                 await win.loadFile(getHtmlPath('home.html'));
+                if (win && !win.isDestroyed()) {
+                    win.show();
+                    win.focus();
+                    if (win.webContents && !win.webContents.isDestroyed()) {
+                        win.webContents.focus();
+                    }
+                }
                 console.log('🏠 Home page loaded');
 
             } else if (page === 'login') {
                 await win.loadFile(getHtmlPath('index.html'));
+                if (win && !win.isDestroyed()) {
+                    win.show();
+                    win.focus();
+                    if (win.webContents && !win.webContents.isDestroyed()) {
+                        win.webContents.focus();
+                    }
+                }
                 console.log('🔑 Login page loaded');
 
             } else {
@@ -423,16 +444,43 @@ const createWindow = async () => {
         if (sessionActive) {
             console.log("✅ Session active, redirecting to home...");
             await win.loadFile(getHtmlPath("home.html"));
+            if (win && !win.isDestroyed()) {
+                win.show();
+                win.focus();
+                if (win.webContents && !win.webContents.isDestroyed()) {
+                    win.webContents.focus();
+                }
+            }
             return { status: "active" };
         } else {
             console.log("🔒 Session expired or not logged in");
             await win.loadFile(getHtmlPath("index.html"));
+            if (win && !win.isDestroyed()) {
+                win.show();
+                win.focus();
+                if (win.webContents && !win.webContents.isDestroyed()) {
+                    win.webContents.focus();
+                }
+            }
             return { status: "expired" };
         }
     });
 
+    ipcMain.handle("focus-window", () => {
+        if (win && !win.isDestroyed()) {
+            win.show();
+            win.focus();
+            if (win.webContents && !win.webContents.isDestroyed()) {
+                win.webContents.focus();
+            }
+            return true;
+        }
+        return false;
+    });
+
     // 🧩 Save session on login from renderer
     ipcMain.on('save-session', (event, sessionData) => {
+        global.__IS_LOGGING_OUT = false;
         saveSession(sessionData);
     });
 
@@ -449,6 +497,23 @@ const createWindow = async () => {
     async function handleSessionCheck() {
         // 🚫 ABSOLUTE FIRST GUARD
         if (app.isQuitting) return;
+
+        if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) {
+            return;
+        }
+
+        const currentUrl = win.webContents.getURL() || "";
+        if (currentUrl.includes("index.html")) {
+            // Already on login page — ensure window and webContents have focus and DO NOT reload!
+            if (!win.isDestroyed()) {
+                win.show();
+                win.focus();
+                if (win.webContents && !win.webContents.isDestroyed()) {
+                    win.webContents.focus();
+                }
+            }
+            return;
+        }
 
         if (
             !isSessionActive({ autoExpire: autoExpireVal }) &&
@@ -484,6 +549,14 @@ const createWindow = async () => {
                         return;
                     }
 
+                    if (!win.isDestroyed()) {
+                        win.show();
+                        win.focus();
+                        if (win.webContents && !win.webContents.isDestroyed()) {
+                            win.webContents.focus();
+                        }
+                    }
+
                     // ⚠️ DevTools ONLY if not quitting
                     if (!app.isQuitting) {
                         //win.webContents.openDevTools({ mode: "detach" });
@@ -509,6 +582,13 @@ const createWindow = async () => {
                 // Load page ONLY if still safe
                 if (!app.isQuitting) {
                     await win.loadFile(getHtmlPath("index.html"));
+                    if (!win.isDestroyed()) {
+                        win.show();
+                        win.focus();
+                        if (win.webContents && !win.webContents.isDestroyed()) {
+                            win.webContents.focus();
+                        }
+                    }
                 }
 
             } catch (err) {

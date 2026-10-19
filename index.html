@@ -2,10 +2,13 @@
 <html>
     <head>
         <meta charset="UTF-8" />
-        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *;" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' *; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
         <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
         <link rel="icon" type="image/png" sizes="16x16" href="asset/images/favicon.png">
         <title>Centris Drive</title>
+        <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+        <link rel="stylesheet" href="node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+        <link rel="stylesheet" href="assets/css/style.css">
         <script src="assets/js/loadAssets.js" defer></script>
     </head>
     <body>
@@ -32,7 +35,12 @@
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Enter Password</label>
-                                <input type="password" class="form-control" id="password" placeholder="Enter Password">
+                                <div class="password-input-wrapper">
+                                    <input type="password" class="form-control" id="password" placeholder="Enter Password" autocomplete="current-password">
+                                    <button type="button" class="password-toggle-btn" id="togglePasswordBtn" title="Show password" tabindex="-1">
+                                        <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                                    </button>
+                                </div>
                             </div>
                             <button id="sync" type="button" class="btn btn-centris float-end">Sign In</button>
                         </form>

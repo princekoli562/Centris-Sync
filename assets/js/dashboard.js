@@ -1112,7 +1112,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     $(document).on("click", ".logout-icon", async function (e) {
         if (confirm("Logout this user?")) {
             await window.electronAPI.fullLogoutCleanup();
-            SessionLogout();
+            await SessionLogout();
+            await new Promise((resolve) => setTimeout(resolve, 150));
             const autoExpireVal = true; // or from storage/config
             const result = await window.electronAPI.checkSessionAndRedirect(autoExpireVal);
             // call API / IPC / AJAX here
@@ -1607,7 +1608,12 @@ async function loadUsersFromSession(syncData, user_list = []) {
 }
 
 async function SessionLogout() {
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('user_data');
+    localStorage.removeItem('customer_data');
+    localStorage.removeItem('domain_data');
     const clearSessionData = await window.electronAPI.clearSession();
+    return clearSessionData;
 };
 
 function setSyncDone() {

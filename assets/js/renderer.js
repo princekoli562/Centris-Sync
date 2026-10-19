@@ -28,14 +28,88 @@ async function checkSavedSecretKey() {
         }
     } catch (e) {
         console.error("Failed to check saved secret key:", e);
+    } finally {
+        setTimeout(focusAppropriateInput, 50);
     }
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', checkSavedSecretKey);
-} else {
+function initPasswordToggle() {
+    const toggleBtn = document.getElementById("togglePasswordBtn");
+    const pwdInput = document.getElementById("password");
+    const icon = document.getElementById("togglePasswordIcon");
+
+    if (toggleBtn && pwdInput) {
+        toggleBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const isPassword = pwdInput.type === "password";
+            pwdInput.type = isPassword ? "text" : "password";
+            if (icon) {
+                icon.className = isPassword ? "fas fa-eye-slash" : "fas fa-eye";
+            }
+            toggleBtn.setAttribute("title", isPassword ? "Hide password" : "Show password");
+            pwdInput.focus();
+        });
+    }
+}
+
+function focusAppropriateInput() {
+    try {
+        if (window.electronAPI && window.electronAPI.focusWindow) {
+            window.electronAPI.focusWindow();
+        }
+        const secretKeyGroup = document.getElementById("secretKeyGroup");
+        const isSecretVisible = secretKeyGroup && window.getComputedStyle(secretKeyGroup).display !== "none";
+        const targetInput = isSecretVisible
+            ? document.getElementById("secret_key")
+            : document.getElementById("username");
+
+        if (targetInput) {
+            targetInput.focus();
+        }
+    } catch (err) {
+        console.warn("focusAppropriateInput error:", err);
+    }
+}
+
+function setupEnterKeySubmit() {
+    ["secret_key", "username", "password"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    document.getElementById("sync")?.click();
+                }
+            });
+        }
+    });
+}
+
+function initLoginPage() {
+    if (window.electronAPI && window.electronAPI.focusWindow) {
+        window.electronAPI.focusWindow();
+    }
+    initPasswordToggle();
+    setupEnterKeySubmit();
     checkSavedSecretKey();
 }
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLoginPage);
+} else {
+    initLoginPage();
+}
+
+window.addEventListener("focus", () => {
+    focusAppropriateInput();
+});
+
+document.addEventListener("mousedown", () => {
+    if (window.electronAPI && window.electronAPI.focusWindow) {
+        window.electronAPI.focusWindow();
+    }
+}, { once: true });
 
  // start authentication
 

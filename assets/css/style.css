@@ -1373,6 +1373,89 @@ body.dragging iframe {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Center: Breadcrumb and Properties */
+.footer-center {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    overflow: hidden;
+    margin: 0 16px;
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+}
+
+.footer-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 420px;
+    color: #4b5563;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.footer-breadcrumb .footer-icon {
+    color: #4f46e5;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.footer-breadcrumb .crumb {
+    cursor: pointer;
+    color: #2563eb;
+    text-decoration: none;
+    transition: color 0.15s, text-decoration 0.15s;
+}
+
+.footer-breadcrumb .crumb:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.footer-divider {
+    color: #cbd5e1;
+    font-weight: 300;
+    flex-shrink: 0;
+}
+
+.footer-properties {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    color: #374151;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.footer-properties span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.footer-sub-icon {
+    font-size: 12px;
+}
+
+#footerFoldersCount .footer-sub-icon {
+    color: #f59e0b;
+}
+
+#footerFilesCount .footer-sub-icon {
+    color: #3b82f6;
+}
+
+#footerTotalSize .footer-sub-icon {
+    color: #10b981;
 }
 
 /* Dot indicator */
@@ -1398,6 +1481,7 @@ body.dragging iframe {
     display: flex;
     align-items: center;   /* 👈 vertical center */
     gap: 10px;             /* 👈 space between toggle & icon */
+    flex-shrink: 0;
 }
 
 /* Right */

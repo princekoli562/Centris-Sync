@@ -6775,6 +6775,24 @@ ipcMain.handle('fs:list-recur-files', async (event, dirPath = 'E:\\', offset = 0
             return !entry.name.startsWith('.') && !isHiddenWindows(fullPath);
         });
 
+        let folderCount = 0;
+        let fileCount = 0;
+        let totalSizeBytes = 0;
+
+        for (const entry of visibleEntries) {
+            if (entry.isDirectory()) {
+                folderCount++;
+            } else {
+                fileCount++;
+                try {
+                    const stats = fs.statSync(path.join(dirPath, entry.name));
+                    totalSizeBytes += stats.size;
+                } catch (e) {
+                    // Ignore stat error for inaccessible files
+                }
+            }
+        }
+
         const paginated = visibleEntries.slice(offset, offset + limit);
 
         const items = await Promise.all(
@@ -6798,6 +6816,10 @@ ipcMain.handle('fs:list-recur-files', async (event, dirPath = 'E:\\', offset = 0
             currentPath: dirPath,
             items,
             total: visibleEntries.length,
+            folderCount,
+            fileCount,
+            totalSizeBytes,
+            totalSizeFormatted: formatSize(totalSizeBytes),
             hasMore: offset + limit < visibleEntries.length
         };
 

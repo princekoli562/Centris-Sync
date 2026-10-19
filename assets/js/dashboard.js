@@ -1956,11 +1956,15 @@ async function loadFiles(dirPath, reset = false, filterPath = null) {
 
         if (result.error) {
             $("#file-list").html(`<p style="color:red">${result.error}</p>`);
+            updateFooterStatus(targetDir, { folderCount: 0, fileCount: 0, totalSizeFormatted: "0 B" });
             return;
         }
 
         totalItems = result.total;
         currentDir = result.currentPath;
+
+        // Update footer with current breadcrumb and folder/file properties
+        updateFooterStatus(currentDir, result);
 
         const res_icon = await fetch(apiUrl + "/api/folder-files-icons", {
             method: "POST",
@@ -2207,6 +2211,71 @@ function buildBreadcrumb(fullPath) {
         })
         .join(" › ");
 }
+
+function buildFooterBreadcrumb(fullPath) {
+    if (!fullPath) return '<span class="crumb" data-path="#">My Drive</span>';
+
+    const normalized = fullPath.replace(/\\/g, "/");
+    const isMacRoot = normalized.startsWith("/");
+    const parts = normalized.split("/").filter(p => p !== "");
+
+    if (parts.length === 0) {
+        return `<span class="crumb" data-path="${fullPath}">My Drive</span>`;
+    }
+
+    const crumbs = [];
+
+    // Root crumb
+    let rootPath = isMacRoot ? "/" + parts.slice(0, 2).join("/") : parts[0] + "/";
+    crumbs.push(`<span class="crumb" data-path="${rootPath}" title="${rootPath}">My Drive</span>`);
+
+    let startIndex = isMacRoot ? 2 : 1;
+    for (let i = startIndex; i < parts.length; i++) {
+        let subPath = isMacRoot
+            ? "/" + parts.slice(0, i + 1).join("/")
+            : parts.slice(0, i + 1).join("/");
+        crumbs.push(`<span class="crumb" data-path="${subPath}" title="${subPath}">${parts[i]}</span>`);
+    }
+
+    return crumbs.join(" › ");
+}
+
+function updateFooterStatus(dirPath, result = {}) {
+    const breadcrumbContainer = document.getElementById("footerBreadcrumbContent");
+    if (breadcrumbContainer) {
+        breadcrumbContainer.innerHTML = buildFooterBreadcrumb(dirPath);
+    }
+
+    let folderCount = result.folderCount;
+    let fileCount = result.fileCount;
+    let totalSizeFormatted = result.totalSizeFormatted;
+
+    // Fallback if result.items is available
+    if (folderCount === undefined && Array.isArray(result.items)) {
+        folderCount = result.items.filter(i => i.isDirectory).length;
+        fileCount = result.items.filter(i => !i.isDirectory).length;
+    }
+
+    folderCount = folderCount !== undefined ? folderCount : 0;
+    fileCount = fileCount !== undefined ? fileCount : 0;
+    totalSizeFormatted = totalSizeFormatted || "0 B";
+
+    const foldersEl = document.querySelector("#footerFoldersCount .val");
+    if (foldersEl) {
+        foldersEl.textContent = `${folderCount} ${folderCount === 1 ? 'Folder' : 'Folders'}`;
+    }
+
+    const filesEl = document.querySelector("#footerFilesCount .val");
+    if (filesEl) {
+        filesEl.textContent = `${fileCount} ${fileCount === 1 ? 'File' : 'Files'}`;
+    }
+
+    const sizeEl = document.querySelector("#footerTotalSize .val");
+    if (sizeEl) {
+        sizeEl.textContent = totalSizeFormatted;
+    }
+}
+
 
 
 // --- Render File List ---

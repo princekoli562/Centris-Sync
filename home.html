@@ -16,8 +16,8 @@
 </head>
 <body class="home_container">
     <div class="sidebar">
-        <div class="logo-container">
-            <img src="assets/images/centris-drive.png" alt="Centris Drive Logo" class="drive-logo">
+        <div class="logo-container" id="sidebarLogoContainer" style="cursor: pointer;" title="About Centris Drive">
+            <img src="assets/images/centris-drive.png" alt="Centris Drive Logo" class="drive-logo" id="sidebarLogo" title="About Centris Drive" style="cursor: pointer;">
         </div>
         <h2>My Drive</h2>
         <button id="openDrive" class="btnload">📁 My Files </button>
@@ -33,6 +33,21 @@
             Stop Sync
         </button> -->
         <div class="progress-wrapper" id="syncProgressWrapper">
+            <!-- Storage Capacity Card (10 GB Limit) -->
+            <div class="storage-capacity-card" id="storageCapacityCard">
+                <div class="storage-capacity-header">
+                    <span class="storage-capacity-title"><i class="fas fa-database"></i> Storage</span>
+                    <span class="storage-capacity-percent" id="storageCapacityPercent">0%</span>
+                </div>
+                <div class="storage-capacity-bar-track" title="Storage usage relative to 10 GB limit">
+                    <div class="storage-capacity-bar-fill status-green" id="storageCapacityBar" style="width: 0%;"></div>
+                </div>
+                <div class="storage-capacity-footer">
+                    <span class="storage-capacity-usage" id="storageCapacityUsage">0 B / 10 GB</span>
+                    <span class="storage-capacity-badge badge-normal" id="storageCapacityBadge">Normal</span>
+                </div>
+            </div>
+
             <!-- C2S Progress Card (Local Watcher: Upload & Delete to Server) -->
             <div class="progress-card c2s-card" id="c2sProgressCard" style="display:none;">
                 <div class="progress-header">
@@ -95,6 +110,13 @@
                                 <span class="prop-label"><i class="fas fa-database"></i> Total Size:</span>
                                 <span class="prop-val" id="propTotalSize">0 B</span>
                             </div>
+                            <div class="prop-popup-row prop-capacity-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
+                                <span class="prop-label"><i class="fas fa-chart-pie"></i> Capacity (10 GB):</span>
+                                <span class="prop-val" id="propCapacityPercent">0%</span>
+                            </div>
+                            <div class="prop-capacity-bar-track">
+                                <div class="prop-capacity-bar-fill status-green" id="propCapacityBar" style="width: 0%;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -112,6 +134,10 @@
                             <!-- dynamically filled -->
                         </ul>
                         <div class="user-dropdown-help-section">
+                            <div class="dropdown-about-row" id="dropdownAboutUsBtn" title="About Centris Drive">
+                                <span><i class="fas fa-info-circle"></i> About Us</span>
+                                <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.6;"></i>
+                            </div>
                             <div class="dropdown-version-row">
                                 <span class="dropdown-version-badge" title="App Version from package.json">
                                     <i class="fas fa-tag"></i> v<span id="dropdownVersionText">1.0.0</span>
@@ -129,9 +155,6 @@
             
             <div class="title-bar">
                 <div class="left-section">
-                    <button class="menu-btn" id="appMenuBtn" title="Help & About Centris Drive">
-                        <i class="fas fa-bars"></i>
-                    </button>
                     <h2 class="title">Files</h2>
                 </div>
 

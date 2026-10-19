@@ -251,6 +251,7 @@ button { margin-bottom: 10px; }
     justify-content: center;
     width: 100%;
     margin-bottom: 10px;
+    cursor: pointer;
 }
 
 .drive-logo {
@@ -260,6 +261,17 @@ button { margin-bottom: 10px; }
     border-radius: 12px;
     margin-bottom: 10px;
     object-fit: contain;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.drive-logo:hover {
+    opacity: 0.92;
+    transform: scale(1.02);
+}
+
+.drive-logo:active {
+    transform: scale(0.98);
 }
 
  /* Sidebar */
@@ -1137,6 +1149,152 @@ button { margin-bottom: 10px; }
 }
 #syncProgressBar::-moz-progress-bar {
     background-color: #194d79; /* blue for Firefox */
+}
+
+/* ==========================================================================
+   STORAGE CAPACITY CARD & THIN PROGRESS BAR
+   ========================================================================== */
+
+.storage-capacity-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    transition: all 0.25s ease-in-out;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.storage-capacity-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.storage-capacity-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1e293b;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.storage-capacity-title i {
+    color: #194d79;
+}
+
+.storage-capacity-percent {
+    font-size: 11px;
+    font-weight: 700;
+    color: #10b981;
+    transition: color 0.3s ease;
+}
+
+/* Thin Progress Bar (4px height) */
+.storage-capacity-bar-track {
+    width: 100%;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 5px 0;
+}
+
+.storage-capacity-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 4px;
+    transition: width 0.4s ease, background-color 0.3s ease;
+}
+
+/* Color states: <85% Green, 85-90% Yellow, 90-100% Red */
+.storage-capacity-bar-fill.status-green,
+.prop-capacity-bar-fill.status-green {
+    background-color: #10b981;
+}
+
+.storage-capacity-bar-fill.status-warning,
+.prop-capacity-bar-fill.status-warning {
+    background-color: #f59e0b;
+}
+
+.storage-capacity-bar-fill.status-danger,
+.prop-capacity-bar-fill.status-danger {
+    background-color: #ef4444;
+}
+
+.storage-capacity-bar-fill.status-full,
+.prop-capacity-bar-fill.status-full {
+    background-color: #dc2626;
+    animation: pulse-full 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-full {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.storage-capacity-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+.storage-capacity-usage {
+    font-size: 10px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.storage-capacity-badge {
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.storage-capacity-badge.badge-normal {
+    background: #d1fae5;
+    color: #047857;
+}
+
+.storage-capacity-badge.badge-warning {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.storage-capacity-badge.badge-danger {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.storage-capacity-badge.badge-full {
+    background: #fecaca;
+    color: #991b1b;
+}
+
+/* Thin Progress Bar for Properties Popup */
+.prop-capacity-bar-track {
+    width: 100%;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.prop-capacity-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 4px;
+    transition: width 0.4s ease, background-color 0.3s ease;
 }
 
 /*  PDF viewer */
@@ -2215,6 +2373,41 @@ body.dragging iframe {
     margin-right: 5px;
     vertical-align: middle;
 }
+
+/* User Dropdown About Us Row */
+.dropdown-about-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 8px;
+    margin-bottom: 6px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #1e3a8a;
+    cursor: pointer;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    transition: all 0.15s ease-in-out;
+}
+
+.dropdown-about-row:hover {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.dropdown-about-row span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.dropdown-about-row span i {
+    color: #2563eb;
+    font-size: 13px;
+}
+
 
 
 

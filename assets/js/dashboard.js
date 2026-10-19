@@ -811,6 +811,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // This is for single Folder Selection , but work inside recursively
     $(document).on("click", "#uploadFolderSingleOption", async function () {
         try {
+            if (currentDriveCapacity && currentDriveCapacity.isSyncBlocked) {
+                showValidation("Storage capacity reached 100% (10 GB). Upload is blocked. Please delete files to free up space.", "error", 8000);
+                return;
+            }
+
             $(".upload-menu").removeClass("show");
 
             const folderPath = await window.electronAPI.openFolder();
@@ -844,6 +849,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log(folderPath);
             console.log(mappedDrive);
             loadFiles(mappedDrive, true);
+            loadRootDriveProperties();
             await wait(2000);
 
             showValidation("Syncing files to Centris Local Drive. Please wait...", 'info', 0);
@@ -882,6 +888,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     $(document).on("click", "#uploadFolderOption", async function () {
         try {
+            if (currentDriveCapacity && currentDriveCapacity.isSyncBlocked) {
+                showValidation("Storage capacity reached 100% (10 GB). Upload is blocked. Please delete files to free up space.", "error", 8000);
+                return;
+            }
+
             if (isSyncing) {
                 showValidation("⚠️ Sync already in progress, skipping...", "warning");
                 return;
@@ -975,6 +986,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // 7. REFRESH VIEW + TRIGGER SYNC
             // ===============================
             loadFiles(mappedDrive, true);
+            loadRootDriveProperties();
             await wait(1000);
 
             if (syncData) {
@@ -990,6 +1002,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     $(document).on("click", "#uploadFileOption", async function () {
         try {
+            if (currentDriveCapacity && currentDriveCapacity.isSyncBlocked) {
+                showValidation("Storage capacity reached 100% (10 GB). Upload is blocked. Please delete files to free up space.", "error", 8000);
+                return;
+            }
+
             $(".upload-menu").removeClass("show");
 
             // Load user session
@@ -1065,6 +1082,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // 6️⃣ REFRESH FILE VIEW
             loadFiles(mappedDrive, true);
+            loadRootDriveProperties();
 
             await wait(500);
 
@@ -1396,6 +1414,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initial load of root drive properties
     loadRootDriveProperties();
 
+    // Storage capacity alert listener from main process
+    if (window.electronAPI && window.electronAPI.onStorageCapacityAlert) {
+        window.electronAPI.onStorageCapacityAlert((data) => {
+            if (data && data.capacity) {
+                updateCapacityDisplay(data.capacity);
+            }
+            if (data && data.message) {
+                showValidation(data.message, data.type === 'warning' ? 'warning' : 'error', 10000);
+            }
+        });
+    }
+
+    // Storage capacity real-time update listener from main process
+    if (window.electronAPI && window.electronAPI.onStorageCapacityUpdate) {
+        window.electronAPI.onStorageCapacityUpdate((capacity) => {
+            if (capacity) {
+                updateCapacityDisplay(capacity);
+            }
+        });
+    }
+
+    // Periodic storage capacity refresh every 30 seconds
+    setInterval(() => {
+        loadRootDriveProperties();
+    }, 30000);
+
     // ==========================================
     // 🚀 APP VERSION & UPDATE UI HANDLERS
     // ==========================================
@@ -1407,7 +1451,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const aboutModal = document.getElementById("aboutModal");
     const closeAboutModal = document.getElementById("closeAboutModal");
     const closeAboutModalBtn = document.getElementById("closeAboutModalBtn");
-    const appMenuBtn = document.getElementById("appMenuBtn");
+    const sidebarLogo = document.getElementById("sidebarLogo") || document.querySelector(".drive-logo");
+    const sidebarLogoContainer = document.getElementById("sidebarLogoContainer") || document.querySelector(".logo-container");
+    const dropdownAboutUsBtn = document.getElementById("dropdownAboutUsBtn");
     const checkUpdateDropdownBtn = document.getElementById("checkUpdateDropdownBtn");
     const checkUpdateModalBtn = document.getElementById("checkUpdateModalBtn");
     const aboutUpdateProgressContainer = document.getElementById("aboutUpdateProgressBarContainer");
@@ -1440,8 +1486,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    if (appMenuBtn) {
-        appMenuBtn.addEventListener("click", () => {
+    // Centris Drive logo in sidebar opens About modal
+    if (sidebarLogo) {
+        sidebarLogo.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openAboutModal();
+        });
+    }
+
+    if (sidebarLogoContainer) {
+        sidebarLogoContainer.addEventListener("click", () => {
+            openAboutModal();
+        });
+    }
+
+    // Help option "About Us" in user dropdown opens About modal
+    if (dropdownAboutUsBtn) {
+        dropdownAboutUsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (userdropdown) userdropdown.style.display = "none";
+            openAboutModal();
+        });
+    }
+
+    // Listen to native Help menu or tray "About Us" IPC trigger
+    if (window.electronAPI && window.electronAPI.onOpenAboutModal) {
+        window.electronAPI.onOpenAboutModal(() => {
             openAboutModal();
         });
     }
@@ -1880,6 +1950,14 @@ function viewFile(targetPath) {
 };
 
 async function triggerSync(syncData, manual = false) {
+    if (currentDriveCapacity && currentDriveCapacity.isSyncBlocked) {
+        console.warn("⚠️ Sync blocked: Storage capacity reached 100%");
+        if (manual) {
+            showValidation("Storage capacity reached 100% (10 GB). Sync is stopped. Please delete files to free up space.", "error", 8000);
+        }
+        return;
+    }
+
     if (isSyncing) {
         console.log("⚠️ Sync already in progress, skipping...");
         if (manual) showValidation("Sync already in progress.", "warning");
@@ -1911,6 +1989,7 @@ async function triggerSync(syncData, manual = false) {
         if (manual) showValidation("Sync failed: " + err.message, 'error');
     } finally {
         isSyncing = false;
+        loadRootDriveProperties();
     }
 }
 
@@ -2588,6 +2667,101 @@ function updateFooterStatus(dirPath, result = {}) {
 
 let rootDriveProperties = null;
 let isLoadingDriveProperties = false;
+let currentDriveCapacity = null;
+let lastCapacityAlertLevel = null;
+
+function updateCapacityDisplay(capacity) {
+    if (!capacity) return;
+    currentDriveCapacity = capacity;
+
+    const percentEl = document.getElementById("storageCapacityPercent");
+    const barEl = document.getElementById("storageCapacityBar");
+    const usageEl = document.getElementById("storageCapacityUsage");
+    const badgeEl = document.getElementById("storageCapacityBadge");
+
+    const pct = Math.min(100, Math.max(0, capacity.percentage || 0));
+
+    if (percentEl) {
+        percentEl.textContent = `${pct}%`;
+        if (capacity.status === "full" || capacity.status === "danger") {
+            percentEl.style.color = "#dc2626";
+        } else if (capacity.status === "warning") {
+            percentEl.style.color = "#d97706";
+        } else {
+            percentEl.style.color = "#10b981";
+        }
+    }
+
+    if (barEl) {
+        barEl.style.width = `${pct}%`;
+        barEl.className = "storage-capacity-bar-fill";
+        if (capacity.status === "full") {
+            barEl.classList.add("status-full");
+        } else if (capacity.status === "danger") {
+            barEl.classList.add("status-danger");
+        } else if (capacity.status === "warning") {
+            barEl.classList.add("status-warning");
+        } else {
+            barEl.classList.add("status-green");
+        }
+    }
+
+    if (usageEl) {
+        usageEl.textContent = `${capacity.usedFormatted || "0 B"} / ${capacity.totalFormatted || "10 GB"}`;
+    }
+
+    if (badgeEl) {
+        badgeEl.className = "storage-capacity-badge";
+        if (capacity.status === "full") {
+            badgeEl.textContent = "Full (100%)";
+            badgeEl.classList.add("badge-full");
+        } else if (capacity.status === "danger") {
+            badgeEl.textContent = "Danger (90%+)";
+            badgeEl.classList.add("badge-danger");
+        } else if (capacity.status === "warning") {
+            badgeEl.textContent = "Warning (85%+)";
+            badgeEl.classList.add("badge-warning");
+        } else {
+            badgeEl.textContent = "Normal";
+            badgeEl.classList.add("badge-normal");
+        }
+    }
+
+    // Also update popup if open
+    const propCapPercent = document.getElementById("propCapacityPercent");
+    const propCapBar = document.getElementById("propCapacityBar");
+    if (propCapPercent) {
+        propCapPercent.textContent = `${pct}% (${capacity.usedFormatted} / ${capacity.totalFormatted})`;
+    }
+    if (propCapBar) {
+        propCapBar.style.width = `${pct}%`;
+        propCapBar.className = "prop-capacity-bar-fill";
+        if (capacity.status === "full") propCapBar.classList.add("status-full");
+        else if (capacity.status === "danger") propCapBar.classList.add("status-danger");
+        else if (capacity.status === "warning") propCapBar.classList.add("status-warning");
+        else propCapBar.classList.add("status-green");
+    }
+
+    // Threshold alerts
+    if (capacity.status === "full") {
+        if (lastCapacityAlertLevel !== "full") {
+            showValidation(`🛑 Storage Full: Storage reached 100% capacity (${capacity.usedFormatted} / ${capacity.totalFormatted}). All syncing, uploads, and downloads are stopped! Delete files to resume.`, "error", 12000);
+            lastCapacityAlertLevel = "full";
+        }
+    } else if (capacity.status === "danger") {
+        if (lastCapacityAlertLevel !== "danger") {
+            showValidation(`🚨 Storage Danger: Storage is at ${pct}% capacity (${capacity.usedFormatted} / ${capacity.totalFormatted}). Approaching 100% limit!`, "error", 9000);
+            lastCapacityAlertLevel = "danger";
+        }
+    } else if (capacity.status === "warning") {
+        if (lastCapacityAlertLevel !== "warning") {
+            showValidation(`⚠️ Storage Warning: Storage is at ${pct}% capacity (${capacity.usedFormatted} / ${capacity.totalFormatted}). Please consider deleting unused files.`, "warning", 8000);
+            lastCapacityAlertLevel = "warning";
+        }
+    } else {
+        lastCapacityAlertLevel = "normal";
+    }
+}
 
 async function loadRootDriveProperties() {
     if (isLoadingDriveProperties) return;
@@ -2600,6 +2774,9 @@ async function loadRootDriveProperties() {
         if (props) {
             rootDriveProperties = props;
             renderDrivePropertiesPopup(props);
+            if (props.capacity) {
+                updateCapacityDisplay(props.capacity);
+            }
         }
     } catch (err) {
         console.error("loadRootDriveProperties error:", err);
@@ -2624,6 +2801,23 @@ function renderDrivePropertiesPopup(props) {
     if (foldersEl) foldersEl.textContent = `${(props.folderCount || 0).toLocaleString()} ${props.folderCount === 1 ? 'Folder' : 'Folders'}`;
     if (filesEl) filesEl.textContent = `${(props.fileCount || 0).toLocaleString()} ${props.fileCount === 1 ? 'File' : 'Files'}`;
     if (sizeEl) sizeEl.textContent = props.totalSizeFormatted || "0 B";
+
+    const propCapPercent = document.getElementById("propCapacityPercent");
+    const propCapBar = document.getElementById("propCapacityBar");
+    if (props.capacity) {
+        const cap = props.capacity;
+        if (propCapPercent) {
+            propCapPercent.textContent = `${cap.percentage}% (${cap.usedFormatted} / ${cap.totalFormatted})`;
+        }
+        if (propCapBar) {
+            propCapBar.style.width = `${Math.min(100, Math.max(0, cap.percentage))}%`;
+            propCapBar.className = "prop-capacity-bar-fill";
+            if (cap.status === "full") propCapBar.classList.add("status-full");
+            else if (cap.status === "danger") propCapBar.classList.add("status-danger");
+            else if (cap.status === "warning") propCapBar.classList.add("status-warning");
+            else propCapBar.classList.add("status-green");
+        }
+    }
 }
 
 // --- Render File List ---
@@ -2782,6 +2976,7 @@ async function deleteFile(targetPath, type) {
 
     if (result.success) {
         showValidation("Deleted successfully", "success");
+        loadRootDriveProperties();
         setTimeout(() => {
             loadDriveItems(history[currentIndex], true);
         }, 3000);
@@ -2850,6 +3045,7 @@ async function deleteSelectedItems() {
                 : deletedCount + " items deleted successfully.";
 
         showValidation(message, "success");
+        loadRootDriveProperties();
         setTimeout(() => {
             loadDriveItems(history[currentIndex], true);
         }, 3000);

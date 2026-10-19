@@ -10,6 +10,23 @@ if (!isDev) {
     console.warn = () => {};
 }
 
+// 🔒 SINGLE INSTANCE LOCK
+// When the app is minimized to the system tray, launching another instance must not crash with cache lock errors.
+// Instead, focus the existing running instance and exit the duplicate immediately.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    console.log("⚠️ Another instance of Centris Drive is already running. Focusing existing instance and exiting duplicate.");
+    app.exit(0);
+} else {
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+        console.log("🔄 Second instance launch detected. Restoring and focusing existing window.");
+        restoreAndFocusWindow();
+    });
+}
+
+// 🚀 Prevent Chromium GPU shader disk cache lock & creation errors on Windows
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+
 //const path = require('node:path');
 const path = require("path");
 const fs = require('fs');
@@ -50,7 +67,7 @@ global.systemTouchedPaths = global.systemTouchedPaths || new Set(); // 🔥 CORE
 //     locked: false,
 // };
 
-if (isMac === "darwin") {
+if (isMac) {
     app.disableHardwareAcceleration();
 }
 
@@ -131,6 +148,7 @@ let win = null;
 let tray;
 const VHDX_NAME = "Centris-Drive.vhdx";
 const VHDX_SIZE_MB = 10240; // 10 GB
+const TOTAL_CAPACITY_BYTES = VHDX_SIZE_MB * 1024 * 1024; // 10 GB limit (10,737,418,240 bytes)
 const VOLUME_LABEL = "Centris-Drive";
 const homeDir = os.homedir();
 const VHDX_PATH = path.join(homeDir, VHDX_NAME);
@@ -1033,6 +1051,12 @@ async function checkForAppUpdates(isManual = false) {
 }
 
 function showAboutDialog() {
+    restoreAndFocusWindow();
+    if (win && !win.isDestroyed() && win.webContents) {
+        win.webContents.send("open-about-modal");
+        return;
+    }
+
     const version = getAppCurrentVersion();
     const isWindows = process.platform === 'win32';
     const isMac = process.platform === 'darwin';
@@ -1157,7 +1181,7 @@ function buildAppMenu() {
                 },
                 { type: 'separator' },
                 {
-                    label: 'About Centris Drive',
+                    label: 'About Us',
                     click: () => showAboutDialog()
                 }
             ]
@@ -1194,7 +1218,7 @@ function createTray() {
                 },
             },
             {
-                label: 'About Centris Drive',
+                label: 'About Us',
                 click: () => {
                     showAboutDialog();
                 },
@@ -3450,6 +3474,9 @@ ipcMain.handle("delete-item", async (event, { path: targetPath, type }) => {
             await fs.promises.unlink(targetPath);
         }
 
+        invalidateDrivePropsCache();
+        broadcastCapacityUpdate();
+
         return { success: true };
     } catch (err) {
         return { success: false, error: err.message };
@@ -4308,6 +4335,20 @@ async function downloadPendingFilesLogic(event, args) {
     await logMemory("DOWNLOAD START");
 
     while (true) {
+        // 🛑 STORAGE CAPACITY 100% GUARD
+        const cap = await getDriveCapacity(mappedDrivePath);
+        if (cap && cap.capacity && cap.capacity.isSyncBlocked) {
+            console.warn(`⚠️ S2C download stopped: Storage capacity reached 100% (${cap.capacity.usedFormatted} / ${cap.capacity.totalFormatted})`);
+            if (event && event.sender && !event.sender.isDestroyed()) {
+                event.sender.send("storage-capacity-alert", {
+                    type: "full",
+                    message: `Storage limit reached (100%). S2C downloads stopped. Please delete files to resume syncing.`,
+                    capacity: cap.capacity
+                });
+            }
+            break;
+        }
+
         await logMemory("BEFORE SERVER FETCH");
 
         const response = await downloadServerPending({
@@ -5261,7 +5302,22 @@ async function runServerToClientSync(event, syncData) {
         await deleteLocalFilesLogic(event, args);
 
         // 2️⃣ Download from server → client
-        await downloadPendingFilesLogic(event, args);
+        const cap = await getDriveCapacity();
+        if (cap && cap.capacity && cap.capacity.isSyncBlocked) {
+            console.warn(`⚠️ S2C download skipped: Storage capacity is at 100% (${cap.capacity.usedFormatted} / ${cap.capacity.totalFormatted})`);
+            if (event && event.sender && !event.sender.isDestroyed()) {
+                event.sender.send("storage-capacity-alert", {
+                    type: "full",
+                    message: `Storage limit reached (100%). S2C downloads stopped. Please delete files to resume syncing.`,
+                    capacity: cap.capacity
+                });
+            }
+        } else {
+            await downloadPendingFilesLogic(event, args);
+        }
+
+        invalidateDrivePropsCache();
+        broadcastCapacityUpdate();
 
         console.log('✅ S2C sync finished');
 
@@ -6315,12 +6371,19 @@ ipcMain.handle("basename", async (event, fullPath) => {
 });
 
 ipcMain.handle("copyFileToDrive", async (event, src, relPath, mappedDrive) => {
+    const driveInfo = await getDriveCapacity(mappedDrive);
+    if (driveInfo && driveInfo.capacity && driveInfo.capacity.isSyncBlocked) {
+        throw new Error(`Storage capacity is 100% full (${driveInfo.capacity.usedFormatted} / ${driveInfo.capacity.totalFormatted}). Copy blocked.`);
+    }
+
     const finalPath = path.join(mappedDrive, relPath);
 
     const folderOnly = path.dirname(finalPath);
     fs.mkdirSync(folderOnly, { recursive: true });
 
     await fs.promises.copyFile(src, finalPath);
+    invalidateDrivePropsCache();
+    broadcastCapacityUpdate();
 
     return { success: true };
 });
@@ -6889,6 +6952,29 @@ ipcMain.handle("auto-sync", async (event, args) => {
             return { success: true, message: "No local changes." };
         }
 
+        // 🛑 STORAGE CAPACITY 100% GUARD
+        if (changedItems.length) {
+            const driveCap = await getDriveCapacity(mappedDrivePath);
+            if (driveCap && driveCap.capacity && driveCap.capacity.isSyncBlocked) {
+                console.warn(`⚠️ [auto-sync] Upload blocked: Storage capacity is at 100% (${driveCap.capacity.usedFormatted} / ${driveCap.capacity.totalFormatted})`);
+                if (event && event.sender && !event.sender.isDestroyed()) {
+                    event.sender.send("storage-capacity-alert", {
+                        type: "full",
+                        message: `Storage capacity reached 100% (${driveCap.capacity.usedFormatted} / ${driveCap.capacity.totalFormatted}). Upload stopped.`,
+                        capacity: driveCap.capacity
+                    });
+                }
+                if (!deletedItems.length) {
+                    return {
+                        success: false,
+                        blocked: true,
+                        message: `Storage capacity full (100%). Upload stopped. Please delete files to free up space.`
+                    };
+                }
+                changedItems = []; // allow local deletions to sync to server, but block uploads
+            }
+        }
+
         /* ================= UPLOAD ================= */
 
         if (changedItems.length) {
@@ -7045,6 +7131,9 @@ ipcMain.handle("auto-sync", async (event, args) => {
             setTimeout(() => event.sender.send("delete-progress-hide", { source: "client" }), 5000);
         }
 
+        invalidateDrivePropsCache();
+        broadcastCapacityUpdate();
+
         return { success: true, message: "Sync completed successfully" };
 
     } catch (err) {
@@ -7097,8 +7186,14 @@ ipcMain.handle("search-paths", async (event, query) => {
 
 
 ipcMain.handle("copy-file", async (e, src, dest) => {
+    const driveInfo = await getDriveCapacity(dest);
+    if (driveInfo && driveInfo.capacity && driveInfo.capacity.isSyncBlocked) {
+        throw new Error(`Storage capacity is 100% full (${driveInfo.capacity.usedFormatted} / ${driveInfo.capacity.totalFormatted}). Copy blocked.`);
+    }
     const fs = require("fs/promises");
     await fs.copyFile(src, dest);
+    invalidateDrivePropsCache();
+    broadcastCapacityUpdate();
     return true;
 });
 
@@ -7515,7 +7610,55 @@ async function calculateDriveProperties(targetDir) {
     };
 }
 
-ipcMain.handle("get-drive-properties", async (event, rootDir = null) => {
+function computeCapacityMetrics(usedBytes) {
+    const totalBytes = TOTAL_CAPACITY_BYTES;
+    const safeUsedBytes = Math.max(0, Number(usedBytes) || 0);
+    const freeBytes = Math.max(0, totalBytes - safeUsedBytes);
+    const rawPercent = (safeUsedBytes / totalBytes) * 100;
+    const percentage = Math.min(100, parseFloat(rawPercent.toFixed(1)));
+
+    let status = "normal"; // normal (<85%), warning (85-89.9%), danger (90-99.9%), full (>=100%)
+    let isWarning = false;
+    let isDanger = false;
+    let isSyncBlocked = false;
+
+    if (rawPercent >= 100) {
+        status = "full";
+        isDanger = true;
+        isSyncBlocked = true;
+    } else if (rawPercent >= 90) {
+        status = "danger";
+        isDanger = true;
+        isSyncBlocked = false;
+    } else if (rawPercent >= 85) {
+        status = "warning";
+        isWarning = true;
+        isSyncBlocked = false;
+    }
+
+    return {
+        totalBytes,
+        totalFormatted: formatSize(totalBytes),
+        usedBytes: safeUsedBytes,
+        usedFormatted: formatSize(safeUsedBytes),
+        freeBytes,
+        freeFormatted: formatSize(freeBytes),
+        percentage,
+        rawPercentage: rawPercent,
+        status,
+        isWarning,
+        isDanger,
+        isSyncBlocked,
+        limitMB: VHDX_SIZE_MB
+    };
+}
+
+function invalidateDrivePropsCache() {
+    cachedDriveProps = null;
+    lastDrivePropsTime = 0;
+}
+
+async function getDriveCapacity(rootDir = null) {
     try {
         const platform = os.platform();
         let target = rootDir;
@@ -7529,10 +7672,14 @@ ipcMain.handle("get-drive-properties", async (event, rootDir = null) => {
 
         const now = Date.now();
         if (cachedDriveProps && cachedDriveProps.rootPath === target && (now - lastDrivePropsTime < DRIVE_PROPS_CACHE_TTL)) {
+            if (!cachedDriveProps.capacity) {
+                cachedDriveProps.capacity = computeCapacityMetrics(cachedDriveProps.totalSizeBytes);
+            }
             return cachedDriveProps;
         }
 
         const result = await calculateDriveProperties(target);
+        result.capacity = computeCapacityMetrics(result.totalSizeBytes);
         cachedDriveProps = result;
         lastDrivePropsTime = now;
         return result;
@@ -7543,9 +7690,32 @@ ipcMain.handle("get-drive-properties", async (event, rootDir = null) => {
             fileCount: 0,
             totalSizeBytes: 0,
             totalSizeFormatted: "0 B",
+            capacity: computeCapacityMetrics(0),
             error: err.message
         };
     }
+}
+
+async function broadcastCapacityUpdate() {
+    try {
+        if (win && !win.isDestroyed() && win.webContents) {
+            const info = await getDriveCapacity();
+            if (info && info.capacity) {
+                win.webContents.send("storage-capacity-update", info.capacity);
+            }
+        }
+    } catch (err) {
+        // silent
+    }
+}
+
+ipcMain.handle("get-drive-properties", async (event, rootDir = null) => {
+    return await getDriveCapacity(rootDir);
+});
+
+ipcMain.handle("get-drive-capacity", async (event, rootDir = null) => {
+    const res = await getDriveCapacity(rootDir);
+    return res.capacity;
 });
 
 // 🔹 IPC handler to list folder contents
@@ -7813,6 +7983,14 @@ ipcMain.handle("getAppConfig", async () => {
 
 ipcMain.handle("fs:upload-folder", async (event, srcDir, destDir) => {
     try {
+        const driveInfo = await getDriveCapacity(destDir);
+        if (driveInfo && driveInfo.capacity && driveInfo.capacity.isSyncBlocked) {
+            return {
+                success: false,
+                error: `Storage capacity reached 100% (${driveInfo.capacity.usedFormatted} / ${driveInfo.capacity.totalFormatted}). Upload stopped.`
+            };
+        }
+
         function copyRecursive(src, dest) {
             if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
             const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -7834,6 +8012,8 @@ ipcMain.handle("fs:upload-folder", async (event, srcDir, destDir) => {
         const destFolder = path.join(destDir, folderName);
 
         copyRecursive(srcDir, destFolder);
+        invalidateDrivePropsCache();
+        broadcastCapacityUpdate();
 
         return { success: true };
     } catch (err) {
@@ -7853,11 +8033,22 @@ ipcMain.handle('uploadFileToDrive', async (event, files, targetDir) => {
             throw new Error('Target directory not found.');
         }
 
+        const driveInfo = await getDriveCapacity(targetDir);
+        if (driveInfo && driveInfo.capacity && driveInfo.capacity.isSyncBlocked) {
+            return {
+                success: false,
+                error: `Storage capacity reached 100% (${driveInfo.capacity.usedFormatted} / ${driveInfo.capacity.totalFormatted}). Upload stopped.`
+            };
+        }
+
         for (const file of files) {
             const fileName = path.basename(file);
             const destPath = path.join(targetDir, fileName);
             fs.copyFileSync(file, destPath); // simple copy (synchronous)
         }
+
+        invalidateDrivePropsCache();
+        broadcastCapacityUpdate();
 
         return { success: true, message: 'All files uploaded successfully.' };
     } catch (err) {

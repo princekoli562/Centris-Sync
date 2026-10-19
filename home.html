@@ -30,9 +30,30 @@
         <!-- <button id="stopSyncBtn" style="display:block; background:#ff4444; color:white; padding:8px 16px; border:none; border-radius:6px;">
             Stop Sync
         </button> -->
-        <div class="progress-container" id="syncProgressContainer" style="display:none;">
-            <label id="syncProgressLabel">Syncing... 0%</label>
-            <progress id="syncProgressBar" value="0" max="100"></progress>
+        <div class="progress-wrapper" id="syncProgressWrapper">
+            <!-- C2S Progress Card (Local Watcher: Upload & Delete to Server) -->
+            <div class="progress-card c2s-card" id="c2sProgressCard" style="display:none;">
+                <div class="progress-header">
+                    <span class="progress-badge c2s-badge"><i class="fas fa-cloud-upload-alt"></i> C2S · Upload</span>
+                </div>
+                <label class="progress-label" id="c2sProgressLabel">Uploading... 0%</label>
+                <progress class="progress-bar-el c2s-progress-bar" id="c2sProgressBar" value="0" max="100"></progress>
+            </div>
+
+            <!-- S2C Progress Card (Server Polling: Download & Delete from Server) -->
+            <div class="progress-card s2c-card" id="s2cProgressCard" style="display:none;">
+                <div class="progress-header">
+                    <span class="progress-badge s2c-badge"><i class="fas fa-cloud-download-alt"></i> S2C · Download</span>
+                </div>
+                <label class="progress-label" id="s2cProgressLabel">Downloading... 0%</label>
+                <progress class="progress-bar-el s2c-progress-bar" id="s2cProgressBar" value="0" max="100"></progress>
+            </div>
+
+            <!-- Legacy container kept for backward compatibility -->
+            <div class="progress-container" id="syncProgressContainer" style="display:none;">
+                <label id="syncProgressLabel">Syncing... 0%</label>
+                <progress id="syncProgressBar" value="0" max="100"></progress>
+            </div>
         </div>
     </div>
     <div id="main">

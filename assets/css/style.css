@@ -226,20 +226,22 @@ button { margin-bottom: 10px; }
 
 .sidebar-no {
     width: 220px;
+    box-sizing: border-box;
     background: #fff;
     border-right: 1px solid #ddd;
     display: flex;
     flex-direction: column; /* 👈 Stack elements vertically */
     align-items: flex-start; /* Align to left side */
-    padding: 20px;
+    padding: 20px 14px;
     gap: 2px; /* space between buttons */
     position: relative;   /* 👈 REQUIRED */
-    height: 100vh; 
-    padding-bottom: calc(var(--footer-height) + 20px);
+    height: calc(100vh - var(--footer-height)); 
+    padding-bottom: 20px;
 }
 
 .sidebar {
     width: 220px;
+    box-sizing: border-box;
     background: #fff;
     border-right: 1px solid #ddd;
 
@@ -248,11 +250,11 @@ button { margin-bottom: 10px; }
     align-items: flex-start;
     gap: 2px;
 
-    padding: 20px;
-    padding-bottom: calc(var(--footer-height) + 30px);
+    padding: 20px 14px;
+    padding-bottom: 20px;
 
     position: relative;   /* REQUIRED for absolute children */
-    height: 100vh;
+    height: calc(100vh - var(--footer-height));
 
     overflow: hidden;     /* prevents overlap glitches */
 }
@@ -962,19 +964,116 @@ button { margin-bottom: 10px; }
   display: block;
 }
 
+.progress-wrapper {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1100;
+    box-sizing: border-box;
+    max-height: calc(100% - 240px);
+    overflow-y: auto;
+}
+
+.progress-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    transition: all 0.25s ease-in-out;
+    box-sizing: border-box;
+}
+
+.progress-card.c2s-card {
+    border-left: 4px solid #0284c7;
+}
+
+.progress-card.s2c-card {
+    border-left: 4px solid #10b981;
+}
+
+.progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.progress-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.c2s-badge {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.s2c-badge {
+    background: #d1fae5;
+    color: #047857;
+}
+
+.progress-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #334155;
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.progress-bar-el {
+    width: 100%;
+    height: 6px;
+    border-radius: 6px;
+    display: block;
+}
+
+.c2s-progress-bar {
+    accent-color: #0284c7;
+}
+.c2s-progress-bar::-webkit-progress-value {
+    background-color: #0284c7;
+    border-radius: 6px;
+}
+.c2s-progress-bar::-moz-progress-bar {
+    background-color: #0284c7;
+}
+
+.s2c-progress-bar {
+    accent-color: #10b981;
+}
+.s2c-progress-bar::-webkit-progress-value {
+    background-color: #10b981;
+    border-radius: 6px;
+}
+.s2c-progress-bar::-moz-progress-bar {
+    background-color: #10b981;
+}
+
 .progress-container {
     display: none;                 /* show via JS */
-    position: absolute;            /* relative to sidebar */
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: calc(var(--footer-height) + 90px); /* just above footer */
-    width: 85%;
+    position: relative;
+    width: 100%;
     background: #f8f9fa;
     border: 1px solid #ccc;
     border-radius: 8px;
     padding: 10px 15px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    z-index: 1100; /* above footer */
 }
 
 /* label text */

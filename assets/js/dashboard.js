@@ -10,23 +10,14 @@ let currentIndex = -1;
 window.stopSync = true;
 
 let currentView = "grid";
-let activeProgressType = null;
 
 let customer_data = localStorage.getItem('customer_data');
 let domain_data = localStorage.getItem('domain_data');
 let user_data = localStorage.getItem('user_data');
 
-//let syncData = JSON.parse(localStorage.getItem('config_data'));
-const progressContainer = document.getElementById('syncProgressContainer');
-const progressLabel = document.getElementById('syncProgressLabel');
-const progressBar = document.getElementById('syncProgressBar');
 let syncData = null;
 let user_list = [];
 let pingInterval = null;
-
-if (progressContainer) {
-    progressContainer.style.display = 'none';
-}
 
 let isSyncing = false;
 let autoSyncInterval = null;
@@ -40,180 +31,261 @@ let sync_indicator = document.getElementById("sync-indicator");
 let sync_text = document.getElementById("sync-text");
 let sync_icon = document.getElementById("sync-icon");
 
+/* ============================================================
+   DUAL PROGRESS SYSTEM (C2S: Watcher Upload/Delete, S2C: Server Download/Delete)
+============================================================ */
+let c2sHideTimeout = null;
+let s2cHideTimeout = null;
 
+function bringToTop(cardId) {
+    const wrapper = document.getElementById("syncProgressWrapper");
+    const card = document.getElementById(cardId);
+    if (wrapper && card && wrapper.firstElementChild !== card) {
+        wrapper.prepend(card);
+    }
+}
 
-window.electronAPI.onSyncProgress(({ done, total, file }) => {
-    const percent = Math.round((done / total) * 100);
+function showC2SProgress(type, text, percent) {
+    if (c2sHideTimeout) {
+        clearTimeout(c2sHideTimeout);
+        c2sHideTimeout = null;
+    }
+    const card = document.getElementById("c2sProgressCard");
+    const label = document.getElementById("c2sProgressLabel");
+    const bar = document.getElementById("c2sProgressBar");
+    const badge = card ? card.querySelector(".c2s-badge") : null;
 
-    // 🔹 Show progress bar when sync starts
-    progressContainer.style.display = 'block';
-
-    // 🔹 Update values
-    progressBar.value = percent;
-    progressLabel.textContent = `Syncing... ${percent}% (${done}/${total})`;
-
-    // Optional: show current file being synced (if you want)
-    if (file) {
-        console.log(`📁 Currently syncing: ${file}`);
+    if (badge) {
+        badge.innerHTML = type === "delete"
+            ? `<i class="fas fa-trash-alt"></i> C2S · Delete`
+            : `<i class="fas fa-cloud-upload-alt"></i> C2S · Upload`;
     }
 
-    // 🔹 When sync completes
-    if (percent === 100) {
-        progressLabel.textContent = '✅ Sync complete!';
+    if (card) card.style.display = "block";
+    if (label) label.textContent = text;
+    if (bar && percent !== undefined) bar.value = percent;
+
+    bringToTop("c2sProgressCard");
+}
+
+function completeC2SProgress(text) {
+    const card = document.getElementById("c2sProgressCard");
+    const label = document.getElementById("c2sProgressLabel");
+    const bar = document.getElementById("c2sProgressBar");
+    if (card) card.style.display = "block";
+    if (label) label.textContent = text || "✅ C2S Upload complete! 100%";
+    if (bar) bar.value = 100;
+
+    bringToTop("c2sProgressCard");
+
+    if (c2sHideTimeout) clearTimeout(c2sHideTimeout);
+    c2sHideTimeout = setTimeout(() => {
+        const c = document.getElementById("c2sProgressCard");
+        if (c) c.style.display = "none";
+    }, 6000);
+}
+
+function hideC2SProgress() {
+    const card = document.getElementById("c2sProgressCard");
+    if (card) card.style.display = "none";
+}
+
+function showS2CProgress(type, text, percent) {
+    if (s2cHideTimeout) {
+        clearTimeout(s2cHideTimeout);
+        s2cHideTimeout = null;
     }
-});
+    const card = document.getElementById("s2cProgressCard");
+    const label = document.getElementById("s2cProgressLabel");
+    const bar = document.getElementById("s2cProgressBar");
+    const badge = card ? card.querySelector(".s2c-badge") : null;
 
-
-// window.electronAPI.onSyncStatus((_event, statusMsg) => {
-//     console.log("📦 Sync status:", statusMsg);
-
-//     //progressLabel.textContent = statusMsg;
-
-//     // 🔹 If sync completed successfully, hide progress bar after 1 second
-//     if (statusMsg.toLowerCase().includes('complete')) {
-//         setTimeout(() => {
-//         progressContainer.style.display = 'none';
-//         progressBar.value = 0;
-//         progressLabel.textContent = 'Syncing... 0%';
-//         }, 5000); // 5 second delay
-//     }
-// });
-
-window.electronAPI.onSyncStatus((_event, payload) => {
-    if (!payload || typeof payload !== "object") return;
-
-    const status = String(payload.status || "").toLowerCase();
-    const message = payload.message || "";
-
-    console.log("📦 Sync status:", status, message);
-
-    // Update UI text
-    progressLabel.textContent = message;
-
-    // 🔹 If sync completed successfully
-    if (status === "success" && message.toLowerCase().includes("complete")) {
-        setTimeout(() => {
-            progressContainer.style.display = "none";
-            progressBar.value = 0;
-            progressLabel.textContent = "Syncing... 0%";
-        }, 5000);
+    if (badge) {
+        badge.innerHTML = type === "delete"
+            ? `<i class="fas fa-trash-alt"></i> S2C · Delete`
+            : `<i class="fas fa-cloud-download-alt"></i> S2C · Download`;
     }
+
+    if (card) card.style.display = "block";
+    if (label) label.textContent = text;
+    if (bar && percent !== undefined) bar.value = percent;
+
+    bringToTop("s2cProgressCard");
+}
+
+function completeS2CProgress(text) {
+    const card = document.getElementById("s2cProgressCard");
+    const label = document.getElementById("s2cProgressLabel");
+    const bar = document.getElementById("s2cProgressBar");
+    if (card) card.style.display = "block";
+    if (label) label.textContent = text || "✅ S2C Download complete! 100%";
+    if (bar) bar.value = 100;
+
+    bringToTop("s2cProgressCard");
+
+    if (s2cHideTimeout) clearTimeout(s2cHideTimeout);
+    s2cHideTimeout = setTimeout(() => {
+        const c = document.getElementById("s2cProgressCard");
+        if (c) c.style.display = "none";
+    }, 6000);
+}
+
+function hideS2CProgress() {
+    const card = document.getElementById("s2cProgressCard");
+    if (card) card.style.display = "none";
+}
+
+/* ------------------------------------------------------------
+   EVENT LISTENERS: C2S (Upload) & S2C (Download) & Delete (Both)
+------------------------------------------------------------ */
+
+// Upload (C2S)
+window.electronAPI.onUploadProgressStart(({ total = 0 } = {}) => {
+    if (total <= 0) return;
+    showC2SProgress("upload", `Uploading... 0% (0/${total})`, 0);
 });
 
-
-window.electronAPI.onUploadProgressStart(({ total }) => {
-    activeProgressType = "upload";
-    progressContainer.style.display = "block";
-    progressBar.value = 0;
-    progressLabel.textContent = `Uploading... 0% (0/${total})`;
+window.electronAPI.onUploadProgress(({ done = 0, total = 0, file } = {}) => {
+    const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+    showC2SProgress("upload", `Uploading... ${percent}% (${done}/${total})`, percent);
+    if (percent >= 100) {
+        completeC2SProgress(`✅ C2S Upload complete! 100% (${done}/${total})`);
+    }
+    if (file) console.log("C2S Uploading:", file);
 });
 
-// Update progress
-window.electronAPI.onUploadProgress(({ done, total, file }) => {
-    if (activeProgressType !== "upload") return;
-    const percent = Math.round((done / total) * 100);
-
-    progressBar.value = percent;
-    progressLabel.textContent = `Uploading... ${percent}% (${done}/${total})`;
-
-    if (file) console.log("Uploading:", file);
-});
-
-// On complete → 100%
 window.electronAPI.onUploadComplete(() => {
-    if (activeProgressType !== "upload") return;
-    progressLabel.textContent = "✅ Upload complete!";
+    completeC2SProgress("✅ C2S Upload complete! 100%");
 });
 
-// Auto hide after 1 min
 window.electronAPI.onUploadHide(() => {
-    if (activeProgressType !== "upload") return;
-    progressContainer.style.display = "none";
-    activeProgressType = null;
+    hideC2SProgress();
 });
 
-window.electronAPI.onDeleteProgressStart(({ total }) => {
-    activeProgressType = "delete";
-    progressContainer.style.display = "block";
-    progressBar.value = 0;
-    progressLabel.textContent = `Deleting... 0% (0/${total})`;
+// Delete (Dispatched to C2S or S2C based on source)
+window.electronAPI.onDeleteProgressStart((data = {}) => {
+    const total = data.total || 0;
+    if (total <= 0) return;
+    const source = String(data.source || "").toLowerCase();
+    const isC2S = source === "client" || source === "c2s";
+
+    if (isC2S) {
+        showC2SProgress("delete", `Deleting on Server... 0% (0/${total})`, 0);
+    } else {
+        showS2CProgress("delete", `Deleting locally... 0% (0/${total})`, 0);
+    }
 });
 
-
-window.electronAPI.onDeleteProgress(({ done, total, file, source }) => {
-    if (activeProgressType !== "delete") return;
+window.electronAPI.onDeleteProgress(({ done = 0, total = 0, file, source } = {}) => {
+    if (total <= 0) return;
     const percent = Math.round((done / total) * 100);
+    const src = String(source || "").toLowerCase();
+    const isC2S = src === "client" || src === "c2s";
 
-    progressBar.value = percent;
-    progressLabel.textContent = `Deleting from ${source}... ${percent}% (${done}/${total})`;
-
+    if (isC2S) {
+        showC2SProgress("delete", `Deleting on Server... ${percent}% (${done}/${total})`, percent);
+    } else {
+        showS2CProgress("delete", `Deleting locally... ${percent}% (${done}/${total})`, percent);
+    }
     if (file) console.log(`Deleting (${source}):`, file);
 });
 
-window.electronAPI.onDeleteComplete(({ source, status }) => {
-    if (activeProgressType !== "delete") return;
+window.electronAPI.onDeleteComplete((data = {}) => {
+    const source = String(data?.source || "").toLowerCase();
+    const status = data?.status || "";
+    const isC2S = source === "client" || source === "c2s";
+
+    // 🛑 If there were no items to delete, do NOT show progress card and do NOT refresh screen
     if (status === "no-delete") {
-        progressLabel.textContent = `ℹ️ No items to delete (${source})`;
+        if (isC2S) hideC2SProgress();
+        else hideS2CProgress();
         return;
     }
 
-    progressLabel.textContent = `🗑️ Delete complete (${source})!`;
+    const msg = isC2S ? "🗑️ C2S Delete complete!" : "🗑️ S2C Delete complete!";
 
+    if (isC2S) {
+        completeC2SProgress(msg);
+    } else {
+        completeS2CProgress(msg);
+    }
+
+    // Only refresh drive view when actual items were deleted
     setTimeout(() => {
-        loadDriveItems(history[currentIndex], true);
+        if (typeof loadDriveItems === "function" && history[currentIndex]) {
+            loadDriveItems(history[currentIndex], true);
+        }
     }, 3000);
-
 });
 
-
-
-
-
-window.electronAPI.onDeleteHide(() => {
-    if (activeProgressType !== "delete") return;
-    progressContainer.style.display = "none";
-    activeProgressType = null;
+window.electronAPI.onDeleteHide((data = {}) => {
+    const source = String(data?.source || "").toLowerCase();
+    if (source === "client" || source === "c2s") {
+        hideC2SProgress();
+    } else if (source) {
+        hideS2CProgress();
+    } else {
+        hideC2SProgress();
+        hideS2CProgress();
+    }
 });
 
-
-window.electronAPI.onDownloadProgressStart(({ total }) => {
-    activeProgressType = "download";
-    progressContainer.style.display = "block";
-    progressBar.value = 0;
-    progressLabel.textContent = `Downloading... 0% (0/${total})`;
+// Download (S2C)
+window.electronAPI.onDownloadProgressStart(({ total = 0 } = {}) => {
+    if (total <= 0) return;
+    showS2CProgress("download", `Downloading... 0% (0/${total})`, 0);
 });
 
-
-window.electronAPI.onDownloadProgress(({ done, total, file }) => {
-    if (activeProgressType !== "download") return;
+window.electronAPI.onDownloadProgress(({ done = 0, total = 0, file } = {}) => {
+    if (total <= 0) return;
     const percent = Math.round((done / total) * 100);
-
-    progressBar.value = percent;
-    progressLabel.textContent = `Downloading... ${percent}% (${done}/${total})`;
-
-    if (file) console.log("Downloading:", file);
+    showS2CProgress("download", `Downloading... ${percent}% (${done}/${total})`, percent);
+    if (percent >= 100) {
+        completeS2CProgress(`✅ S2C Download complete! 100% (${done}/${total})`);
+    }
+    if (file) console.log("S2C Downloading:", file);
 });
 
+window.electronAPI.onDownloadComplete((data = {}) => {
+    const status = data?.status || "";
 
-// Complete
-window.electronAPI.onDownloadComplete(({ source, status }) => {
-    if (activeProgressType !== "download") return;
+    // 🛑 If there were no items to download, do NOT show progress card and do NOT refresh screen
     if (status === "no-download") {
-        progressLabel.textContent = `ℹ️ No items to download `;
+        hideS2CProgress();
         return;
     }
-    progressLabel.textContent = `✅ Download complete !`;
 
+    completeS2CProgress("✅ S2C Download complete! 100%");
+
+    // Only refresh drive view when actual items were downloaded
     setTimeout(() => {
-        loadDriveItems(history[currentIndex], true);
+        if (typeof loadDriveItems === "function" && history[currentIndex]) {
+            loadDriveItems(history[currentIndex], true);
+        }
     }, 3000);
 });
 
-// Auto hide
 window.electronAPI.onDownloadHide(() => {
-    if (activeProgressType !== "download") return;
-    progressContainer.style.display = "none";
-    activeProgressType = null;
+    hideS2CProgress();
+});
+
+// Generic sync progress / status listeners
+window.electronAPI.onSyncProgress(({ done, total, file } = {}) => {
+    const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+    showC2SProgress("sync", `Syncing... ${percent}% (${done}/${total})`, percent);
+    if (percent === 100) {
+        completeC2SProgress("✅ Sync complete!");
+    }
+});
+
+window.electronAPI.onSyncStatus((_event, payload) => {
+    if (!payload || typeof payload !== "object") return;
+    const status = String(payload.status || "").toLowerCase();
+    const message = payload.message || "";
+    console.log("📦 Sync status:", status, message);
+    if (status === "success" && message.toLowerCase().includes("complete")) {
+        completeC2SProgress("✅ " + message);
+    }
 });
 
 // Online / Offline listener
@@ -661,6 +733,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (!confirm(`Upload contents of "${folderPath}" to ${mappedDrive}?`)) return;
 
+            showC2SProgress("upload", "Uploading folder...", 50);
+
             const result = await window.electronAPI.uploadFolderToDrive(folderPath, mappedDrive);
 
             if (!result.success) {
@@ -668,6 +742,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
+            completeC2SProgress("✅ C2S Upload complete! 100%");
             // alert("Folder uploaded successfully!");
             showValidation("The folder and files have been uploaded to Centris Local Drive successfully.", 'success');
             console.log(folderPath);
@@ -752,14 +827,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             // ===============================
             // 3. PROCESS EACH SELECTED FOLDER
             // ===============================
+            const allScans = [];
+            let totalFilesInFolders = 0;
             for (const folderPath of folderPaths) {
-
-                showValidation(`Scanning folder: ${folderPath}`, "info", 2000);
-
+                showValidation(`Scanning folder: ${folderPath}`, "info", 1500);
                 const scanResult = await window.electronAPI.scanFolder(folderPath);
                 const fileList = scanResult.files || [];
-                const folderList = scanResult.folders || [];
+                totalFilesInFolders += fileList.length;
+                allScans.push({ folderPath, scanResult, fileList });
+            }
 
+            if (totalFilesInFolders > 0) {
+                showC2SProgress("upload", `Uploading... 0% (0/${totalFilesInFolders})`, 0);
+            }
+
+            let copiedFiles = 0;
+            for (const { folderPath, scanResult, fileList } of allScans) {
+                const folderList = scanResult.folders || [];
                 if (fileList.length === 0 && folderList.length === 0) {
                     showValidation(`Folder empty: ${folderPath}`, "info");
                     continue;
@@ -767,42 +851,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Root target folder name
                 const rootName = await window.electronAPI.basename(folderPath);
-
                 await window.electronAPI.createFolderInDrive(rootName, mappedDrive);
 
-                // Collect changed items
-                const changedItems = [];
-
-                // ===============================
-                // 3A. CREATE ALL SUB-FOLDERS
-                // ===============================
-                // for (const folder of folderList) {
-                //     const rel = await window.electronAPI.pathRelative(folderPath, folder);
-                //     const cleanRel = rootName + "/" + rel;
-
-                //     await window.electronAPI.createFolderInDrive(cleanRel, mappedDrive);
-
-                //     changedItems.push({
-                //         path: cleanRel,
-                //         is_dir: true,
-                //         content: null,
-                //         size: 0,
-                //         mtime: Date.now()
-                //     });
-                // }
-
-                // ===============================
-                // 3B. FILES WITH CONTENT BYTES
-                // ===============================
                 for (const fullFile of fileList) {
-
                     const rel = await window.electronAPI.pathRelative(folderPath, fullFile);
                     const cleanRel = rootName + "/" + rel;
 
-                    const stats = await window.electronAPI.fileStat(fullFile);
-                    const content = await window.electronAPI.readFileBase64(fullFile);
-
-                    // ensure parent folders created
                     const parent = cleanRel.substring(0, cleanRel.lastIndexOf("/"));
                     if (parent) {
                         await window.electronAPI.createFolderInDrive(parent, mappedDrive);
@@ -811,61 +865,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // copy file to mapped drive
                     await window.electronAPI.copyFileToDrive(fullFile, cleanRel, mappedDrive);
 
-                    changedItems.push({
-                        path: cleanRel,
-                        is_dir: false,
-                        content,
-                        size: stats.size,
-                        mtime: stats.mtimeMs
-                    });
+                    copiedFiles++;
+                    const percent = Math.round((copiedFiles / totalFilesInFolders) * 100);
+                    showC2SProgress("upload", `Uploading... ${percent}% (${copiedFiles}/${totalFilesInFolders})`, percent);
                 }
+            }
 
-                // ===============================
-                // 4. CHUNK UPLOAD
-                // ===============================
-                // const chunkSize = 50;
-                // let uploaded = 0;
-
-                // for (let i = 0; i < changedItems.length; i += chunkSize) {
-                //     const chunk = changedItems.slice(i, i + chunkSize);
-
-                //     await fetch(`${apiUrl}/api/sync-folders-and-files`, {
-                //         method: "POST",
-                //         headers: { "Content-Type": "application/json" },
-                //         body: JSON.stringify({
-                //             customer_id: customer_data.id,
-                //             domain_id: domain_data.id,
-                //             user_id: user_data.id,
-
-                //             root_path: mappedDrive,
-                //             changed_items: chunk
-                //         })
-                //     });
-
-                //     uploaded += chunk.length;
-
-                //     showValidation(
-                //         `Uploaded ${uploaded}/${changedItems.length} items from ${folderPath}`,
-                //         "info", 0
-                //     );
-
-                //     await wait(200);
-                // }
-
-                // showValidation(`Upload complete for: ${folderPath}`, "success");
+            if (totalFilesInFolders > 0) {
+                completeC2SProgress(`✅ C2S Upload complete! 100% (${copiedFiles}/${totalFilesInFolders})`);
             }
 
             // ===============================
-            // 7. REFRESH VIEW + TRACKER UPDATE
+            // 7. REFRESH VIEW + TRIGGER SYNC
             // ===============================
             loadFiles(mappedDrive, true);
             await wait(1000);
 
-            // const oldSnapshot = await window.electronAPI.loadTracker(false);
-            // const newSnapshot = await window.electronAPI.getDirectorySnapshot(mappedDrive, oldSnapshot);
-            // await window.electronAPI.saveTracker(newSnapshot.snapshot);
-
-            // showValidation("All selected folders uploaded & synced successfully!", "success");
+            if (syncData) {
+                triggerSync(syncData, false);
+            }
 
         } catch (err) {
             console.error(err);
@@ -918,7 +936,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // 3️⃣ READ FILE DETAILS + COPY LOCALLY
             const fileItems = [];
+            const totalFiles = filePaths.length;
+            showC2SProgress("upload", `Uploading... 0% (0/${totalFiles})`, 0);
 
+            let copiedCount = 0;
             for (const fullPath of filePaths) {
                 const fileName = await window.electronAPI.basename(fullPath);
                 const fileContentBase64 = await window.electronAPI.readFileBase64(fullPath);
@@ -928,6 +949,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Copy file to mapped drive
                 await window.electronAPI.copyFile(fullPath, destination);
+
+                copiedCount++;
+                const percent = Math.round((copiedCount / totalFiles) * 100);
+                showC2SProgress("upload", `Uploading... ${percent}% (${copiedCount}/${totalFiles})`, percent);
 
                 fileItems.push({
                     full_path: fullPath,
@@ -939,42 +964,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             }
 
+            completeC2SProgress(`✅ C2S Upload complete! 100% (${copiedCount}/${totalFiles})`);
             showValidation("All files copied to Centris Local Drive.", "success", 2000);
-
-
-            // 4️⃣ CHUNK FILE ITEMS (50 each)
-            // const chunkSize = 50;
-            // const chunks = [];
-            // for (let i = 0; i < fileItems.length; i += chunkSize) {
-            //     chunks.push(fileItems.slice(i, i + chunkSize));
-            // }
-
-            // // 5️⃣ SEND CHUNKS TO SERVER
-            // let uploadedCount = 0;
-
-            // for (const chunk of chunks) {
-            //     showValidation(`Syncing ${uploadedCount}/${fileItems.length} files...`, "info", 0);
-
-            //     await fetch(`${apiUrl}/api/sync-files`, {
-            //         method: "POST",
-            //         headers: { "Content-Type": "application/json" },
-            //         body: JSON.stringify({
-            //             customer_id: customer_data.id,
-            //             domain_id: domain_data.id,
-            //             user_id: user_data.id,
-            //             files: chunk  // base64 included
-            //         })
-            //     });
-
-            //     uploadedCount += chunk.length;
-
-            //     await wait(200);
-            // }
 
             // 6️⃣ REFRESH FILE VIEW
             loadFiles(mappedDrive, true);
 
             await wait(500);
+
+            if (syncData) {
+                triggerSync(syncData, false);
+            }
 
             // // 7️⃣ UPDATE TRACKER SNAPSHOT
             // const oldSnapshot = await window.electronAPI.loadTracker(false);

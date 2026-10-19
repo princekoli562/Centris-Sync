@@ -4141,7 +4141,7 @@ async function deleteLocalFilesLogic_old(event, args) {
             source: deleteFrom,
             status: "no-delete"
         });
-        setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+        setTimeout(() => event.sender.send("delete-progress-hide", { source: deleteFrom }), 6000);
         return true;
     }
 
@@ -4153,7 +4153,7 @@ async function deleteLocalFilesLogic_old(event, args) {
     const totalFiles = deletedData.length;
     let completedFiles = 0;
 
-    event.sender.send("delete-progress-start", { total: totalFiles });
+    event.sender.send("delete-progress-start", { total: totalFiles, source: deleteFrom });
 
     const chunks = chunkArray(deletedData, CHUNK_SIZE);
 
@@ -4232,7 +4232,7 @@ async function deleteLocalFilesLogic_old(event, args) {
         status: "delete"
     });
 
-    setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+    setTimeout(() => event.sender.send("delete-progress-hide", { source: deleteFrom }), 6000);
     return true;
 }
 
@@ -4251,7 +4251,7 @@ async function deleteLocalFilesLogic(event, args) {
             source: deleteFrom,
             status: "no-delete"
         });
-        setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+        setTimeout(() => event.sender.send("delete-progress-hide", { source: deleteFrom }), 6000);
         return true;
     }
 
@@ -4273,7 +4273,7 @@ async function deleteLocalFilesLogic(event, args) {
     const totalFiles = deletedData.length;
     let completedFiles = 0;
 
-    event.sender.send("delete-progress-start", { total: totalFiles });
+    event.sender.send("delete-progress-start", { total: totalFiles, source: deleteFrom });
 
     const chunks = chunkArray(deletedData, CHUNK_SIZE);
 
@@ -4362,7 +4362,7 @@ async function deleteLocalFilesLogic(event, args) {
         ]);
     }
 
-    setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+    setTimeout(() => event.sender.send("delete-progress-hide", { source: deleteFrom }), 6000);
     return true;
 }
 
@@ -5803,8 +5803,13 @@ ipcMain.handle("auto-sync-working", async (event, args) => {
                 event.sender.send("upload-progress", { done: processed, total: changedItems.length });
             }
 
+            event.sender.send("upload-progress", { done: changedItems.length, total: changedItems.length });
             event.sender.send("upload-progress-complete");
-            setTimeout(() => event.sender.send("upload-progress-hide"), 6000);
+            setTimeout(() => {
+                if (event.sender && !event.sender.isDestroyed()) {
+                    event.sender.send("upload-progress-hide");
+                }
+            }, 6000);
         }
 
         // ------------------------------------------------------------
@@ -5812,7 +5817,7 @@ ipcMain.handle("auto-sync-working", async (event, args) => {
         // ------------------------------------------------------------
         if (deletedItems.length > 0) {
             const delChunks = chunkArray(deletedItems, 50);
-            event.sender.send("delete-progress-start", { total: deletedItems.length });
+            event.sender.send("delete-progress-start", { total: deletedItems.length, source: "client" });
 
             let processed = 0;
 
@@ -5843,7 +5848,7 @@ ipcMain.handle("auto-sync-working", async (event, args) => {
                 }
 
                 processed += safeChunk.length;
-                event.sender.send("delete-progress", { done: processed, total: deletedItems.length });
+                event.sender.send("delete-progress", { done: processed, total: deletedItems.length, source: "client" });
             }
 
             event.sender.send("delete-progress-complete", {
@@ -5853,7 +5858,7 @@ ipcMain.handle("auto-sync-working", async (event, args) => {
             );
 
 
-            setTimeout(() => event.sender.send("delete-progress-hide"), 6000);
+            setTimeout(() => event.sender.send("delete-progress-hide", { source: "client" }), 6000);
         }
 
         if (win) sendLogToRenderer("sync-status", "success", "Auto sync complete.");
@@ -6061,8 +6066,13 @@ ipcMain.handle("auto-sync-2", async (event, args) => {
                 event.sender.send("upload-progress", { done, total: changedItems.length });
             }
 
+            event.sender.send("upload-progress", { done: changedItems.length, total: changedItems.length });
             event.sender.send("upload-progress-complete");
-            setTimeout(() => event.sender.send("upload-progress-hide"), 5000);
+            setTimeout(() => {
+                if (event.sender && !event.sender.isDestroyed()) {
+                    event.sender.send("upload-progress-hide");
+                }
+            }, 6000);
         }
 
         /* ------------------------------------------------------------
@@ -6071,7 +6081,7 @@ ipcMain.handle("auto-sync-2", async (event, args) => {
 
         if (deletedItems.length) {
             const chunks = chunkArray(deletedItems, 50);
-            event.sender.send("delete-progress-start", { total: deletedItems.length });
+            event.sender.send("delete-progress-start", { total: deletedItems.length, source: "client" });
 
             let done = 0;
 
@@ -6100,11 +6110,11 @@ ipcMain.handle("auto-sync-2", async (event, args) => {
                 }
 
                 done += safe.length;
-                event.sender.send("delete-progress", { done, total: deletedItems.length });
+                event.sender.send("delete-progress", { done, total: deletedItems.length, source: "client" });
             }
 
             event.sender.send("delete-progress-complete", { source: "client", status: "done" });
-            setTimeout(() => event.sender.send("delete-progress-hide"), 5000);
+            setTimeout(() => event.sender.send("delete-progress-hide", { source: "client" }), 5000);
         }
 
         if (win) sendLogToRenderer("sync-status", "success", "Auto sync complete.");
@@ -6268,7 +6278,13 @@ ipcMain.handle("auto-sync", async (event, args) => {
                 event.sender.send("upload-progress", { done, total: changedItems.length });
             }
 
+            event.sender.send("upload-progress", { done: changedItems.length, total: changedItems.length });
             event.sender.send("upload-progress-complete");
+            setTimeout(() => {
+                if (event.sender && !event.sender.isDestroyed()) {
+                    event.sender.send("upload-progress-hide");
+                }
+            }, 6000);
         }
 
         /* ================= DELETE ================= */
@@ -6276,7 +6292,7 @@ ipcMain.handle("auto-sync", async (event, args) => {
         if (deletedItems.length) {
 
             const chunks = chunkArray(deletedItems, 50);
-            event.sender.send("delete-progress-start", { total: deletedItems.length });
+            event.sender.send("delete-progress-start", { total: deletedItems.length, source: "client" });
 
             let done = 0;
 
@@ -6306,10 +6322,11 @@ ipcMain.handle("auto-sync", async (event, args) => {
                 }
 
                 done += safe.length;
-                event.sender.send("delete-progress", { done, total: deletedItems.length });
+                event.sender.send("delete-progress", { done, total: deletedItems.length, source: "client" });
             }
 
-            event.sender.send("delete-progress-complete", { source: deleteFrom, status: "delete" });
+            event.sender.send("delete-progress-complete", { source: "client", status: "delete" });
+            setTimeout(() => event.sender.send("delete-progress-hide", { source: "client" }), 5000);
         }
 
         return { success: true, message: "Sync completed successfully" };

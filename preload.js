@@ -2,10 +2,10 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 const isDev = process.argv.includes('--is-dev=true');
 
 if (!isDev) {
-    console.log = () => {};
-    console.info = () => {};
-    console.debug = () => {};
-    console.warn = () => {};
+    console.log = () => { };
+    console.info = () => { };
+    console.debug = () => { };
+    console.warn = () => { };
     try {
         webFrame.executeJavaScript('if (typeof console !== "undefined") { console.log = () => {}; console.info = () => {}; console.debug = () => {}; console.warn = () => {}; }');
     } catch { }
@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDriveCapacity: (rootDir) => ipcRenderer.invoke("get-drive-capacity", rootDir),
     onStorageCapacityAlert: (cb) => ipcRenderer.on("storage-capacity-alert", (_, data) => cb(data)),
     onStorageCapacityUpdate: (cb) => ipcRenderer.on("storage-capacity-update", (_, data) => cb(data)),
+    onSyncDisabledByServer: (cb) => ipcRenderer.on("sync-disabled-by-server", (_e, data) => cb(data)),
+    onSyncEnabledByServer: (cb) => ipcRenderer.on("sync-enabled-by-server", (_e, data) => cb(data)),
+    refreshSyncConfig: () => ipcRenderer.invoke("refresh-sync-config"),
     getAppVersion: () => ipcRenderer.invoke("get-app-version"),
     checkForUpdates: (manual = true) => ipcRenderer.invoke("check-for-updates", manual),
     showAboutDialog: () => ipcRenderer.invoke("show-about-dialog"),
@@ -151,6 +154,8 @@ contextBridge.exposeInMainWorld("vhdx", {
 // contextBridge.exposeInMainWorld("vhdx", {
 //     create: () => ipcRenderer.invoke("vhdx:create")
 // });
+
+
 
 
 // expose centris keys

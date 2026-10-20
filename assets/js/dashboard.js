@@ -1591,12 +1591,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (drivePropsBtn) {
-        drivePropsBtn.addEventListener("click", (e) => {
+        drivePropsBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
             if (drivePropsPopup) {
                 drivePropsPopup.classList.toggle("show");
                 if (drivePropsPopup.classList.contains("show")) {
-                    loadRootDriveProperties();
+                    await loadRootDriveProperties(true);
                 }
             }
         });
@@ -1616,6 +1616,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initial load of root drive properties
     loadRootDriveProperties();
+
+    if (window.electronAPI && window.electronAPI.getDriveCapacity) {
+        window.electronAPI.getDriveCapacity()
+            .then((cap) => { if (cap) applyCapacityToUI(cap); })
+            .catch(() => { });
+    }
 
     // Storage capacity alert listener from main process
     if (window.electronAPI && window.electronAPI.onStorageCapacityAlert) {
@@ -1674,7 +1680,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 if (aboutArch) aboutArch.textContent = info.arch || '-';
             }
-        }).catch(() => {});
+        }).catch(() => { });
     }
 
     function openAboutModal() {
@@ -1929,7 +1935,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         sync_icon.classList.add("syncing");
 
         // Save toggle state to DB / main process
-        await window.electronAPI.setSyncStatus(currentUser, enabled);
+        const res = await window.electronAPI.setSyncStatus(currentUser, enabled);
+        if (res && res.blocked) {
+            sync_toggle.checked = false;
+            sync_toggle.disabled = true;
+            sync_icon.classList.remove("syncing");
+            showValidation(res.message || "Sync is blocked by Administrator.", "error", 6000);
+            return;
+        }
 
         updateUI({ enabled, online: navigator.onLine, syncData });
 
@@ -2018,7 +2031,7 @@ function renderUsers(syncData, user_list = []) {
                 ${user.active ? `<span class="check" title="Active">✔</span>` : ''}
             </div>
             ${user.active
-            ? `
+                ? `
             <div class="user-dropdown-actions">
                 <div class="delete-secret-key-option" id="deleteSecretKeyOption" title="Delete saved secret key">
                     <i class="fas fa-key"></i>
@@ -2032,8 +2045,8 @@ function renderUsers(syncData, user_list = []) {
                 </div>
             </div>
             `
-            : ''
-        }
+                : ''
+            }
         `;
 
         userList.appendChild(li);
@@ -2044,7 +2057,7 @@ function renderUsers(syncData, user_list = []) {
                     const opt = li.querySelector("#deleteSecretKeyOption");
                     if (opt) opt.style.display = "none";
                 }
-            }).catch(() => {});
+            }).catch(() => { });
         }
     });
 }
@@ -2185,7 +2198,11 @@ async function triggerSync(syncData, manual = false) {
             syncData: syncData,
         });
 
-        console.log(result.message);
+        if (result && result.success) {
+            console.log("✅ Sync:", result.message);
+        } else {
+            console.warn("⚠️ Sync:", result?.message || "Incomplete");
+        }
         if (manual) showValidation(result.message, result.success ? 'success' : 'error');
     } catch (err) {
         console.error("❌ Sync failed:", err);
@@ -2877,88 +2894,32 @@ function updateCapacityDisplay(capacity) {
     if (!capacity) return;
     currentDriveCapacity = capacity;
 
-    const percentEl = document.getElementById("storageCapacityPercent");
-    const barEl = document.getElementById("storageCapacityBar");
-    const usageEl = document.getElementById("storageCapacityUsage");
-    const badgeEl = document.getElementById("storageCapacityBadge");
+    // Apply dual progress bars and metrics to UI
+    applyCapacityToUI(capacity);
 
-    const pct = Math.min(100, Math.max(0, capacity.percentage || 0));
+    // Evaluate overall threshold alerts
+    const isFull = capacity.isSyncBlocked || capacity.status === "full" || capacity.account?.isSyncBlocked || capacity.drive?.isSyncBlocked;
+    const isDanger = !isFull && (capacity.status === "danger" || capacity.account?.status === "danger" || capacity.drive?.status === "danger");
+    const isWarning = !isFull && !isDanger && (capacity.status === "warning" || capacity.account?.status === "warning" || capacity.drive?.status === "warning");
 
-    if (percentEl) {
-        percentEl.textContent = `${pct}%`;
-        if (capacity.status === "full" || capacity.status === "danger") {
-            percentEl.style.color = "#dc2626";
-        } else if (capacity.status === "warning") {
-            percentEl.style.color = "#d97706";
-        } else {
-            percentEl.style.color = "#10b981";
-        }
-    }
+    const usedFmt = capacity.account?.usedFormatted || capacity.usedFormatted || "0 B";
+    const totalFmt = capacity.account?.totalFormatted || capacity.totalFormatted || "—";
+    const pct = capacity.account?.percentage ?? capacity.percentage ?? 0;
 
-    if (barEl) {
-        barEl.style.width = `${pct}%`;
-        barEl.className = "storage-capacity-bar-fill";
-        if (capacity.status === "full") {
-            barEl.classList.add("status-full");
-        } else if (capacity.status === "danger") {
-            barEl.classList.add("status-danger");
-        } else if (capacity.status === "warning") {
-            barEl.classList.add("status-warning");
-        } else {
-            barEl.classList.add("status-green");
-        }
-    }
-
-    if (usageEl) {
-        usageEl.textContent = `${capacity.usedFormatted || "0 B"} / ${capacity.totalFormatted || "10 GB"}`;
-    }
-
-    if (badgeEl) {
-        badgeEl.className = "storage-capacity-badge";
-        if (capacity.status === "full") {
-            badgeEl.textContent = "Full (100%)";
-            badgeEl.classList.add("badge-full");
-        } else if (capacity.status === "danger") {
-            badgeEl.textContent = "Danger (90%+)";
-            badgeEl.classList.add("badge-danger");
-        } else if (capacity.status === "warning") {
-            badgeEl.textContent = "Warning (85%+)";
-            badgeEl.classList.add("badge-warning");
-        } else {
-            badgeEl.textContent = "Normal";
-            badgeEl.classList.add("badge-normal");
-        }
-    }
-
-    // Also update popup if open
-    const propCapPercent = document.getElementById("propCapacityPercent");
-    const propCapBar = document.getElementById("propCapacityBar");
-    if (propCapPercent) {
-        propCapPercent.textContent = `${pct}% (${capacity.usedFormatted} / ${capacity.totalFormatted})`;
-    }
-    if (propCapBar) {
-        propCapBar.style.width = `${pct}%`;
-        propCapBar.className = "prop-capacity-bar-fill";
-        if (capacity.status === "full") propCapBar.classList.add("status-full");
-        else if (capacity.status === "danger") propCapBar.classList.add("status-danger");
-        else if (capacity.status === "warning") propCapBar.classList.add("status-warning");
-        else propCapBar.classList.add("status-green");
-    }
-
-    // Threshold alerts
-    if (capacity.status === "full") {
+    if (isFull) {
         if (lastCapacityAlertLevel !== "full") {
-            showValidation(`🛑 Storage Full: Storage reached 100% capacity (${capacity.usedFormatted} / ${capacity.totalFormatted}). All syncing, uploads, and downloads are stopped! Delete files to resume.`, "error", 12000);
+            const msg = capacity.blockMessage || `🛑 Storage Full: Storage reached 100% capacity (${usedFmt} / ${totalFmt}). All syncing, uploads, and downloads are stopped! Delete files to resume.`;
+            showValidation(msg, "error", 12000);
             lastCapacityAlertLevel = "full";
         }
-    } else if (capacity.status === "danger") {
+    } else if (isDanger) {
         if (lastCapacityAlertLevel !== "danger") {
-            showValidation(`🚨 Storage Danger: Storage is at ${pct}% capacity (${capacity.usedFormatted} / ${capacity.totalFormatted}). Approaching 100% limit!`, "error", 9000);
+            showValidation(`🚨 Storage Danger: Account quota is at ${pct}% capacity (${usedFmt} / ${totalFmt}). Approaching 100% limit!`, "error", 9000);
             lastCapacityAlertLevel = "danger";
         }
-    } else if (capacity.status === "warning") {
+    } else if (isWarning) {
         if (lastCapacityAlertLevel !== "warning") {
-            showValidation(`⚠️ Storage Warning: Storage is at ${pct}% capacity (${capacity.usedFormatted} / ${capacity.totalFormatted}). Please consider deleting unused files.`, "warning", 8000);
+            showValidation(`⚠️ Storage Warning: Account quota is at ${pct}% capacity (${usedFmt} / ${totalFmt}). Please consider deleting unused files.`, "warning", 8000);
             lastCapacityAlertLevel = "warning";
         }
     } else {
@@ -2966,30 +2927,37 @@ function updateCapacityDisplay(capacity) {
     }
 }
 
-async function loadRootDriveProperties() {
-    if (isLoadingDriveProperties) return;
+async function loadRootDriveProperties(force = false) {
+    if (isLoadingDriveProperties && !force) return;
     try {
         if (!window.electronAPI || !window.electronAPI.getDriveProperties) return;
         isLoadingDriveProperties = true;
-        const config = await window.electronAPI.getAppConfig();
+
+        if (window.electronAPI && window.electronAPI.refreshSyncConfig) {
+            window.electronAPI.refreshSyncConfig().catch(() => {});
+        }
+        const config = await window.electronAPI.getAppConfig().catch(() => null);
         const rootPath = config ? config.drivePath : null;
-        const props = await window.electronAPI.getDriveProperties(rootPath);
-        if (props) {
-            rootDriveProperties = props;
-            renderDrivePropertiesPopup(props);
-            if (props.capacity) {
-                updateCapacityDisplay(props.capacity);
+        const info = await window.electronAPI.getDriveProperties(rootPath);
+
+        if (info) {
+            rootDriveProperties = info;
+            renderDrivePropertiesPopup(info);
+
+            if (info.capacity) {
+                updateCapacityDisplay(info.capacity);
+                applyCapacityToUI(info.capacity);
             }
         }
     } catch (err) {
-        console.error("loadRootDriveProperties error:", err);
+        console.warn("Failed to load drive properties:", err);
     } finally {
         isLoadingDriveProperties = false;
     }
 }
 
-function renderDrivePropertiesPopup(props) {
-    if (!props) return;
+function renderDrivePropertiesPopup(info) {
+    if (!info) return;
     const titleEl = document.getElementById("propPopupTitle");
     const pathEl = document.getElementById("propRootPath");
     const foldersEl = document.getElementById("propFoldersCount");
@@ -2998,28 +2966,15 @@ function renderDrivePropertiesPopup(props) {
 
     if (titleEl) titleEl.textContent = "Centris-Drive";
     if (pathEl) {
-        pathEl.textContent = props.rootPath || "Centris-Drive";
-        pathEl.title = props.rootPath || "";
+        pathEl.textContent = info.rootPath ?? "Centris-Drive";
+        pathEl.title = info.rootPath ?? "";
     }
-    if (foldersEl) foldersEl.textContent = `${(props.folderCount || 0).toLocaleString()} ${props.folderCount === 1 ? 'Folder' : 'Folders'}`;
-    if (filesEl) filesEl.textContent = `${(props.fileCount || 0).toLocaleString()} ${props.fileCount === 1 ? 'File' : 'Files'}`;
-    if (sizeEl) sizeEl.textContent = props.totalSizeFormatted || "0 B";
+    if (foldersEl) foldersEl.textContent = (info.folderCount ?? 0).toLocaleString();
+    if (filesEl) filesEl.textContent = (info.fileCount ?? 0).toLocaleString();
+    if (sizeEl) sizeEl.textContent = info.totalSizeFormatted ?? "0 B";
 
-    const propCapPercent = document.getElementById("propCapacityPercent");
-    const propCapBar = document.getElementById("propCapacityBar");
-    if (props.capacity) {
-        const cap = props.capacity;
-        if (propCapPercent) {
-            propCapPercent.textContent = `${cap.percentage}% (${cap.usedFormatted} / ${cap.totalFormatted})`;
-        }
-        if (propCapBar) {
-            propCapBar.style.width = `${Math.min(100, Math.max(0, cap.percentage))}%`;
-            propCapBar.className = "prop-capacity-bar-fill";
-            if (cap.status === "full") propCapBar.classList.add("status-full");
-            else if (cap.status === "danger") propCapBar.classList.add("status-danger");
-            else if (cap.status === "warning") propCapBar.classList.add("status-warning");
-            else propCapBar.classList.add("status-green");
-        }
+    if (info.capacity) {
+        applyCapacityToUI(info.capacity);
     }
 }
 
@@ -3598,6 +3553,293 @@ function startPing(syncData) {
 function stopPing() {
     clearInterval(pingInterval);
     pingInterval = null;
+}
+
+// ============================================================
+// STORAGE CAPACITY — server-driven limit
+// ============================================================
+// ============================================================
+// STORAGE CAPACITY — Dual Progress Bars (Account Limit & Mapped Drive)
+// ============================================================
+function applyCapacityToUI(cap) {
+    if (!cap) return;
+
+    // Dual metrics: cap.account and cap.drive
+    const account = cap.account || {
+        serverLimitGb: Number(cap.serverLimitGb) || 0,
+        totalBytes: Number(cap.totalBytes) || 0,
+        totalFormatted: cap.totalFormatted || "—",
+        usedBytes: Number(cap.usedBytes) || 0,
+        usedFormatted: cap.usedFormatted || "0 B",
+        remainingBytes: Number(cap.remainingBytes) || 0,
+        remainingFormatted: cap.remainingFormatted || cap.freeFormatted || "—",
+        percentage: Number(cap.percentage) || 0,
+        status: cap.status || "normal",
+        isSyncBlocked: cap.isSyncBlocked || false,
+        syncEnabled: cap.syncEnabled !== false,
+        syncStatus: cap.syncStatus || "ready"
+    };
+
+    const drive = cap.drive || {
+        totalBytes: (Number(cap.physicalLimitGb) || 10) * 1024 * 1024 * 1024,
+        totalFormatted: `${Number(cap.physicalLimitGb) || 10} GB`,
+        usedBytes: Number(cap.usedBytes) || 0,
+        usedFormatted: cap.usedFormatted || "0 B",
+        freeBytes: 0,
+        freeFormatted: cap.freeFormatted || "—",
+        percentage: 0,
+        status: "normal",
+        isSyncBlocked: false
+    };
+
+    const syncEnabled = (cap.syncEnabled !== false) && (account.syncEnabled !== false) && (cap.syncStatus !== "block");
+    const isSyncBlocked = cap.isSyncBlocked || account.isSyncBlocked || drive.isSyncBlocked;
+
+    const getStatusClass = (status, blocked) => {
+        if (!syncEnabled) return "status-disabled";
+        if (blocked || status === "full") return "status-full";
+        if (status === "danger") return "status-danger";
+        if (status === "warning") return "status-warning";
+        return "status-green";
+    };
+
+    const accPct = Math.min(100, Math.max(0, Number(account.percentage) || 0));
+    const drivePct = Math.min(100, Math.max(0, Number(drive.percentage) || 0));
+
+    // -------- 1️⃣ Sidebar Progress Bar 1: Account Limit (Cloud Quota) --------
+    const accPctEl = document.getElementById("accountCapacityPercent");
+    if (accPctEl) {
+        accPctEl.textContent = `${accPct}%`;
+        accPctEl.style.color = !syncEnabled ? "#94a3b8" :
+            (account.isSyncBlocked || account.status === "full" || account.status === "danger") ? "#dc2626" :
+            account.status === "warning" ? "#d97706" : "#10b981";
+    }
+
+    const accBarEl = document.getElementById("accountCapacityBar");
+    if (accBarEl) {
+        accBarEl.style.width = `${accPct}%`;
+        accBarEl.className = `storage-capacity-bar-fill ${getStatusClass(account.status, account.isSyncBlocked)}`;
+    }
+
+    const accUsageEl = document.getElementById("accountCapacityUsage");
+    if (accUsageEl) {
+        accUsageEl.textContent = `${account.usedFormatted || "0 B"} / ${account.totalFormatted || "—"}`;
+    }
+
+    const accLimitEl = document.getElementById("accountCapacityLimit");
+    if (accLimitEl) {
+        accLimitEl.textContent = !syncEnabled ? "Sync disabled" :
+            (account.serverLimitGb ? `Account: ${account.serverLimitGb} GB` : `Account: ${account.totalFormatted || "—"}`);
+    }
+
+    const accTrackEl = document.getElementById("accountCapacityBarTrack");
+    if (accTrackEl) {
+        accTrackEl.title = `Account Quota: ${account.usedFormatted || "0 B"} of ${account.totalFormatted || "—"} (${accPct}%)`;
+    }
+
+    // -------- 2️⃣ Sidebar Progress Bar 2: Mapped Drive (VHDX 10 GB) --------
+    const drivePctEl = document.getElementById("driveCapacityPercent");
+    if (drivePctEl) {
+        drivePctEl.textContent = `${drivePct}%`;
+        drivePctEl.style.color = !syncEnabled ? "#94a3b8" :
+            (drive.isSyncBlocked || drive.status === "full" || drive.status === "danger") ? "#dc2626" :
+            drive.status === "warning" ? "#d97706" : "#10b981";
+    }
+
+    const driveBarEl = document.getElementById("driveCapacityBar");
+    if (driveBarEl) {
+        driveBarEl.style.width = `${drivePct}%`;
+        driveBarEl.className = `storage-capacity-bar-fill ${getStatusClass(drive.status, drive.isSyncBlocked)}`;
+    }
+
+    const driveUsageEl = document.getElementById("driveCapacityUsage");
+    if (driveUsageEl) {
+        driveUsageEl.textContent = `${drive.usedFormatted || "0 B"} / ${drive.totalFormatted || "10 GB"}`;
+    }
+
+    const driveLimitEl = document.getElementById("driveCapacityLimit");
+    if (driveLimitEl) {
+        driveLimitEl.textContent = `Disk Limit: ${drive.totalFormatted || "10 GB"}`;
+    }
+
+    const driveTrackEl = document.getElementById("driveCapacityBarTrack");
+    if (driveTrackEl) {
+        driveTrackEl.title = `Mapped Drive: ${drive.usedFormatted || "0 B"} of ${drive.totalFormatted || "10 GB"} (${drivePct}%)`;
+    }
+
+    // -------- 3️⃣ Sidebar Badge & Overall Status --------
+    const cardEl = document.getElementById("storageCapacityCard");
+    if (cardEl) {
+        cardEl.classList.toggle("disabled", !syncEnabled);
+    }
+
+    const badgeEl = document.getElementById("storageCapacityBadge");
+    if (badgeEl) {
+        badgeEl.className = "storage-capacity-badge";
+        if (!syncEnabled) {
+            badgeEl.textContent = "Disabled";
+            badgeEl.classList.add("badge-disabled");
+        } else if (isSyncBlocked || cap.status === "full" || account.status === "full" || drive.status === "full") {
+            badgeEl.textContent = "Full (100%)";
+            badgeEl.classList.add("badge-full");
+        } else if (cap.status === "danger" || account.status === "danger" || drive.status === "danger") {
+            badgeEl.textContent = "Danger (90%+)";
+            badgeEl.classList.add("badge-danger");
+        } else if (cap.status === "warning" || account.status === "warning" || drive.status === "warning") {
+            badgeEl.textContent = "Warning (85%+)";
+            badgeEl.classList.add("badge-warning");
+        } else {
+            badgeEl.textContent = "Normal";
+            badgeEl.classList.add("badge-normal");
+        }
+    }
+
+    // Legacy DOM element fallbacks
+    const legPctEl = document.getElementById("storageCapacityPercent");
+    if (legPctEl) legPctEl.textContent = `${accPct}%`;
+    const legUsageEl = document.getElementById("storageCapacityUsage");
+    if (legUsageEl) legUsageEl.textContent = `${account.usedFormatted || "0 B"} / ${account.totalFormatted || "—"}`;
+    const legLimitText = document.getElementById("storageCapacityLimitText");
+    if (legLimitText) {
+        legLimitText.textContent = !syncEnabled ? "Sync disabled by administrator" : `Account limit: ${account.serverLimitGb || 0} GB`;
+    }
+
+    // -------- 4️⃣ Drive Properties Popup (Dual Bars) --------
+    // Popup Bar 1: Account Limit
+    const propAccPercent = document.getElementById("propAccountPercent");
+    if (propAccPercent) {
+        propAccPercent.textContent = `${accPct}% (${account.usedFormatted || "0 B"} / ${account.totalFormatted || "—"})`;
+    }
+
+    const propAccBar = document.getElementById("propAccountBar");
+    if (propAccBar) {
+        propAccBar.style.width = `${accPct}%`;
+        propAccBar.className = `prop-capacity-bar-fill ${getStatusClass(account.status, account.isSyncBlocked)}`;
+    }
+
+    const propAccLimit = document.getElementById("propAccountLimit");
+    if (propAccLimit) {
+        propAccLimit.textContent = account.serverLimitGb ? `${account.serverLimitGb} GB` : (account.totalFormatted || "—");
+    }
+
+    // Popup Bar 2: Mapped Drive VHDX (10 GB)
+    const propCapPercent = document.getElementById("propCapacityPercent");
+    if (propCapPercent) {
+        propCapPercent.textContent = `${drivePct}% (${drive.usedFormatted || "0 B"} / ${drive.totalFormatted || "10 GB"})`;
+    }
+
+    const propCapBar = document.getElementById("propCapacityBar");
+    if (propCapBar) {
+        propCapBar.style.width = `${drivePct}%`;
+        propCapBar.className = `prop-capacity-bar-fill ${getStatusClass(drive.status, drive.isSyncBlocked)}`;
+    }
+
+    const propLocalDisk = document.getElementById("propLocalDisk");
+    if (propLocalDisk) {
+        propLocalDisk.textContent = drive.totalFormatted || `${cap.physicalLimitGb || 10} GB`;
+    }
+
+    const propFreeSpace = document.getElementById("propFreeSpace");
+    if (propFreeSpace) {
+        propFreeSpace.textContent = drive.freeFormatted || cap.freeFormatted || "—";
+    }
+
+    const propSyncRow = document.getElementById("propSyncStatusRow");
+    if (propSyncRow) {
+        propSyncRow.style.display = !syncEnabled ? "flex" : "none";
+        const propSyncStatus = document.getElementById("propSyncStatus");
+        if (propSyncStatus) {
+            propSyncStatus.textContent = (cap.syncStatus === "block") ? "Blocked by admin" : "Sync disabled";
+        }
+    }
+
+    // -------- 5️⃣ Footer Status & Toggle --------
+    const syncText = document.getElementById("sync-text");
+    const syncDot = document.getElementById("sync-indicator");
+    const toggle = document.getElementById("syncToggle");
+
+    if (!syncEnabled) {
+        if (syncText) {
+            syncText.textContent = (cap.syncStatus === "block") ? "Sync Blocked · Administrator block" : "Sync Disabled";
+        }
+        if (syncDot) syncDot.className = "sync-dot red";
+        if (toggle && cap.syncStatus === "block") {
+            toggle.checked = false;
+            toggle.disabled = true;
+        }
+    } else if (isSyncBlocked) {
+        if (syncText) {
+            syncText.textContent = cap.blockMessage || "Sync Stopped · Storage Full (100%)";
+        }
+        if (syncDot) syncDot.className = "sync-dot red";
+    }
+}
+
+// Subscribe — the main process fires this after every sync cycle,
+// every file copy/delete, and after a fresh /api/get-sync-config fetch.
+if (window.electronAPI && window.electronAPI.onStorageCapacityUpdate) {
+    window.electronAPI.onStorageCapacityUpdate(applyCapacityToUI);
+}
+
+// React when the admin disables sync for this user (30s S2C poll detects it)
+if (window.electronAPI && window.electronAPI.onSyncDisabledByServer) {
+    window.electronAPI.onSyncDisabledByServer(({ message }) => {
+        const toast = document.getElementById("validationBox");
+        if (toast) {
+            toast.textContent = message || "Sync disabled by administrator.";
+            toast.className = "validation-box error show";
+            setTimeout(() => { toast.className = "validation-box"; }, 6000);
+        }
+
+        // Disable the footer toggle so the user can't force it back on
+        const toggle = document.getElementById("syncToggle");
+        if (toggle) {
+            toggle.checked = false;
+            toggle.disabled = true;
+        }
+
+        // Update footer text
+        const text = document.getElementById("sync-text");
+        if (text) text.textContent = "Sync Disabled · Contact administrator";
+
+        // Refresh capacity card immediately (shows Disabled badge)
+        if (window.electronAPI.getDriveCapacity) {
+            window.electronAPI.getDriveCapacity().then((cap) => {
+                if (cap) applyCapacityToUI(cap);
+            }).catch(() => { });
+        }
+    });
+}
+
+// React when the admin re-enables sync for this user
+if (window.electronAPI && window.electronAPI.onSyncEnabledByServer) {
+    window.electronAPI.onSyncEnabledByServer(({ message }) => {
+        const toast = document.getElementById("validationBox");
+        if (toast) {
+            toast.textContent = message || "Sync re-enabled by administrator.";
+            toast.className = "validation-box success show";
+            setTimeout(() => { toast.className = "validation-box"; }, 4000);
+        }
+
+        const toggle = document.getElementById("syncToggle");
+        if (toggle) {
+            toggle.disabled = false;
+            toggle.checked = true;
+        }
+
+        const text = document.getElementById("sync-text");
+        if (text) text.textContent = "Sync Ready";
+
+        if (syncData) {
+            updateUI({ enabled: true, online: navigator.onLine, syncData });
+        }
+
+        if (window.electronAPI.getDriveCapacity) {
+            window.electronAPI.getDriveCapacity().then((cap) => {
+                if (cap) applyCapacityToUI(cap);
+            }).catch(() => { });
+        }
+    });
 }
 
 

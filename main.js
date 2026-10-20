@@ -41,6 +41,12 @@ const streamPipeline = promisify(pipeline);
 //const { Readable } = require("stream");
 const { pipeline: pipelineAsync } = require("stream/promises");
 const chokidar = require("chokidar");
+const {
+    startSyncConfigPolling,
+    stopSyncConfigPolling,
+    fetchAndPushSyncConfig,
+    getLastSyncConfig
+} = require('./main/syncConfigPoll');
 let watcher = null;
 let syncTimer = null;
 let debounceTimer = null;
@@ -170,6 +176,24 @@ let syncData = {
     config_data: null,
     apiUrl: null,
 };
+
+function getSyncConfigContext() {
+    const sData = (syncData && syncData.user_data) ? syncData : (loadSession() || {});
+    const apiUrl = sData.apiUrl || API_URL;
+    const customer_id = sData?.customer_data?.id;
+    const domain_id = sData?.domain_data?.id;
+    const user_id = sData?.user_data?.id;
+    const physicalLimitGb = Math.round(VHDX_SIZE_MB / 1024) || 10;
+    if (!apiUrl || !customer_id || !domain_id || !user_id) return null;
+    return {
+        apiUrl,
+        customer_id,
+        domain_id,
+        user_id,
+        physicalLimitGb,
+        getDriveUsedBytes: () => cachedDriveProps?.totalSizeBytes || 0
+    };
+}
 
 // isDev is declared at top of main.js
 
@@ -5536,6 +5560,16 @@ async function startServerPolling(event, syncData) {
         return;
     }
 
+    try {
+        const targetWin = (event && event.sender) ? BrowserWindow.fromWebContents(event.sender) : win;
+        const ctx = getSyncConfigContext();
+        if (targetWin && ctx) {
+            startSyncConfigPolling(targetWin, ctx);
+        }
+    } catch (pollErr) {
+        console.warn("Failed to start sync config polling:", pollErr);
+    }
+
     // First sync — awaited so the renderer can chain startDriveWatcher after it.
     console.log("▶ Running first sync");
     try {
@@ -5566,6 +5600,7 @@ async function startServerPolling(event, syncData) {
 
 async function stopServerPolling() {
     console.log('s2cPollingTimer - stop -> ' + s2cPollingTimer);
+    stopSyncConfigPolling();
     if (s2cPollingTimer) {
         clearInterval(s2cPollingTimer);
         s2cPollingTimer = null;
@@ -6530,9 +6565,35 @@ ipcMain.handle("auto-sync-working", async (event, args) => {
                     })
                 });
 
-                if (!res.ok) throw new Error("Upload failed");
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch {
+                    data = null;
+                }
 
-                const data = await res.json();
+                if (!res.ok || (data && data.status === false)) {
+                    const serverMsg = data?.message || (data?.reason ? `Upload failed: ${data.reason}` : `Upload failed (HTTP ${res.status})`);
+                    console.error(`❌ [auto-sync] Upload failed (${res.status}):`, serverMsg, data);
+
+                    if (res.status === 403 && data?.reason === "sync_disabled") {
+                        if (win && !win.isDestroyed() && win.webContents) {
+                            win.webContents.send("sync-disabled-by-server", {
+                                message: data.message || "Sync disabled by administrator."
+                            });
+                        }
+                    } else if (res.status === 413 || data?.reason === "quota_exceeded") {
+                        if (win && !win.isDestroyed() && win.webContents) {
+                            win.webContents.send("storage-capacity-alert", {
+                                type: "full",
+                                message: data.message || "Storage limit exceeded. Upload blocked.",
+                                quota: data.quota
+                            });
+                        }
+                    }
+
+                    throw new Error(serverMsg);
+                }
 
                 // ---- update sync state ----
                 if (data.last_upload_time) {
@@ -6792,9 +6853,35 @@ ipcMain.handle("auto-sync-2", async (event, args) => {
                     })
                 });
 
-                if (!res.ok) throw new Error("Upload failed");
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch {
+                    data = null;
+                }
 
-                const data = await res.json();
+                if (!res.ok || (data && data.status === false)) {
+                    const serverMsg = data?.message || (data?.reason ? `Upload failed: ${data.reason}` : `Upload failed (HTTP ${res.status})`);
+                    console.error(`❌ [auto-sync] Upload failed (${res.status}):`, serverMsg, data);
+
+                    if (res.status === 403 && data?.reason === "sync_disabled") {
+                        if (win && !win.isDestroyed() && win.webContents) {
+                            win.webContents.send("sync-disabled-by-server", {
+                                message: data.message || "Sync disabled by administrator."
+                            });
+                        }
+                    } else if (res.status === 413 || data?.reason === "quota_exceeded") {
+                        if (win && !win.isDestroyed() && win.webContents) {
+                            win.webContents.send("storage-capacity-alert", {
+                                type: "full",
+                                message: data.message || "Storage limit exceeded. Upload blocked.",
+                                quota: data.quota
+                            });
+                        }
+                    }
+
+                    throw new Error(serverMsg);
+                }
 
                 // ---- update sync state ----
                 if (data.last_upload_time) {
@@ -6882,7 +6969,11 @@ ipcMain.handle("auto-sync-2", async (event, args) => {
                     })
                 });
 
-                if (!res.ok) throw new Error("Delete failed");
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => "");
+                    console.error(`❌ [auto-sync] Delete failed (${res.status}):`, errText);
+                    throw new Error(`Delete failed (${res.status})`);
+                }
 
                 for (const p of safe) {
                     await removeFromTracker(p);
@@ -7027,9 +7118,35 @@ ipcMain.handle("auto-sync", async (event, args) => {
                     })
                 });
 
-                if (!res.ok) throw new Error("Upload failed");
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch {
+                    data = null;
+                }
 
-                const data = await res.json();
+                if (!res.ok || (data && data.status === false)) {
+                    const serverMsg = data?.message || (data?.reason ? `Upload failed: ${data.reason}` : `Upload failed (HTTP ${res.status})`);
+                    console.error(`❌ [auto-sync] Upload failed (${res.status}):`, serverMsg, data);
+
+                    if (res.status === 403 && data?.reason === "sync_disabled") {
+                        if (win && !win.isDestroyed() && win.webContents) {
+                            win.webContents.send("sync-disabled-by-server", {
+                                message: data.message || "Sync disabled by administrator."
+                            });
+                        }
+                    } else if (res.status === 413 || data?.reason === "quota_exceeded") {
+                        if (win && !win.isDestroyed() && win.webContents) {
+                            win.webContents.send("storage-capacity-alert", {
+                                type: "full",
+                                message: data.message || "Storage limit exceeded. Upload blocked.",
+                                quota: data.quota
+                            });
+                        }
+                    }
+
+                    throw new Error(serverMsg);
+                }
 
                 // ---- update sync state ----
                 if (data.last_upload_time) {
@@ -7117,7 +7234,11 @@ ipcMain.handle("auto-sync", async (event, args) => {
                     })
                 });
 
-                if (!res.ok) throw new Error("Delete failed");
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => "");
+                    console.error(`❌ [auto-sync] Delete failed (${res.status}):`, errText);
+                    throw new Error(`Delete failed (${res.status})`);
+                }
 
                 for (const p of safe) {
                     await removeFromTracker(p);
@@ -7610,46 +7731,136 @@ async function calculateDriveProperties(targetDir) {
     };
 }
 
-function computeCapacityMetrics(usedBytes) {
-    const totalBytes = TOTAL_CAPACITY_BYTES;
-    const safeUsedBytes = Math.max(0, Number(usedBytes) || 0);
-    const freeBytes = Math.max(0, totalBytes - safeUsedBytes);
-    const rawPercent = (safeUsedBytes / totalBytes) * 100;
-    const percentage = Math.min(100, parseFloat(rawPercent.toFixed(1)));
-
-    let status = "normal"; // normal (<85%), warning (85-89.9%), danger (90-99.9%), full (>=100%)
-    let isWarning = false;
-    let isDanger = false;
-    let isSyncBlocked = false;
-
-    if (rawPercent >= 100) {
-        status = "full";
-        isDanger = true;
-        isSyncBlocked = true;
-    } else if (rawPercent >= 90) {
-        status = "danger";
-        isDanger = true;
-        isSyncBlocked = false;
-    } else if (rawPercent >= 85) {
-        status = "warning";
-        isWarning = true;
-        isSyncBlocked = false;
+function computeCapacityMetrics(usedBytes, serverCap = null) {
+    if (!serverCap) {
+        try { serverCap = getLastSyncConfig(); } catch {}
     }
 
-    return {
-        totalBytes,
-        totalFormatted: formatSize(totalBytes),
-        usedBytes: safeUsedBytes,
-        usedFormatted: formatSize(safeUsedBytes),
-        freeBytes,
-        freeFormatted: formatSize(freeBytes),
-        percentage,
-        rawPercentage: rawPercent,
-        status,
-        isWarning,
-        isDanger,
-        isSyncBlocked,
+    // 1️⃣ MAPPED DRIVE (VHDX 10 GB) METRICS
+    const driveTotalBytes = TOTAL_CAPACITY_BYTES; // 10 GB
+    const driveUsedBytes = Math.max(0, Number(usedBytes) || 0);
+    const driveFreeBytes = Math.max(0, driveTotalBytes - driveUsedBytes);
+    const driveRawPercent = (driveUsedBytes / driveTotalBytes) * 100;
+    const drivePercentage = Math.min(100, parseFloat(driveRawPercent.toFixed(1)));
+
+    let driveStatus = "normal";
+    if (driveRawPercent >= 100) driveStatus = "full";
+    else if (driveRawPercent >= 90) driveStatus = "danger";
+    else if (driveRawPercent >= 85) driveStatus = "warning";
+
+    const drive = {
+        totalBytes: driveTotalBytes,
+        totalFormatted: formatSize(driveTotalBytes), // "10 GB"
+        usedBytes: driveUsedBytes,
+        usedFormatted: formatSize(driveUsedBytes),
+        freeBytes: driveFreeBytes,
+        freeFormatted: formatSize(driveFreeBytes),
+        percentage: drivePercentage,
+        rawPercentage: driveRawPercent,
+        status: driveStatus,
+        isWarning: driveRawPercent >= 85,
+        isDanger: driveRawPercent >= 90,
+        isSyncBlocked: driveRawPercent >= 100,
         limitMB: VHDX_SIZE_MB
+    };
+
+    // 2️⃣ ACCOUNT LIMIT (CLOUD / SERVER QUOTA) METRICS
+    let account = null;
+    if (serverCap && serverCap.totalBytes > 0) {
+        const accTotalBytes = Number(serverCap.totalBytes) || 0;
+        const accUsedBytes = Number(serverCap.usedBytes) || 0;
+        const accFreeBytes = Math.max(0, accTotalBytes - accUsedBytes);
+        const accRawPercent = (accUsedBytes / accTotalBytes) * 100;
+        const accPercentage = Math.min(100, Math.round(accRawPercent));
+
+        let accStatus = "normal";
+        if (accUsedBytes >= accTotalBytes) accStatus = "full";
+        else if (accUsedBytes >= accTotalBytes * 0.9) accStatus = "danger";
+        else if (accUsedBytes >= accTotalBytes * 0.85) accStatus = "warning";
+
+        account = {
+            serverLimitGb: serverCap.serverLimitGb,
+            totalBytes: accTotalBytes,
+            totalFormatted: serverCap.totalFormatted || formatSize(accTotalBytes),
+            usedBytes: accUsedBytes,
+            usedFormatted: serverCap.usedFormatted || formatSize(accUsedBytes),
+            remainingBytes: Number(serverCap.remainingBytes) || accFreeBytes,
+            remainingFormatted: serverCap.remainingFormatted || formatSize(accFreeBytes),
+            freeFormatted: serverCap.freeFormatted || formatSize(accFreeBytes),
+            percentage: accPercentage,
+            rawPercentage: accRawPercent,
+            status: accStatus,
+            isWarning: accRawPercent >= 85,
+            isDanger: accRawPercent >= 90,
+            isSyncBlocked: accUsedBytes >= accTotalBytes,
+            syncEnabled: serverCap.syncEnabled !== false,
+            syncStatus: serverCap.syncStatus || "ready"
+        };
+    } else {
+        account = {
+            serverLimitGb: 0,
+            totalBytes: 0,
+            totalFormatted: "—",
+            usedBytes: driveUsedBytes,
+            usedFormatted: formatSize(driveUsedBytes),
+            remainingBytes: 0,
+            remainingFormatted: "—",
+            freeFormatted: "—",
+            percentage: 0,
+            rawPercentage: 0,
+            status: "normal",
+            isWarning: false,
+            isDanger: false,
+            isSyncBlocked: false,
+            syncEnabled: true,
+            syncStatus: "ready"
+        };
+    }
+
+    // 3️⃣ PRIORITY SYNC BLOCKING LOGIC
+    // Priority 1: Account Limit reaches 100%
+    // Priority 2: Mapped Drive VHDX reaches 100%
+    let isSyncBlocked = false;
+    let blockReason = "";
+    let blockMessage = "";
+
+    if (account && account.isSyncBlocked) {
+        isSyncBlocked = true;
+        blockReason = "account_limit";
+        blockMessage = `Storage capacity reached 100% of account limit (${account.usedFormatted} / ${account.totalFormatted}). Sync stopped.`;
+    } else if (drive.isSyncBlocked) {
+        isSyncBlocked = true;
+        blockReason = "drive_capacity";
+        blockMessage = `Mapped drive capacity reached 100% (${drive.usedFormatted} / ${drive.totalFormatted}). Sync stopped.`;
+    }
+
+    const priorityOrder = { full: 4, danger: 3, warning: 2, normal: 1 };
+    const overallStatus = (priorityOrder[account.status] >= priorityOrder[drive.status])
+        ? account.status
+        : drive.status;
+
+    return {
+        // Root fields for compatibility (Account Limit priority)
+        totalBytes: account.totalBytes || drive.totalBytes,
+        totalFormatted: account.totalFormatted || drive.totalFormatted,
+        usedBytes: account.usedBytes,
+        usedFormatted: account.usedFormatted,
+        freeBytes: account.remainingBytes,
+        freeFormatted: account.freeFormatted,
+        percentage: account.percentage,
+        status: overallStatus,
+        isWarning: account.isWarning || drive.isWarning,
+        isDanger: account.isDanger || drive.isDanger,
+        isSyncBlocked,
+        blockReason,
+        blockMessage,
+        serverLimitGb: account.serverLimitGb,
+        physicalLimitGb: 10,
+        syncEnabled: account.syncEnabled,
+        syncStatus: account.syncStatus,
+
+        account,
+        drive
     };
 }
 
@@ -7673,13 +7884,23 @@ async function getDriveCapacity(rootDir = null) {
         const now = Date.now();
         if (cachedDriveProps && cachedDriveProps.rootPath === target && (now - lastDrivePropsTime < DRIVE_PROPS_CACHE_TTL)) {
             if (!cachedDriveProps.capacity) {
-                cachedDriveProps.capacity = computeCapacityMetrics(cachedDriveProps.totalSizeBytes);
+                const serverCap = getLastSyncConfig();
+                cachedDriveProps.capacity = computeCapacityMetrics(cachedDriveProps.totalSizeBytes, serverCap);
             }
             return cachedDriveProps;
         }
 
         const result = await calculateDriveProperties(target);
-        result.capacity = computeCapacityMetrics(result.totalSizeBytes);
+        const serverCap = getLastSyncConfig();
+        result.capacity = computeCapacityMetrics(result.totalSizeBytes, serverCap);
+
+        if (!serverCap && win && !win.isDestroyed()) {
+            const ctx = getSyncConfigContext();
+            if (ctx) {
+                fetchAndPushSyncConfig(win, ctx).catch(() => {});
+            }
+        }
+
         cachedDriveProps = result;
         lastDrivePropsTime = now;
         return result;
@@ -7703,6 +7924,10 @@ async function broadcastCapacityUpdate() {
             if (info && info.capacity) {
                 win.webContents.send("storage-capacity-update", info.capacity);
             }
+            const ctx = getSyncConfigContext();
+            if (ctx) {
+                fetchAndPushSyncConfig(win, ctx).catch(() => {});
+            }
         }
     } catch (err) {
         // silent
@@ -7716,6 +7941,16 @@ ipcMain.handle("get-drive-properties", async (event, rootDir = null) => {
 ipcMain.handle("get-drive-capacity", async (event, rootDir = null) => {
     const res = await getDriveCapacity(rootDir);
     return res.capacity;
+});
+
+ipcMain.handle("refresh-sync-config", async () => {
+    if (win && !win.isDestroyed()) {
+        const ctx = getSyncConfigContext();
+        if (ctx) {
+            return await fetchAndPushSyncConfig(win, ctx);
+        }
+    }
+    return getLastSyncConfig();
 });
 
 // 🔹 IPC handler to list folder contents
@@ -8221,19 +8456,6 @@ ipcMain.handle("get-sync-status", async (event, params) => {
 });
 
 ipcMain.handle("set-sync-status", async (event, user, enabled) => {
-    // 1️⃣ Save locally (SQLite)
-    await setSyncEnabled(user, "sync_enabled", enabled ? "1" : "0");
-
-    // Optional: update last_sync_at when enabling
-    //   if (enabled) {
-    //     await setSyncEnabled(
-    //       user,
-    //       "last_sync_at",
-    //       Math.floor(Date.now() / 1000).toString()
-    //     );
-    //   }
-    console.log(user.apiUrl);
-    // 2️⃣ Update server (user-wise)
     try {
         const response = await fetch(`${user.apiUrl}/api/update-sync-status`, {
             method: "POST",
@@ -8244,16 +8466,38 @@ ipcMain.handle("set-sync-status", async (event, user, enabled) => {
             })
         });
 
+        const resData = await response.json().catch(() => ({}));
+
         if (!response.ok) {
+            if (response.status === 403 && (resData.reason === "sync_blocked" || resData.sync_status === "block")) {
+                console.warn("⚠️ Cannot enable sync: blocked by Administrator.");
+                if (win && !win.isDestroyed() && win.webContents) {
+                    win.webContents.send("sync-disabled-by-server", {
+                        message: resData.message || "Sync is blocked by Administrator.",
+                        reason: "sync_blocked",
+                        sync_status: "block"
+                    });
+                }
+                return { success: false, blocked: true, message: resData.message || "Sync is blocked by Administrator." };
+            }
             throw new Error(`HTTP ${response.status}`);
         }
 
-        console.log("✅ Sync status updated on server");
+        // 1️⃣ Save locally (SQLite)
+        await setSyncEnabled(user, "sync_enabled", enabled ? "1" : "0");
+        console.log("✅ Sync status updated on server and local DB:", enabled ? "ready" : "stop");
+
+        // Immediately refresh config from server
+        if (win && !win.isDestroyed()) {
+            const ctx = getSyncConfigContext();
+            if (ctx) fetchAndPushSyncConfig(win, ctx).catch(() => {});
+        }
+
+        return { success: true, sync_status: enabled ? "ready" : "stop" };
     } catch (err) {
         console.error("❌ Server sync status update failed:", err.message);
+        return { success: false, error: err.message };
     }
-
-    return true;
 });
 
 ipcMain.handle("get-device-id", async (event, syncData) => {
@@ -8732,6 +8976,7 @@ function uuidv4() {
 
 async function fullLogoutCleanup() {
     console.log("🧹 Starting logout cleanup...");
+    stopSyncConfigPolling();
 
     global.__IS_LOGGING_OUT = true;
 

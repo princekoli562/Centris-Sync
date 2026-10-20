@@ -1,4 +1,5 @@
 <html>
+
 <head>
     <meta charset="UTF-8" />
     <!-- <meta charset="UTF-8" http-equiv="Content-Security-Policy" content="
@@ -11,20 +12,24 @@
   "> -->
     <title>Centris Drive</title>
     <!-- <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"> -->
-     <link rel="stylesheet" href="./node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+    <link rel="stylesheet" href="./node_modules/@fortawesome/fontawesome-free/css/all.min.css">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
+
 <body class="home_container">
     <div class="sidebar">
         <div class="logo-container" id="sidebarLogoContainer" style="cursor: pointer;" title="About Centris Drive">
-            <img src="assets/images/centris-drive.png" alt="Centris Drive Logo" class="drive-logo" id="sidebarLogo" title="About Centris Drive" style="cursor: pointer;">
+            <img src="assets/images/centris-drive.png" alt="Centris Drive Logo" class="drive-logo" id="sidebarLogo"
+                title="About Centris Drive" style="cursor: pointer;">
         </div>
         <h2>My Drive</h2>
         <button id="openDrive" class="btnload">📁 My Files </button>
-        <button id="createFolderBtn" class="btnload">📁<i class="fas fa-plus sidebar-plus-icon"></i> Create New Folder</button>
+        <button id="createFolderBtn" class="btnload">📁<i class="fas fa-plus sidebar-plus-icon"></i> Create New
+            Folder</button>
         <button id="uploadFolder" class="btnload">⬆️ Upload Folders / Files</button>
         <div id="uploadMenu" class="upload-menu">
-            <div class="menu-item" id="createFolderMenuOption">📁<i class="fas fa-plus sidebar-plus-icon"></i> Create New Folder</div>
+            <div class="menu-item" id="createFolderMenuOption">📁<i class="fas fa-plus sidebar-plus-icon"></i> Create
+                New Folder</div>
             <div class="menu-item" id="uploadFolderOption">📁 Upload Folder</div>
             <div class="menu-item" id="uploadFileOption">📄 Upload File</div>
         </div>
@@ -34,7 +39,7 @@
         </button> -->
         <div class="progress-wrapper" id="syncProgressWrapper">
             <!-- Storage Capacity Card (10 GB Limit) -->
-            <div class="storage-capacity-card" id="storageCapacityCard">
+            <!-- <div class="storage-capacity-card" id="storageCapacityCard">
                 <div class="storage-capacity-header">
                     <span class="storage-capacity-title"><i class="fas fa-database"></i> Storage</span>
                     <span class="storage-capacity-percent" id="storageCapacityPercent">0%</span>
@@ -46,8 +51,49 @@
                     <span class="storage-capacity-usage" id="storageCapacityUsage">0 B / 10 GB</span>
                     <span class="storage-capacity-badge badge-normal" id="storageCapacityBadge">Normal</span>
                 </div>
-            </div>
+            </div> -->
 
+            <div class="storage-capacity-card" id="storageCapacityCard">
+                <div class="storage-capacity-header">
+                    <span class="storage-capacity-title"><i class="fas fa-database"></i> Storage Capacity</span>
+                    <span class="storage-capacity-badge badge-normal" id="storageCapacityBadge">Normal</span>
+                </div>
+
+                <!-- 1️⃣ Progress Bar 1: Account Limit (Cloud Quota) -->
+                <div class="storage-section" id="accountCapacitySection">
+                    <div class="storage-section-header">
+                        <span class="storage-section-label"><i class="fas fa-cloud"></i> Account Limit</span>
+                        <span class="storage-capacity-percent" id="accountCapacityPercent">0%</span>
+                    </div>
+                    <div class="storage-capacity-bar-track" id="accountCapacityBarTrack" title="Account storage usage">
+                        <div class="storage-capacity-bar-fill status-green" id="accountCapacityBar" style="width: 0%;"></div>
+                    </div>
+                    <div class="storage-capacity-footer">
+                        <span class="storage-capacity-usage" id="accountCapacityUsage">0 B / —</span>
+                        <span class="storage-section-sub" id="accountCapacityLimit">Account: — GB</span>
+                    </div>
+                </div>
+
+                <!-- 2️⃣ Progress Bar 2: Mapped Drive (VHDX 10 GB) -->
+                <div class="storage-section" id="driveCapacitySection">
+                    <div class="storage-section-header">
+                        <span class="storage-section-label"><i class="fas fa-hdd"></i> Mapped Drive (VHDX)</span>
+                        <span class="storage-capacity-percent" id="driveCapacityPercent">0%</span>
+                    </div>
+                    <div class="storage-capacity-bar-track" id="driveCapacityBarTrack" title="Mapped drive (10 GB VHDX) usage">
+                        <div class="storage-capacity-bar-fill status-green" id="driveCapacityBar" style="width: 0%;"></div>
+                    </div>
+                    <div class="storage-capacity-footer">
+                        <span class="storage-capacity-usage" id="driveCapacityUsage">0 B / 10 GB</span>
+                        <span class="storage-section-sub" id="driveCapacityLimit">Disk Limit: 10 GB</span>
+                    </div>
+                </div>
+
+                <!-- Hidden fallback elements for backwards compatibility -->
+                <span id="storageCapacityPercent" style="display:none;">0%</span>
+                <span id="storageCapacityUsage" style="display:none;">0 B / —</span>
+                <span id="storageCapacityLimitText" style="display:none;">Account limit: —</span>
+            </div>
             <!-- C2S Progress Card (Local Watcher: Upload & Delete to Server) -->
             <div class="progress-card c2s-card" id="c2sProgressCard" style="display:none;">
                 <div class="progress-header">
@@ -60,7 +106,8 @@
             <!-- S2C Progress Card (Server Polling: Download & Delete from Server) -->
             <div class="progress-card s2c-card" id="s2cProgressCard" style="display:none;">
                 <div class="progress-header">
-                    <span class="progress-badge s2c-badge"><i class="fas fa-cloud-download-alt"></i> S2C · Download</span>
+                    <span class="progress-badge s2c-badge"><i class="fas fa-cloud-download-alt"></i> S2C ·
+                        Download</span>
                 </div>
                 <label class="progress-label" id="s2cProgressLabel">Downloading... 0%</label>
                 <progress class="progress-bar-el s2c-progress-bar" id="s2cProgressBar" value="0" max="100"></progress>
@@ -76,12 +123,12 @@
     <div id="main">
         <div class="header">
             <!-- <span class="breadcrumb" id="breadcrumb">Path: F:\</span> -->
-			 <div id="breadcrumb"
-				style="margin-bottom: 10px; font-weight: bold; cursor: pointer;">
-			</div>
+            <div id="breadcrumb" style="margin-bottom: 10px; font-weight: bold; cursor: pointer;">
+            </div>
             <div class="header-right-actions">
                 <div class="drive-properties-wrapper" id="drivePropertiesWrapper">
-                    <button class="drive-properties-btn" id="drivePropertiesBtn" type="button" title="Centris-Drive Properties">
+                    <button class="drive-properties-btn" id="drivePropertiesBtn" type="button"
+                        title="Centris-Drive Properties">
                         <i class="fas fa-info-circle"></i>
                     </button>
                     <div class="drive-properties-popup" id="drivePropertiesPopup">
@@ -110,12 +157,43 @@
                                 <span class="prop-label"><i class="fas fa-database"></i> Total Size:</span>
                                 <span class="prop-val" id="propTotalSize">0 B</span>
                             </div>
-                            <div class="prop-popup-row prop-capacity-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
-                                <span class="prop-label"><i class="fas fa-chart-pie"></i> Capacity (10 GB):</span>
+                            <!-- Progress Bar 1: Account Limit Quota -->
+                            <div class="prop-popup-row prop-capacity-row"
+                                style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
+                                <span class="prop-label"><i class="fas fa-cloud"></i> Account Limit:</span>
+                                <span class="prop-val" id="propAccountPercent">0%</span>
+                            </div>
+                            <div class="prop-capacity-bar-track">
+                                <div class="prop-capacity-bar-fill status-green" id="propAccountBar"
+                                    style="width: 0%;"></div>
+                            </div>
+                            <div class="prop-popup-row prop-limit-row">
+                                <span class="prop-label"><i class="fas fa-shield-alt"></i> Account Quota:</span>
+                                <span class="prop-val" id="propAccountLimit">— GB</span>
+                            </div>
+
+                            <!-- Progress Bar 2: Mapped Drive VHDX (10 GB) -->
+                            <div class="prop-popup-row prop-capacity-row"
+                                style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
+                                <span class="prop-label"><i class="fas fa-hdd"></i> Mapped Drive (10 GB):</span>
                                 <span class="prop-val" id="propCapacityPercent">0%</span>
                             </div>
                             <div class="prop-capacity-bar-track">
-                                <div class="prop-capacity-bar-fill status-green" id="propCapacityBar" style="width: 0%;"></div>
+                                <div class="prop-capacity-bar-fill status-green" id="propCapacityBar"
+                                    style="width: 0%;"></div>
+                            </div>
+                            <div class="prop-popup-row prop-limit-row">
+                                <span class="prop-label"><i class="fas fa-hdd"></i> Local Disk:</span>
+                                <span class="prop-val" id="propLocalDisk">10 GB</span>
+                            </div>
+                            <div class="prop-popup-row prop-limit-row">
+                                <span class="prop-label"><i class="fas fa-balance-scale"></i> Drive Free:</span>
+                                <span class="prop-val" id="propFreeSpace">—</span>
+                            </div>
+                            <div class="prop-popup-row prop-limit-row" id="propSyncStatusRow" style="display:none;">
+                                <span class="prop-label"><i class="fas fa-ban" style="color:#dc2626;"></i> Sync:</span>
+                                <span class="prop-val" id="propSyncStatus"
+                                    style="color:#dc2626; font-weight:600;">Disabled by admin</span>
                             </div>
                         </div>
                     </div>
@@ -124,9 +202,10 @@
                 <div class="user-menu">
                     <div class="user-icon" id="userIcon" title="Logged-in users">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="#143b64"
-                        xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/>
-                    </svg>
+                            xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
+                        </svg>
                     </div>
 
                     <div class="user-dropdown" id="userDropdown">
@@ -142,7 +221,8 @@
                                 <span class="dropdown-version-badge" title="App Version from package.json">
                                     <i class="fas fa-tag"></i> v<span id="dropdownVersionText">1.0.0</span>
                                 </span>
-                                <button class="dropdown-check-update-btn" id="checkUpdateDropdownBtn" type="button" title="Check for updates">
+                                <button class="dropdown-check-update-btn" id="checkUpdateDropdownBtn" type="button"
+                                    title="Check for updates">
                                     <i class="fas fa-sync-alt"></i> Update
                                 </button>
                             </div>
@@ -152,7 +232,7 @@
             </div>
         </div>
         <div class="content">
-            
+
             <div class="title-bar">
                 <div class="left-section">
                     <h2 class="title">Files</h2>
@@ -162,7 +242,7 @@
                 <div class="center-section">
                     <div class="search-container">
                         <input type="text" id="searchInput" placeholder="Search files & folders..." />
-                         <!-- Clear button -->
+                        <!-- Clear button -->
                         <button id="clearSearchBtn" class="clear-btn" title="Clear">
                             &times;
                         </button>
@@ -190,7 +270,7 @@
                         <i class="fas fa-arrow-right"></i>
                     </button>
                     <button id="previewToggle" class="nav-btn btn-preview" title="Preview Mode">
-                        <i class="fas fa-eye"></i> 
+                        <i class="fas fa-eye"></i>
                     </button>
                     <button class="view-btn active" id="grid-view" title="Grid View">
                         <i class="fas fa-th-large"></i>
@@ -215,17 +295,14 @@
                 <div id="drag-bar"></div>
                 <div id="preview-panel" class="hidden">
                     <!-- <canvas id="pdfPreviewCanvas"></canvas> -->
-                    
-                  
+
+
                     <!-- <iframe
                         id="pdfViewerFrame"
                         class="pdf-frame"
                         frameborder="0">
                     </iframe> -->
-                    <iframe
-                        id="pdfViewerFrame"
-                        style="width:100%; height:100%; border:none;"
-                    ></iframe>
+                    <iframe id="pdfViewerFrame" style="width:100%; height:100%; border:none;"></iframe>
 
                     <div id="officePreview" class="office-preview hidden">
                         <i id="officeIcon" class="office-icon fas"></i>
@@ -279,8 +356,8 @@
             </div>
         </div>
     </div>
-    
-	
+
+
 </body>
 <div id="pdfModal" class="pdf-modal hidden">
     <div class="pdf-header">
@@ -341,7 +418,8 @@
             </div>
             <div id="aboutUpdateProgressBarContainer" class="about-progress-container" style="display:none;">
                 <label id="aboutUpdateProgressLabel" class="progress-label">Downloading update... 0%</label>
-                <progress id="aboutUpdateProgressBar" class="progress-bar-el update-progress-bar" value="0" max="100"></progress>
+                <progress id="aboutUpdateProgressBar" class="progress-bar-el update-progress-bar" value="0"
+                    max="100"></progress>
             </div>
         </div>
         <div class="folder-modal-footer">
@@ -361,12 +439,15 @@
             <button id="closeLogoutConfirmModal" class="close-modal-btn">&times;</button>
         </div>
         <div class="folder-modal-body" style="text-align: center; padding: 22px 18px 16px;">
-            <p style="font-size: 14px; color: #334155; margin: 0 0 6px 0; font-weight: 500;">Are you sure you want to log out?</p>
-            <p style="font-size: 12px; color: #64748b; margin: 0;">You will need to sign in again to sync your files.</p>
+            <p style="font-size: 14px; color: #334155; margin: 0 0 6px 0; font-weight: 500;">Are you sure you want to
+                log out?</p>
+            <p style="font-size: 12px; color: #64748b; margin: 0;">You will need to sign in again to sync your files.
+            </p>
         </div>
         <div class="folder-modal-footer">
             <button id="cancelLogoutConfirmBtn" class="modal-btn-cancel" type="button">Cancel</button>
-            <button id="doLogoutConfirmBtn" class="modal-btn-create" type="button" style="background: #dc2626; border-color: #dc2626; color: #ffffff;">
+            <button id="doLogoutConfirmBtn" class="modal-btn-create" type="button"
+                style="background: #dc2626; border-color: #dc2626; color: #ffffff;">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </button>
         </div>
@@ -377,6 +458,7 @@
     <!-- <script src="./assets/pdfjs/pdf.min.js"></script> -->
     <script src="./assets/js/pdf-viewer.js"></script>
     <script src="assets/js/functions.js"></script>
-  	<script  src="assets/js/dashboard.js"></script>
+    <script src="assets/js/dashboard.js"></script>
 </footer>
+
 </html>

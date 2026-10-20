@@ -2408,10 +2408,33 @@ body.dragging iframe {
     font-size: 13px;
 }
 
+/* ==========================================
+   KEYBOARD NAVIGATION FOCUS STYLES
+   ========================================== */
+.file-item.keyboard-focused {
+    outline: 2px solid #194d79 !important;
+    outline-offset: -2px;
+    background-color: #e8f0fe !important;
+    border-color: #194d79 !important;
+    box-shadow: 0 0 0 3px rgba(25, 77, 121, 0.25), 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+    z-index: 5;
+    position: relative;
+}
 
+#file-list.grid-view .file-item.keyboard-focused {
+    transform: translateY(-2px);
+}
 
+#file-list.list-view .file-item.keyboard-focused {
+    outline: 2px solid #194d79 !important;
+    outline-offset: -1px;
+    background-color: #e8f0fe !important;
+    border-color: #194d79 !important;
+    box-shadow: 0 0 0 2px rgba(25, 77, 121, 0.2) !important;
+}
 
-
-
-
-
+/* Accessible focus-visible state */
+.file-item:focus-visible {
+    outline: 2px solid #194d79 !important;
+    outline-offset: -2px;
+}

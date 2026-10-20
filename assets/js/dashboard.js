@@ -1300,39 +1300,242 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentBtn = $btn;
     });
 
+    // ==========================================
+    // ⌨️ KEYBOARD NAVIGATION FOR FILES & FOLDERS
+    // ==========================================
+
+    function setFocusedFileItem($item, options = {}) {
+        if (!$item || !$item.length) return;
+        const shouldScroll = options.scroll !== false;
+
+        $(".file-item").removeClass("keyboard-focused");
+        $item.addClass("keyboard-focused");
+
+        const domEl = $item[0];
+        if (domEl) {
+            if (!domEl.hasAttribute("tabindex")) {
+                domEl.setAttribute("tabindex", "-1");
+            }
+            domEl.focus({ preventScroll: true });
+            if (shouldScroll) {
+                domEl.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+            }
+        }
+    }
+
+    function getGridColumnCount(items) {
+        if (!items || items.length <= 1) return 1;
+        const firstTop = items[0].getBoundingClientRect().top;
+        for (let i = 1; i < items.length; i++) {
+            if (items[i].getBoundingClientRect().top > firstTop + 8) {
+                return i;
+            }
+        }
+        return items.length;
+    }
+
     $(document).on("click", ".file-item", function (e) {
         if ($(e.target).closest(".file-menu, .file-menu-btn").length) return;
-        // $(this).toggleClass("selected");
-        // hideMiddleSection();  
-        // 👇 read from parent .file-menu
-        // prevent preview when clicking menu or checkbox
+        setFocusedFileItem($(this), { scroll: false });
 
         const $menu = $(this).find(".file-menu");
-
         const targetPath = $menu.data("path");
         const type = $menu.data("type");
-        console.log(targetPath, type);
         if (type == 'folder') return;
 
         openPreview(targetPath, type);
+    });
 
-        // Add check icon only once
-        // if ($item.find(".check-icon").length === 0) {
-        //  $item.append('<div class="check-icon"></div>');
-        // }
-
-
+    $(document).on("click", "#file-list", function (e) {
+        if (!$(e.target).closest(".file-item").length) {
+            $(".file-item").removeClass("keyboard-focused");
+        }
     });
 
     $(document).on("click", ".file-item .check-icon", function (e) {
         e.stopPropagation(); // prevent parent clicks
 
         const fileItem = $(this).closest(".file-item");
-
         fileItem.toggleClass("selected");
         $(this).toggleClass("checked"); // optional visual state
 
         hideMiddleSection();
+    });
+
+    $(document).on("keydown", function (e) {
+        // Ignore if user is typing in an input, textarea, or contentEditable
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
+            return;
+        }
+
+        // Ignore if any modal is visible
+        if (document.querySelector(".folder-modal:not(.hidden)")) {
+            return;
+        }
+
+        const key = e.key;
+        const isArrow = key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight";
+        const isEnter = key === "Enter";
+        const isSpace = key === " " || key === "Spacebar";
+        const isHome = key === "Home";
+        const isEnd = key === "End";
+        const isPageUp = key === "PageUp";
+        const isPageDown = key === "PageDown";
+        const isEscape = key === "Escape";
+
+        // Escape: close any open menus or floating dropdowns
+        if (isEscape) {
+            if ($(".floating-menu").length) {
+                $(".floating-menu").remove();
+                currentMenu = null;
+                currentBtn = null;
+                return;
+            }
+            if ($(".upload-menu.show").length) {
+                $(".upload-menu").removeClass("show");
+                return;
+            }
+            $(".file-item").removeClass("keyboard-focused");
+            return;
+        }
+
+        // Backspace or Alt+Left: navigate back in folder history
+        if ((e.altKey && key === "ArrowLeft") || key === "Backspace") {
+            if (currentIndex > 0) {
+                e.preventDefault();
+                $("#back-btn").click();
+                return;
+            }
+        }
+        // Alt+Right: navigate forward in folder history
+        if (e.altKey && key === "ArrowRight") {
+            if (currentIndex < history.length - 1) {
+                e.preventDefault();
+                $("#forward-btn").click();
+                return;
+            }
+        }
+
+        const items = Array.from(document.querySelectorAll("#file-list .file-item"));
+        if (!items.length) return;
+
+        // Spacebar: toggle selection checkbox on currently focused item
+        if (isSpace) {
+            const focusedEl = document.querySelector("#file-list .file-item.keyboard-focused");
+            if (focusedEl) {
+                e.preventDefault();
+                const checkIcon = focusedEl.querySelector(".check-icon");
+                if (checkIcon) {
+                    checkIcon.click();
+                } else {
+                    focusedEl.classList.toggle("selected");
+                    hideMiddleSection();
+                }
+            }
+            return;
+        }
+
+        // Enter: open folder or open preview/file
+        if (isEnter) {
+            const focusedEl = document.querySelector("#file-list .file-item.keyboard-focused");
+            if (focusedEl) {
+                e.preventDefault();
+                const $menu = $(focusedEl).find(".file-menu");
+                const targetPath = $menu.data("path");
+                const type = $menu.data("type");
+                if (type === "folder") {
+                    activeSearchFilter = null;
+                    loadFiles(targetPath, true);
+                } else if (targetPath) {
+                    openPreview(targetPath, type);
+                }
+            }
+            return;
+        }
+
+        if (!isArrow && !isHome && !isEnd && !isPageUp && !isPageDown) {
+            return;
+        }
+
+        // Prevent window scrolling while navigating items with arrow keys
+        e.preventDefault();
+
+        let currentIdx = items.findIndex(el => el.classList.contains("keyboard-focused"));
+        if (currentIdx === -1) {
+            currentIdx = items.findIndex(el => el.classList.contains("selected"));
+        }
+
+        let targetIdx = 0;
+
+        if (isHome) {
+            targetIdx = 0;
+        } else if (isEnd) {
+            targetIdx = items.length - 1;
+        } else if (currentIdx === -1) {
+            // First arrow press starts at first item
+            targetIdx = 0;
+        } else {
+            const isListView = $("#file-list").hasClass("list-view") || currentView === "list";
+            const cols = isListView ? 1 : getGridColumnCount(items);
+
+            if (isListView) {
+                if (key === "ArrowDown" || key === "ArrowRight") {
+                    targetIdx = Math.min(items.length - 1, currentIdx + 1);
+                } else if (key === "ArrowUp" || key === "ArrowLeft") {
+                    targetIdx = Math.max(0, currentIdx - 1);
+                } else if (isPageDown) {
+                    targetIdx = Math.min(items.length - 1, currentIdx + 10);
+                } else if (isPageUp) {
+                    targetIdx = Math.max(0, currentIdx - 10);
+                }
+            } else {
+                // Grid view
+                if (key === "ArrowLeft") {
+                    targetIdx = Math.max(0, currentIdx - 1);
+                } else if (key === "ArrowRight") {
+                    targetIdx = Math.min(items.length - 1, currentIdx + 1);
+                } else if (key === "ArrowUp") {
+                    if (currentIdx - cols >= 0) {
+                        targetIdx = currentIdx - cols;
+                    } else {
+                        targetIdx = currentIdx; // stay on top row
+                    }
+                } else if (key === "ArrowDown") {
+                    if (currentIdx + cols < items.length) {
+                        targetIdx = currentIdx + cols;
+                    } else {
+                        const currentRow = Math.floor(currentIdx / cols);
+                        const totalRows = Math.ceil(items.length / cols);
+                        if (currentRow < totalRows - 1) {
+                            targetIdx = items.length - 1;
+                        } else {
+                            targetIdx = currentIdx; // already on bottom row
+                        }
+                    }
+                } else if (isPageDown) {
+                    targetIdx = Math.min(items.length - 1, currentIdx + (cols * 3));
+                } else if (isPageUp) {
+                    targetIdx = Math.max(0, currentIdx - (cols * 3));
+                }
+            }
+        }
+
+        if (targetIdx >= 0 && targetIdx < items.length) {
+            setFocusedFileItem($(items[targetIdx]), { scroll: true });
+
+            // If preview panel is currently open, auto-preview files as user navigates
+            const previewPanel = document.getElementById("preview-panel");
+            if (previewPanel && !previewPanel.classList.contains("hidden")) {
+                const $target = $(items[targetIdx]);
+                const $menu = $target.find(".file-menu");
+                const targetPath = $menu.data("path");
+                const type = $menu.data("type");
+                if (type !== "folder" && targetPath) {
+                    openPreview(targetPath, type);
+                }
+            }
+        }
     });
 
 
@@ -2174,7 +2377,7 @@ async function loadFilesYes(dirPath, reset = false) {
 
             const isListView = $("#file-list").hasClass("list-view");
             const div = $(`
-            <div class="file-item">
+            <div class="file-item" tabindex="-1">
                 ${isListView
                     ? `<div class="check-icon"></div>
                     <div class="file-icon">${iconHTML}</div>
@@ -2427,7 +2630,7 @@ async function loadFiles(dirPath, reset = false, filterPath = null) {
             const isListView = $("#file-list").hasClass("list-view");
 
             const div = $(`
-            <div class="file-item">
+            <div class="file-item" tabindex="-1">
                 ${isListView
                     ? `<div class="check-icon"></div>
                     <div class="file-icon">${iconHTML}</div>
